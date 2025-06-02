@@ -1,3 +1,9 @@
-python-dotenv
+streamlit
+plotly
+pandas
 requests
+python-dotenv
+python-dateutil
 jira
+
+
