@@ -4,5 +4,6 @@ __pycache__/
 *.pyo
 *.pyd
 *.sqlite3
-data/*.csv
-data/*.json
+data/horas_con_proyecto.csv
+data/horas_historicas.csv
+data/issue_to_project.json
