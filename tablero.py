@@ -519,7 +519,7 @@ if opcion == "Entregables postventas":
     from jira_conexion import jira
     import pandas as pd
     import unicodedata
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     def normalize(s):
         if not s:
@@ -632,6 +632,7 @@ if opcion == "Entregables postventas":
             "Nombre": summary,
             "Estado": estado,
             "Asignado": asignado,
+            "Puntos": puntos,
             "Fecha_estado": fecha_estado,
             "Duedate": duedate
         })
@@ -663,7 +664,7 @@ if opcion == "Entregables postventas":
             porcentaje_proceso_num = (en_proceso / total * 100) if total > 0 else 0
             color_proc = "🟢" if porcentaje_proceso_num == 100 else "🟡" if porcentaje_proceso_num >= 50 else "🔴"
             porcentaje_proceso = f"{porcentaje_proceso_num:.1f}% {color_proc}"
-            puntos_totales = data.get("Total puntos", 0)
+            puntos_totales = sum(float(h["Puntos"] or 0) for h in historias)
         else:
             historias = []
             pendientes = 0
@@ -672,13 +673,22 @@ if opcion == "Entregables postventas":
             porcentaje_avance = "0%"
             porcentaje_proceso = "0.0% 🔴"
             puntos_totales = 0
+
+        # Alerta: mes actual o mes siguiente con pendientes
+        mes_actual_idx = datetime.now().month - 1
+        mes_siguiente_idx = (mes_actual_idx + 1) % 12
+        alerta = ""
+        if (mes_entrega == meses_orden[mes_actual_idx] or mes_entrega == meses_orden[mes_siguiente_idx]) and pendientes > 0:
+            alerta = "⚠️ Entrega próxima con pendientes"
+
         tabla_prioridad.append({
             "Épica": nombre_epica,
             "Mes entrega": mes_entrega,
             "Avance": f"{porcentaje_avance} " + ("🟢" if porcentaje_num == 100 else "🟡" if porcentaje_num >= 50 else "🔴"),
             "% En proceso": porcentaje_proceso,
             "Pendientes": pendientes,
-            "Puntos totales": puntos_totales,
+            "Puntos totales": int(puntos_totales) if puntos_totales == int(puntos_totales) else puntos_totales,
+            "Alerta": alerta,
             "Historias": historias,
             "%_num": porcentaje_num
         })
@@ -694,24 +704,10 @@ if opcion == "Entregables postventas":
     tabla_incompletas = sorted(tabla_incompletas, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
     tabla_completas = sorted(tabla_completas, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
 
-    # ---- ALERTA: solo para el mes más próximo con historias pendientes y sin 100% ----
-    alerta_mes = ""
-    for m in meses_orden:
-        mes_tiene_alerta = any((r["Mes entrega"] == m and r["Pendientes"] > 0 and r["%_num"] < 100) for r in tabla_incompletas)
-        if mes_tiene_alerta:
-            alerta_mes = m
-            break
-
     # --- Mostrar tabla incompletas ---
     df_tabla = pd.DataFrame(tabla_incompletas)
     if not df_tabla.empty:
         st.markdown("## Prioridades actuales")
-        def gen_alerta(row):
-            if row["Mes entrega"] == alerta_mes and row["Pendientes"] > 0:
-                return "⚠️ Entrega próxima con pendientes"
-            else:
-                return ""
-        df_tabla["Alerta"] = df_tabla.apply(gen_alerta, axis=1)
         st.dataframe(
             df_tabla[["Épica", "Mes entrega", "Avance", "% En proceso", "Pendientes", "Puntos totales", "Alerta"]],
             hide_index=True,
@@ -721,7 +717,6 @@ if opcion == "Entregables postventas":
     # --- Mostrar tabla completas abajo ---
     if tabla_completas:
         df_completas = pd.DataFrame(tabla_completas)
-        # Calcular la fecha de entrega (última fecha de las historias en lista para implementar)
         fechas_entrega = []
         for fila in tabla_completas:
             fechas_hu = []
@@ -747,129 +742,6 @@ if opcion == "Entregables postventas":
             hide_index=True,
             use_container_width=True
         )
-
-    # ---- HISTORIAS PRIORITARIAS A TOMAR (CARDS) ----
-
-    # ---- Agrupar historias pendientes (no tomadas) por mes de entrega ----
-    pendientes_por_mes = {}
-    for epica_rn in epicas_relevantes_filtradas:
-        nombre_epica = epica_rn.get("nombre", "")
-        mes_entrega = epica_rn.get("mes_entrega", "")
-        epic_match = next((epic for epic in epicas if normalize(nombre_epica) == normalize(epic)), None)
-        if not epic_match:
-            continue
-        historias = epicas[epic_match]["Historias"]
-        pendientes = [
-            h for h in historias
-            if h["Estado"] == "lista para desarrollar" and not h["Asignado"]
-        ]
-        if pendientes:
-            pendientes_por_mes.setdefault(mes_entrega, []).extend([
-                {
-                    **h,
-                    "Epica": nombre_epica,
-                    "Mes entrega": mes_entrega
-                } for h in pendientes
-            ])
-
-    # ---- Determinar el mes prioritario (primero que tenga pendientes) ----
-    mes_prioritario = None
-    historias_prioritarias = []
-    for m in meses_orden:
-        if m in pendientes_por_mes:
-            mes_prioritario = m
-            historias_prioritarias = pendientes_por_mes[m]
-            break
-
-    # ---- Mapear devs que trabajaron en cada RN (afinidad) ----
-    dev_hist_epica = {}
-    for epica_rn in epicas_relevantes_filtradas:
-        nombre_epica = epica_rn.get("nombre", "")
-        epic_match = next((epic for epic in epicas if normalize(nombre_epica) == normalize(epic)), None)
-        if not epic_match:
-            continue
-        historias = epicas[epic_match]["Historias"]
-        for h in historias:
-            if h["Asignado"]:
-                dev_hist_epica.setdefault(h["Asignado"], set()).add(nombre_epica)
-
-    # Carga de cada dev (para sugerencia por menor carga)
-    dev_carga = {d: 0 for d in dev_hist_epica}
-    for epica in epicas.values():
-        for h in epica["Historias"]:
-            if h["Asignado"]:
-                dev_carga[h["Asignado"]] += 1
-
-    st.markdown("## Historias prioritarias a tomar")
-    if mes_prioritario and historias_prioritarias:
-        st.markdown(f"**Mes prioritario:** <span style='color:gold; font-weight:bold;'>{mes_prioritario}</span>", unsafe_allow_html=True)
-        cols_cards = st.columns(2)
-        for idx, h in enumerate(historias_prioritarias):
-            # Sugerir devs por afinidad y menor carga (hasta 3), mostrando fecha en que se liberan y cambiando color de fondo
-            candidatos = [d for d, epics in dev_hist_epica.items() if h["Epica"] in epics]
-            todos_devs = list(dev_carga.keys())
-            if candidatos:
-                candidatos_ordenados = sorted(candidatos, key=lambda d: dev_carga.get(d, 0))
-            else:
-                candidatos_ordenados = sorted(todos_devs, key=lambda d: dev_carga.get(d, 0)) if todos_devs else []
-            devs_detalle = []
-            fondo_card = "#20232a"
-            for i, d in enumerate(candidatos_ordenados[:3]):
-                # Buscar la HU en proceso con due date más próxima para ese dev
-                hu_proceso = []
-                for epica in epicas.values():
-                    for hu_asig in epica["Historias"]:
-                        if hu_asig["Asignado"] == d and hu_asig["Duedate"]:
-                            try:
-                                fecha_lib = pd.to_datetime(hu_asig["Duedate"])
-                                hu_proceso.append((fecha_lib, hu_asig["Clave"]))
-                            except:
-                                pass
-                if hu_proceso:
-                    prox_fecha = min(hu_proceso)[0]
-                    fecha_texto = prox_fecha.strftime('%d/%m/%Y')
-                    dev_texto = f"{d} ({fecha_texto})"
-                    # Cambiar fondo solo para el primer dev sugerido
-                    if i == 0:
-                        dias_restantes = (prox_fecha.date() - datetime.now().date()).days
-                        if dias_restantes <= 1:
-                            fondo_card = "#174e1a"  # verde
-                        elif dias_restantes <= 5:
-                            fondo_card = "#1a4666"  # azul oscuro
-                else:
-                    dev_texto = f"{d} (Disponible)"
-                    if i == 0:
-                        fondo_card = "#174e1a"  # verde
-                devs_detalle.append(dev_texto)
-            devs_sugeridos = ", ".join(devs_detalle)
-            afinidad = "Sí" if candidatos else "No"
-            with cols_cards[idx % 2]:
-                st.markdown(
-                    f"""
-                    <div style="border-radius:14px; background:{fondo_card}; padding:18px; margin-bottom:16px; box-shadow:0 2px 8px #0001;">
-                        <div style="font-size:1.1em; font-weight:bold; color:#fff; margin-bottom:4px;">
-                            🟡 {h['Clave']} - {h['Nombre']}
-                        </div>
-                        <div>
-                            <b>RN:</b> {h['Epica']}<br>
-                            <b>Mes de entrega:</b> <span style="color:gold;">{h['Mes entrega']}</span>
-                        </div>
-                        <div style="margin-top:8px;">
-                            <span style="font-size:1em; color:#bcbcff; font-weight:bold;">Devs sugeridos:</span> <br>
-                            <span style="font-size:1em; font-weight:bold; color:#9fffca;">{devs_sugeridos}</span>
-                            <br>
-                            <span style="font-size:0.95em; color:#ffd580;">Afinidad: {afinidad}</span>
-                        </div>
-                        <div style="margin-top:6px; color:orange;">
-                            <b>⚠️ Prioridad alta para cumplir con el entregable del mes</b>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-    else:
-        st.success("¡No hay historias prioritarias pendientes a tomar para este mes!")
-
 
 #Bugsmaipu
 if opcion == "BUGS Postventas":
@@ -1116,6 +988,7 @@ if opcion == "Histórico postventa":
         estado = (issue["fields"]["status"]["name"] or "").strip().lower()
         asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
         key = issue["key"]
+        puntos = issue["fields"].get("customfield_10026") or 0  # <= CAMPO PUNTOS (Story Points)
         fecha_estado = issue["fields"].get("statuscategorychangedate") or issue["fields"].get("updated") or ""
         duedate = issue["fields"].get("duedate") or ""
 
@@ -1129,6 +1002,7 @@ if opcion == "Histórico postventa":
             "Nombre": summary,
             "Estado": estado,
             "Asignado": asignado,
+            "Puntos": puntos,
             "Fecha_estado": fecha_estado,
             "Duedate": duedate
         })
@@ -1149,14 +1023,17 @@ if opcion == "Histórico postventa":
             historias = data["Historias"]
             total = len(historias)
             listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+            puntos_totales = sum(float(h["Puntos"] or 0) for h in historias)
             porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
         else:
             historias = []
+            puntos_totales = 0
             porcentaje_num = 0
         tabla_historico.append({
             "Épica": nombre_epica,
             "Mes entrega": mes_entrega,
             "%_num": porcentaje_num,
+            "Puntos totales": puntos_totales,
             "Historias": historias
         })
 
@@ -1167,20 +1044,23 @@ if opcion == "Histórico postventa":
         nombre = row["Épica"]
         mes = row["Mes entrega"]
         porcentaje = row["%_num"]
+        puntos_totales = row["Puntos totales"]
         historias = row["Historias"]
-        completado = porcentaje == 100
 
-        expander_title = f"{nombre} | Porcentaje de avance: {porcentaje:.1f}% | {mes}"
+        expander_title = f"{nombre} | Porcentaje de avance: {porcentaje:.1f}% | Total de puntos: {puntos_totales} | {mes}"
         with st.expander(expander_title, expanded=False):
             if historias:
                 for h in historias:
                     color_estado = "#39d353" if h["Estado"]=="lista para implementar" else "#fa4" if h["Estado"]=="en desarrollo" else "#bbb"
                     st.markdown(
-                        f"- **{h['Clave']}** — {h['Nombre']} | <span style='color:{color_estado}'>{h['Estado'].capitalize()}</span> | {h['Asignado'] if h['Asignado'] else '<i>Sin asignar</i>'}",
+                        f"- **{h['Clave']}** — {h['Nombre']} | <span style='color:{color_estado}'>{h['Estado'].capitalize()}</span> | Puntos: {h['Puntos']} | {h['Asignado'] if h['Asignado'] else '<i>Sin asignar</i>'}",
                         unsafe_allow_html=True
                     )
             else:
                 st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
+
+
+
 
 
 
