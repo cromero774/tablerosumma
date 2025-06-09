@@ -17,7 +17,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ISSUE_TO_PROJECT_FILE = os.path.join(BASE_DIR, "../data/issue_to_project.json")
 HORAS_CON_PROYECTO_FILE = os.path.join(BASE_DIR, "../data/horas_con_proyecto.csv")
 
-
 def get_jira_auth_headers():
     import base64
     auth_string = f"{JIRA_EMAIL}:{JIRA_API_TOKEN}"
@@ -37,6 +36,22 @@ def get_project_from_issue(issue_id):
     else:
         print(f"❌ Error buscando issue {issue_id}: {resp.status_code} - {resp.text}")
         return None
+
+def get_jira_issue_key(issue_id, key_cache):
+    # Devuelve el issue key dado el issue_id usando la API de Jira (usa cache en memoria para evitar llamadas repetidas)
+    if issue_id in key_cache:
+        return key_cache[issue_id]
+    url = f"{JIRA_API_URL}/issue/{issue_id}"
+    resp = requests.get(url, headers=get_jira_auth_headers())
+    if resp.status_code == 200:
+        data = resp.json()
+        key = data.get("key", "")
+        key_cache[issue_id] = key
+        return key
+    else:
+        print(f"❌ Error buscando KEY para issue {issue_id}: {resp.status_code} - {resp.text}")
+        key_cache[issue_id] = ""
+        return ""
 
 def get_tempo_worklogs(from_date, to_date, limit=1000):
     url = f"https://api.tempo.io/4/worklogs?from={from_date}&to={to_date}&limit={limit}"
@@ -98,13 +113,18 @@ def main():
     save_issue_to_project(issue_to_project)
     print(f"\nMapping actualizado en '{ISSUE_TO_PROJECT_FILE}'.")
 
-    # --- Generar un DataFrame de horas con nombre de proyecto
+    # --- Generar un DataFrame de horas con nombre de proyecto y clave de issue ---
     print("\nGenerando DataFrame de resumen...")
+    key_cache = {}  # cache local en memoria para no consultar dos veces el mismo id
     data = []
     for w in worklogs:
         usuario = w.get("author", {}).get("accountId", "SinUsuario")
         horas = w.get("timeSpentSeconds", 0) / 3600
         issue_id = str(w.get("issue", {}).get("id"))
+        # Intentar obtener el key directamente del objeto, si no, buscarlo en Jira (con cache)
+        issue_key = w.get("issue", {}).get("key")
+        if not issue_key and issue_id:
+            issue_key = get_jira_issue_key(issue_id, key_cache)
         fecha = w.get("startDate")
         proyecto = issue_to_project.get(issue_id, "Desconocido")
         data.append({
@@ -112,6 +132,7 @@ def main():
             "Proyecto": proyecto,
             "Fecha": fecha,
             "Horas": horas,
+            "Issue": issue_key
         })
     df = pd.DataFrame(data)
     print("Primeras filas del resumen:")
@@ -121,6 +142,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 

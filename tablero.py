@@ -55,7 +55,7 @@ PROYECTOS_ATI = [
     "TECH LAB - INTERNO"
 ]
 
-opciones_menu = ["Horas Postventas", "Horas ATI", "Desarrollo Postventas", "Entregables postventas","BUGS Postventas","Histórico postventa"]
+opciones_menu = ["Horas Postventas", "Horas ATI", "Desarrollo Postventas", "Entregables postventas","BUGS Postventas","Histórico postventa","Velocidad de devs"]
 opcion = st.sidebar.radio("Seleccioná opción", opciones_menu)
 
 if opcion == "Horas Postventas":
@@ -72,6 +72,8 @@ elif opcion == "BUGS Postventas":
     titulo = "BUGS Postventas"
 elif opcion == "Histórico postventas":
     titulo = "Histórico postventas"
+elif opcion == "Velocidad de devs":
+    titulo = "Velocidad de devs"
 
 # === PESTAÑAS HORAS ===
 if opcion in ["Horas Postventas", "Horas ATI"]:
@@ -1055,8 +1057,6 @@ if opcion == "Histórico postventa":
     from jira_conexion import jira
     import unicodedata
     import pandas as pd
-    import plotly.express as px
-    from datetime import datetime
 
     def normalize(s):
         if not s:
@@ -1104,9 +1104,9 @@ if opcion == "Histórico postventa":
                 epic_name = parent["fields"]["summary"]
         if not epic_name or epic_name.lower() in ["sin epica", "sin épica", "none", ""]:
             epica_custom = issue["fields"].get(EPIC_LINK_CAMPO, None)
-            if epica_custom and isinstance(epica_custom, dict) and "value" in epica_custom and epica_custom["value"]:
+            if epica_custom and isinstance(epica_custom, dict) and epica_custom.get("value"):
                 epic_name = epica_custom["value"]
-            elif epica_custom and isinstance(epica_custom, str) and epica_custom:
+            elif epica_custom and isinstance(epica_custom, str):
                 epic_name = epica_custom
         if not epic_name or epic_name.lower() in ["sin epica", "sin épica", "none", ""]:
             epic_name = "Sin epica"
@@ -1117,6 +1117,11 @@ if opcion == "Histórico postventa":
 
         estado = (issue["fields"]["status"]["name"] or "").strip().lower()
         asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
+        puntos = issue["fields"].get("customfield_10026", 0)
+        try:
+            puntos = float(puntos)
+        except Exception:
+            puntos = 0
         key = issue["key"]
         fecha_estado = issue["fields"].get("statuscategorychangedate") or issue["fields"].get("updated") or ""
         duedate = issue["fields"].get("duedate") or ""
@@ -1132,7 +1137,8 @@ if opcion == "Histórico postventa":
             "Estado": estado,
             "Asignado": asignado,
             "Fecha_estado": fecha_estado,
-            "Duedate": duedate
+            "Duedate": duedate,
+            "Puntos": puntos
         })
 
     def ordenar_mes(m):
@@ -1152,14 +1158,17 @@ if opcion == "Histórico postventa":
             total = len(historias)
             listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
             porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
+            puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
         else:
             historias = []
             porcentaje_num = 0
+            puntos_totales = 0
         tabla_historico.append({
             "Épica": nombre_epica,
             "Mes entrega": mes_entrega,
             "%_num": porcentaje_num,
-            "Historias": historias
+            "Historias": historias,
+            "Puntos totales": puntos_totales
         })
 
     tabla_historico = sorted(tabla_historico, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
@@ -1169,85 +1178,196 @@ if opcion == "Histórico postventa":
         nombre = row["Épica"]
         mes = row["Mes entrega"]
         porcentaje = row["%_num"]
+        puntos_totales = row["Puntos totales"]
         historias = row["Historias"]
         completado = porcentaje == 100
 
-        expander_title = f"{nombre} | Porcentaje de avance: {porcentaje:.1f}% | {mes}"
+        expander_title = f"{nombre} | Porcentaje de avance: {porcentaje:.1f}% | {mes} | Puntos totales: {puntos_totales}"
         with st.expander(expander_title, expanded=False):
             if historias:
                 for h in historias:
                     color_estado = "#39d353" if h["Estado"]=="lista para implementar" else "#fa4" if h["Estado"]=="en desarrollo" else "#bbb"
                     st.markdown(
-                        f"- **{h['Clave']}** — {h['Nombre']} | <span style='color:{color_estado}'>{h['Estado'].capitalize()}</span> | {h['Asignado'] if h['Asignado'] else '<i>Sin asignar</i>'}",
+                        f"- **{h['Clave']}** — {h['Nombre']} | <span style='color:{color_estado}'>{h['Estado'].capitalize()}</span> | {h['Asignado'] if h['Asignado'] else '<i>Sin asignar</i>'} | <b>Puntos:</b> {h['Puntos']}",
                         unsafe_allow_html=True
                     )
             else:
                 st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
 
-    # ---- Gantt de avance por RN (histórico) ----
-    gantt_rows = []
 
-    for row in tabla_historico:
-        nombre = row["Épica"]
-        mes = row["Mes entrega"]
-        historias = row["Historias"]
+#velocidad devs
+if opcion == "Velocidad de devs":
+    st.title("Velocidad de devs (últimos 3 meses)")
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime
+    import os, json
 
-        fechas_en_desarrollo = []
-        fechas_lista_implementar = []
+    # --- Leer horas históricas (Tempo) ---
+    horas_path = "data/horas_historicas.csv"
+    if not os.path.exists(horas_path):
+        st.error("No existe el archivo de horas históricas. Generalo primero.")
+        st.stop()
+    df_horas = pd.read_csv(horas_path)
+    df_horas["Fecha"] = pd.to_datetime(df_horas["Fecha"], errors="coerce")
 
-        for h in historias:
-            estado = h["Estado"]
-            fecha_estado = h["Fecha_estado"]
-            if not fecha_estado or pd.isna(fecha_estado):
-                continue
-            try:
-                fecha_estado_dt = pd.to_datetime(fecha_estado)
-            except Exception:
-                continue
-            if estado == "en desarrollo":
-                fechas_en_desarrollo.append(fecha_estado_dt)
-            elif estado == "lista para implementar":
-                fechas_lista_implementar.append(fecha_estado_dt)
+    # --- Mapping accountId → nombre de usuario ---
+    with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
+        accountid_to_name = json.load(f)
+    df_horas["Dev"] = df_horas["Usuario"].map(accountid_to_name)
 
-        fecha_inicio = min(fechas_en_desarrollo) if fechas_en_desarrollo else None
-        fecha_fin = max(fechas_lista_implementar) if fechas_lista_implementar else datetime.now()
+    # --- Traer historias de usuario de Jira ---
+    from jira_conexion import jira
 
-        # Solo mostrar si hay fecha de inicio y fecha de fin
-        if fecha_inicio is not None and fecha_fin is not None:
-            gantt_rows.append({
-                "RN": nombre,
-                "Mes entrega": mes,
-                "Inicio": fecha_inicio,
-                "Fin": fecha_fin,
-                "Completado": fecha_fin != datetime.now()
-            })
+    fields = "key,summary,status,assignee,customfield_10026,parent,created,updated,customfield_10016"
+    jql = 'project in (TAL, REP) AND issuetype = Historia'
+    def traer_todos_los_issues(jira, jql, fields, max_results=100):
+        issues = []
+        start_at = 0
+        while True:
+            endpoint = (
+                f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}&expand=changelog'
+            )
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        return issues
 
-    if gantt_rows:
-        gantt_df = pd.DataFrame(gantt_rows)
-        # Forzar conversión a datetime y eliminar filas con datos inválidos
-        gantt_df = gantt_df.dropna(subset=["Inicio", "Fin"])
-        gantt_df["Inicio"] = pd.to_datetime(gantt_df["Inicio"], errors="coerce")
-        gantt_df["Fin"] = pd.to_datetime(gantt_df["Fin"], errors="coerce")
-        gantt_df = gantt_df.dropna(subset=["Inicio", "Fin"])  # Eliminar filas con fechas inválidas
+    issues = traer_todos_los_issues(jira, jql, fields)
 
-        st.markdown("## Gantt de avance por RN (histórico)")
-        fig = px.timeline(
-            gantt_df,
-            x_start="Inicio",
-            x_end="Fin",
-            y="RN",
-            color="Completado",
-            hover_data=["Mes entrega"]
-        )
-        fig.update_yaxes(autorange="reversed")
-        fig.update_layout(
-            title="Gantt de avance por RN",
-            xaxis_title="Fecha",
-            yaxis_title="RN"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # --- Procesar historias ---
+    rows = []
+    for issue in issues:
+        key = issue["key"]
+        puntos = issue["fields"].get("customfield_10026", 0)
+        try:
+            puntos = float(puntos)
+        except Exception:
+            puntos = 0
+        dev_accountid = issue["fields"]["assignee"]["accountId"] if issue["fields"].get("assignee") else None
+        dev = accountid_to_name.get(dev_accountid, "Sin asignar") if dev_accountid else "Sin asignar"
+        summary = issue["fields"].get("summary", "")
+
+        # --- Historial de estados (solo si viene expandido el changelog) ---
+        fecha_inicio, fecha_fin = None, None
+        if "changelog" in issue and "histories" in issue["changelog"]:
+            for hist in sorted(issue["changelog"]["histories"], key=lambda h: h["created"]):
+                for item in hist["items"]:
+                    if item["field"] == "status":
+                        if not fecha_inicio and "desarrollo" in (item["toString"] or "").lower():
+                            fecha_inicio = pd.to_datetime(hist["created"], utc=True)
+                        if "testing" in (item["toString"] or "").lower():
+                            fecha_fin = pd.to_datetime(hist["created"], utc=True)
+                            break
+        # Si no se encuentra el historial, intentar con updated y created
+        if not fecha_inicio:
+            fecha_inicio = pd.to_datetime(issue["fields"]["created"], utc=True)
+        if not fecha_fin:
+            fecha_fin = pd.to_datetime(issue["fields"]["updated"], utc=True)
+        # --- Solución zonas horarias: Pasar todo a naive ---
+        if hasattr(fecha_inicio, "tzinfo") and fecha_inicio.tzinfo is not None:
+            fecha_inicio = fecha_inicio.tz_convert(None) if hasattr(fecha_inicio, "tz_convert") else fecha_inicio.tz_localize(None)
+        if hasattr(fecha_fin, "tzinfo") and fecha_fin.tzinfo is not None:
+            fecha_fin = fecha_fin.tz_convert(None) if hasattr(fecha_fin, "tz_convert") else fecha_fin.tz_localize(None)
+
+        # Solo contar historias finalizadas (con paso por "en testing" en los últimos 3 meses)
+        if not fecha_inicio or not fecha_fin:
+            continue
+        if fecha_fin < datetime.now() - pd.DateOffset(months=3):
+            continue
+
+        dias = (fecha_fin - fecha_inicio).days
+        # --- Horas reales cargadas en Tempo para esa historia ---
+        mask = (df_horas["Issue"] == key)
+        horas_real = df_horas.loc[mask, "Horas"].sum()
+        velocidad = horas_real / puntos if puntos else np.nan
+
+        # --- Contar bugs asociados: buscar issues Bug cuyo parent sea esta historia ---
+        bugs = 0  # De momento, en 0
+
+        rows.append({
+            "Dev": dev,
+            "Historia": key,
+            "Resumen": summary,
+            "Puntos": puntos,
+            "Días": dias,
+            "Horas Tempo": round(horas_real,2),
+            "Velocidad (hs/punto)": round(velocidad, 2) if not np.isnan(velocidad) else np.nan,
+            "Bugs asociados": bugs
+        })
+
+    df = pd.DataFrame(rows)
+
+    # --- FILTROS base ---
+    df = df[df["Dev"] != "Sin asignar"]
+    df = df[~df["Dev"].isna()]
+    df = df[df["Puntos"].notnull() & (df["Puntos"] > 0)]
+
+    if df.empty:
+        st.info("No hay historias resueltas con usuario asignado y puntos para los últimos 3 meses.")
     else:
-        st.info("No hay datos suficientes para mostrar el Gantt histórico.")
+        # --- Filtros: Mes y Usuario, ambos en la misma fila ---
+        df["Mes cierre"] = pd.to_datetime(datetime.now() - pd.to_timedelta(df["Días"], unit="d")).dt.strftime("%Y-%m")
+        meses_unicos = sorted(df["Mes cierre"].unique())
+        devs_unicos = sorted(df["Dev"].unique())
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            mes_seleccionado = st.selectbox("Mes de cierre", meses_unicos, index=len(meses_unicos)-1)
+        with col2:
+            dev_seleccionado = st.selectbox("Usuario", ["Todos"] + devs_unicos)
+
+        # --- Tabla promedios: SIEMPRE todo el histórico (con filtro de usuario si aplica) ---
+        df_historico = df.copy()
+        if dev_seleccionado != "Todos":
+            df_historico = df_historico[df_historico["Dev"] == dev_seleccionado]
+        # Numérico robusto
+        df_historico["Velocidad (hs/punto)"] = pd.to_numeric(df_historico["Velocidad (hs/punto)"], errors="coerce")
+        df_historico["Puntos"] = pd.to_numeric(df_historico["Puntos"], errors="coerce")
+        df_historico["Horas Tempo"] = pd.to_numeric(df_historico["Horas Tempo"], errors="coerce")
+
+        velos = df_historico.groupby("Dev").agg(
+            Puntos_total=("Puntos", "sum"),
+            Historias=("Historia", "count"),
+            Horas_total=("Horas Tempo", "sum"),
+            Velocidad_promedio=("Velocidad (hs/punto)", "mean"),
+        ).reset_index()
+        velos = velos.sort_values("Velocidad_promedio", ascending=True)
+
+        # Fila de totales
+        total = pd.DataFrame([{
+            "Dev": "TOTAL",
+            "Puntos_total": velos["Puntos_total"].sum(),
+            "Historias": velos["Historias"].sum(),
+            "Horas_total": velos["Horas_total"].sum(),
+            "Velocidad_promedio": (velos["Horas_total"].sum() / velos["Puntos_total"].sum()) if velos["Puntos_total"].sum() else np.nan
+        }])
+        velos = pd.concat([velos, total], ignore_index=True)
+
+        st.markdown("### Velocidad promedio por dev (HISTÓRICO, NO SOLO MES)")
+        st.dataframe(velos, use_container_width=True)
+        st.bar_chart(velos.set_index("Dev")[["Puntos_total", "Velocidad_promedio"]])
+
+        # --- Filtro solo para la tabla de historias (por mes y usuario) ---
+        df_filtro = df[df["Mes cierre"] == mes_seleccionado]
+        if dev_seleccionado != "Todos":
+            df_filtro = df_filtro[df_filtro["Dev"] == dev_seleccionado]
+
+        df_filtro["Velocidad (hs/punto)"] = pd.to_numeric(df_filtro["Velocidad (hs/punto)"], errors="coerce")
+        df_filtro["Puntos"] = pd.to_numeric(df_filtro["Puntos"], errors="coerce")
+        df_filtro["Horas Tempo"] = pd.to_numeric(df_filtro["Horas Tempo"], errors="coerce")
+
+        st.markdown("### Historias resueltas por dev (mes y usuario seleccionados)")
+        st.dataframe(df_filtro, use_container_width=True)
+
+
+
+
+
+
 
 
 
