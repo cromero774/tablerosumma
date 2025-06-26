@@ -78,5 +78,10 @@
         "rn": "TAL-3461",
         "nombre": "AUTORIZACIÓN DE ANULACIONES",
         "mes_entrega": "Julio"
+    },
+    {
+        "rn": "TAL-7",
+        "nombre": "[RECLAMOS DE GARANTIA A FABRICA]",
+        "mes_entrega": "Septiembre"
     }
 ]
