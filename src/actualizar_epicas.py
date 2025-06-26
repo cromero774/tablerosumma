@@ -18,7 +18,8 @@ def actualizar_epicas():
         {"rn": "TAL-3544", "nombre": "[CIERRE DE SERVICIOS - TRABAJOS]", "mes_entrega": "Agosto"},
         {"rn": "TAL-3509", "nombre": "TOPES DE DESCUENTO/INCREMENTO", "mes_entrega": "Julio"},
         {"rn": "TAL-3462", "nombre": "CONFIGURACIÓN DE OT", "mes_entrega": "Julio"},
-        {"rn": "TAL-3461", "nombre": "AUTORIZACIÓN DE ANULACIONES", "mes_entrega": "Julio"}
+        {"rn": "TAL-3461", "nombre": "AUTORIZACIÓN DE ANULACIONES", "mes_entrega": "Julio"},
+        {"rn": "TAL-7", "nombre": "[RECLAMOS DE GARANTIA A FABRICA]", "mes_entrega": "Septiembre"}
     ]
 
     ruta_actual = os.path.dirname(os.path.abspath(__file__))

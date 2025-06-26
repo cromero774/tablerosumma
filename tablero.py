@@ -37,25 +37,69 @@ with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
 
 df["Usuario"] = df["Usuario"].map(accountid_to_name)
 
-MESES_ES = {
-    "01": "Enero", "02": "Febrero", "03": "Marzo", "04": "Abril",
-    "05": "Mayo", "06": "Junio", "07": "Julio", "08": "Agosto",
-    "09": "Septiembre", "10": "Octubre", "11": "Noviembre", "12": "Diciembre"
+# ============= DICCIONARIOS Y FUNCIÓN PARA TEMPO (Agregar antes de las pestañas) =============
+
+MAPEO_TEM = {
+    "TEM-5": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - ESCRITURA RF POSVENTA"),
+    "TEM-7": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - DESARROLLO MODULO REPUESTOS"),
+    "TEM-8": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - DESARROLLO ATI"),
+    "TEM-9": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - DESARROLLO MODULO TALLER"),
+    "TEM-30": ("CORE-TECH", "MAIPU - SUMMA - ESCRITURA RF ATI"),
+    # Agregá más si aparecen
 }
 
+RESUMEN_A_PROYECTO = {
+    "MAIPU - SUMMA - ESCRITURA RF POSVENTA": "AFUS",
+    "MAIPU - SUMMA - DESARROLLO MODULO REPUESTOS": "REPUESTOS MAIPU",
+    "MAIPU - SUMMA - DESARROLLO MODULO TALLER": "TALLER - MAIPÚ -",
+    "MAIPU - SUMMA - DESARROLLO ATI": "AFUs ATI",
+    "MAIPU - SUMMA - ESCRITURA RF ATI": "AFUs ATI",
+    "": "TECH LAB - INTERNO"
+}
+
+def obtener_proyecto_logico(row):
+    fecha = pd.to_datetime(row['Fecha'], errors='coerce')
+    issue = str(row.get('Issue', ''))
+    proyecto = str(row.get('Proyecto', ''))
+    # Antes de junio 2025: solo sumar horas si NO es del método nuevo
+    if fecha < pd.Timestamp("2025-06-01"):
+        if proyecto == "TEMPO WORKLOAD":
+            return None   # Ignorar estas filas nuevas antes de junio
+        return proyecto
+    # Desde junio 2025: mapping TEM solo si Issue es TEM-
+    if issue.startswith("TEM-"):
+        cuenta, resumen = MAPEO_TEM.get(issue, ("", ""))
+        if cuenta == "CORE-TECH":
+            if resumen == "MAIPU - SUMMA - ESCRITURA RF ATI":
+                return "AFUs ATI"
+            else:
+                return "TECH LAB - INTERNO"
+        elif cuenta == "MP-MAIPU-SUMMA":
+            return RESUMEN_A_PROYECTO.get(resumen, "OTRO")
+    # Desde junio 2025, para todo lo que no sea TEM-: usar Proyecto
+    return proyecto
+
+# Aplica la lógica
+df["Proyecto_logico"] = df.apply(obtener_proyecto_logico, axis=1)
+# Elimina filas que deben ignorarse (None)
+df = df[df["Proyecto_logico"].notna()]
+
+
+
+# Actualizar los proyectos para los filtros/postventa/ATI si querés que siempre se usen los nuevos nombres:
 PROYECTOS_POSTVENTA = [
     "TALLER - MAIPÚ -",
     "REPUESTOS MAIPU",
-    "AFU´S",
+    "AFUS",  # Usá "AFUS" en vez de "AFU´S"
     "TECH LAB - INTERNO"
 ]
 PROYECTOS_ATI = [
-    "AJUSTES TIMM - INTEGRACIONES",
     "AFUs ATI",
     "TECH LAB - INTERNO"
 ]
 
-opciones_menu = ["Horas Postventas", "Horas ATI", "Desarrollo Postventas", "Entregables postventas","BUGS Postventas","Histórico postventa","Velocidad de devs"]
+
+opciones_menu = ["Horas Postventas", "Horas ATI", "Desarrollo Postventas", "Entregables postventas","BUGS Postventas","Histórico postventa","Velocidad de devs","Gantt"]
 opcion = st.sidebar.radio("Seleccioná opción", opciones_menu)
 
 if opcion == "Horas Postventas":
@@ -74,7 +118,8 @@ elif opcion == "Histórico postventas":
     titulo = "Histórico postventas"
 elif opcion == "Velocidad de devs":
     titulo = "Velocidad de devs"
-
+elif opcion == "Gantt":
+    titulo = "Gantt"
 # === PESTAÑAS HORAS ===
 if opcion in ["Horas Postventas", "Horas ATI"]:
     if not df.empty:
@@ -83,6 +128,11 @@ if opcion in ["Horas Postventas", "Horas ATI"]:
             years = sorted(df["Fecha"].apply(lambda x: str(x)[:4]).unique())
             year = st.selectbox("Año", options=years, index=len(years) - 1, key=f"anio_{opcion}")
         with cols[1]:
+            MESES_ES = {
+                "01": "Enero", "02": "Febrero", "03": "Marzo", "04": "Abril",
+                "05": "Mayo", "06": "Junio", "07": "Julio", "08": "Agosto",
+                "09": "Septiembre", "10": "Octubre", "11": "Noviembre", "12": "Diciembre"
+            }
             meses_numeros = list(MESES_ES.keys())
             meses_nombres = [MESES_ES[m] for m in meses_numeros]
             mes_num = st.selectbox("Mes", options=meses_nombres, index=datetime.now().month - 1, key=f"mes_{opcion}")
@@ -91,44 +141,25 @@ if opcion in ["Horas Postventas", "Horas ATI"]:
             usuarios_lista = ["Todos"] + sorted([u for u in df["Usuario"].dropna().unique() if u != ""])
             usuario_seleccionado = st.selectbox("Usuario", usuarios_lista, index=0, key=f"user_{opcion}")
 
+        if opcion == "Horas Postventas":
+            proyectos_mostrar = PROYECTOS_POSTVENTA
+        elif opcion == "Horas ATI":
+            proyectos_mostrar = PROYECTOS_ATI
+
         if usuario_seleccionado == "Todos":
+            # ---- Vista general por mes y usuario
             df_filtrado = df[df["Fecha"].str.startswith(str(year))]
             df_filtrado = df_filtrado[df_filtrado["Fecha"].str[5:7] == mes_real]
+            df_filtrado = df_filtrado[df_filtrado["Proyecto_logico"].isin(proyectos_mostrar)]
 
-            usuario_proyectos = df_filtrado.groupby("Usuario")["Proyecto"].apply(set)
-            usuarios_equipo = []
-            usuarios_techlab_puros = []
-
-            for usuario, proyectos in usuario_proyectos.items():
-                if opcion == "Horas ATI":
-                    # Excluir si tiene horas en TALLER o REPUESTOS, salvo que sea solo TECH LAB INTERNO
-                    proyectos_sin_techlab = {p for p in proyectos if p != "TECH LAB - INTERNO"}
-                    if not any(p in PROYECTOS_POSTVENTA for p in proyectos_sin_techlab):
-                        if proyectos == {"TECH LAB - INTERNO"}:
-                            usuarios_techlab_puros.append(usuario)
-                        else:
-                            usuarios_equipo.append(usuario)
-
-                elif opcion == "Horas Postventas":
-                    if proyectos.issubset(set(PROYECTOS_POSTVENTA)):
-                        if proyectos == {"TECH LAB - INTERNO"}:
-                            usuarios_techlab_puros.append(usuario)
-                        else:
-                            usuarios_equipo.append(usuario)
-
-            df_equipo = df_filtrado[
-                (df_filtrado["Usuario"].isin(usuarios_equipo)) &
-                (df_filtrado["Proyecto"].isin(proyectos_mostrar))
-            ]
-
-            if df_equipo.empty:
+            if df_filtrado.empty:
                 st.warning("No hay horas cargadas para el mes, año y usuario seleccionados.")
             else:
                 tabla_pivot = pd.pivot_table(
-                    df_equipo,
+                    df_filtrado,
                     values='Horas',
                     index='Usuario',
-                    columns='Proyecto',
+                    columns='Proyecto_logico',
                     aggfunc='sum',
                     fill_value=0
                 )
@@ -161,156 +192,221 @@ if opcion in ["Horas Postventas", "Horas ATI"]:
                         "Total": st.column_config.Column(width="small", help="Total de horas"),
                     }
                 )
-
-                if usuarios_techlab_puros:
-                    st.markdown("### Usuarios que SOLO cargan horas en Tech Lab Interno")
-                    df_solo_techlab = df_filtrado[
-                        (df_filtrado["Usuario"].isin(usuarios_techlab_puros)) &
-                        (df_filtrado["Proyecto"] == "TECH LAB - INTERNO")
-                    ]
-                    tabla_solo = df_solo_techlab.groupby("Usuario")["Horas"].sum().reset_index()
-                    tabla_solo = tabla_solo.rename(columns={"Horas": "Horas Tech Lab Interno"})
-                    st.dataframe(
-                        tabla_solo.style.format({"Horas Tech Lab Interno": "{:,.2f}".format}),
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Usuario": st.column_config.Column(width="small"),
-                        }
-                    )
         else:
-            st.markdown(f"## Horas mensuales de {usuario_seleccionado} (todos los proyectos)")
+            # ---- Vista usuario: últimos 6 meses (tabla y gráfico ORDENADO)
+            fecha_ref = datetime(int(year), int(mes_real), 1)
+            fecha_inicio = (fecha_ref - pd.DateOffset(months=5)).replace(day=1)
+            df_user = df[(df["Usuario"] == usuario_seleccionado)].copy()
+            df_user["Fecha_dt"] = pd.to_datetime(df_user["Fecha"], errors="coerce")
+            df_user = df_user[
+                (df_user["Fecha_dt"] >= fecha_inicio) &
+                (df_user["Fecha_dt"] <= fecha_ref + pd.offsets.MonthEnd(0))
+            ]
+            df_user["anio_mes"] = df_user["Fecha_dt"].dt.strftime("%Y-%m")
+            resumen_meses = df_user.groupby("anio_mes")["Horas"].sum().reset_index()
+            meses_ultimos = pd.date_range(start=fecha_inicio, end=fecha_ref, freq="MS").strftime("%Y-%m").tolist()
+            resumen_meses = resumen_meses.set_index("anio_mes").reindex(meses_ultimos, fill_value=0).reset_index()
+            resumen_meses["Mes"] = resumen_meses["anio_mes"].apply(lambda x: MESES_ES[x[5:]] + " " + x[:4])
 
-            df_user = df[df["Usuario"] == usuario_seleccionado].copy()
-            if df_user.empty:
-                st.info("No hay datos de horas para este usuario.")
-            else:
-                df_user["Fecha"] = pd.to_datetime(df_user["Fecha"], errors='coerce')
-                df_user = df_user.dropna(subset=["Fecha"])
-                df_user["Año-Mes"] = df_user["Fecha"].dt.to_period("M")
-                max_period = df_user["Año-Mes"].max()
-                max_date = max_period.to_timestamp()
-                ultimos_6 = [(max_date - relativedelta(months=i)).to_period('M') for i in reversed(range(6))]
-                ultimos_6_labels = [f"{MESES_ES[p.strftime('%m')]} {p.strftime('%Y')}" for p in ultimos_6]
-                resumen_6m = (
-                    df_user.groupby("Año-Mes")["Horas"]
-                    .sum()
-                    .reindex(ultimos_6, fill_value=0)
-                    .reset_index()
-                )
-                resumen_6m["Mes"] = ultimos_6_labels
-                resumen_6m["Horas"] = resumen_6m["Horas"].round(2)
-                resumen_6m = resumen_6m[["Mes", "Horas"]]
-                resumen_6m = resumen_6m[resumen_6m["Horas"] > 0]
+            st.subheader(f"Horas cargadas por {usuario_seleccionado} (últimos 6 meses)")
+            st.dataframe(resumen_meses[["Mes", "Horas"]], hide_index=True, use_container_width=True)
 
-                MESES_NUM = {
-                    "Enero": "01", "Febrero": "02", "Marzo": "03", "Abril": "04",
-                    "Mayo": "05", "Junio": "06", "Julio": "07", "Agosto": "08",
-                    "Septiembre": "09", "Octubre": "10", "Noviembre": "11", "Diciembre": "12"
-                }
-                resumen_6m["Mes_dt"] = pd.to_datetime(
-                    resumen_6m["Mes"].str.extract(r'(\w+)\s(\d{4})').apply(
-                        lambda x: f"{x[1]}-{MESES_NUM[x[0]]}-01", axis=1
-                    )
-                )
-                resumen_6m = resumen_6m.sort_values("Mes_dt")
-                resumen_6m = resumen_6m.reset_index(drop=True)
+            # ---- Gráfico de barras, meses SIEMPRE ordenados
+            resumen_meses_plot = resumen_meses.set_index("anio_mes")["Horas"]
+            st.bar_chart(resumen_meses_plot, use_container_width=True)
 
-                st.dataframe(
-                    resumen_6m[["Mes", "Horas"]].style.format({"Horas": "{:,.2f}".format}),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                total_6m = resumen_6m["Horas"].sum()
-                st.markdown(f"**Total de horas en los últimos 6 meses: {total_6m:.2f}**")
-
-                st.markdown("### Gráfico de horas cargadas por mes")
-                orden_meses = list(resumen_6m["Mes"])
-                resumen_6m["Mes"] = pd.Categorical(resumen_6m["Mes"], categories=orden_meses, ordered=True)
-
-                fig = px.bar(
-                    resumen_6m,
-                    x="Mes",
-                    y="Horas",
-                    category_orders={"Mes": orden_meses},
-                    labels={"Mes": "Mes", "Horas": "Horas cargadas"},
-                    text_auto=True,
-                )
-                fig.update_layout(xaxis_title=None, yaxis_title=None)
-                st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("No hay datos para el período seleccionado.")
-
 # === PESTAÑA DESARROLLO POSTVENTAS ===
 if opcion == "Desarrollo Postventas":
     from jira_conexion import jira
     import pandas as pd
     import time
-    from datetime import datetime
+    from datetime import datetime, timedelta
+    import re
 
-    ESTADOS_HECHOS = [
-        "hecha", "hecho", "finalizado", "closed", "done",
-        "en testing", "listo", "implementado", "cerrado"
+    def traer_todas_las_issues(jira, jql, fields, max_results=100):
+        issues = []
+        start_at = 0
+        while True:
+            endpoint = (
+                f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            )
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        return issues
+
+    def obtener_sprint(issue):
+        sprint = issue["fields"].get("customfield_10021")
+        if isinstance(sprint, list) and sprint:
+            if isinstance(sprint[-1], dict):
+                return sprint[-1].get("name", "Sin Sprint")
+            elif isinstance(sprint[-1], str):
+                return sprint[-1]
+        elif isinstance(sprint, dict):
+            return sprint.get("name", "Sin Sprint")
+        elif isinstance(sprint, str):
+            return sprint
+        return "Sin Sprint"
+
+    def obtener_version(issue):
+        fix = issue["fields"].get("fixVersions", [])
+        if isinstance(fix, list) and fix:
+            return fix[-1].get("name", "")
+        return ""
+
+    ESTADOS_EN_PROCESO = [
+        "en desarrollo", "en testing", "en corrección", "por corregir",
+        "requiere validación", "en análisis", "sin refinar", "pausada", "en correccion"
     ]
+    ESTADO_LISTO_PARA_IMPLEMENTAR = "lista para implementar"
+    ESTADO_LISTA_PARA_DESARROLLAR = "lista para desarrollar"
 
-    jql = 'project in (TAL, REP) AND Sprint in openSprints() AND issuetype = Historia'
-    max_results = 200
+    fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
+    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields)
+    issues = issues_tal + issues_rep
 
-    endpoint = f'search?jql={jql}&fields=key,summary,status,project,sprint,issuetype,assignee,parent,statuscategorychangedate,duedate,subtasks,customfield_10016,customfield_10026&expand=changelog&maxResults={max_results}'
-    data = jira._get_json(endpoint)
-    issues = data.get("issues", [])
+    # ---- FILTRO: excluir historias "MADRE" ----
+    issues = [i for i in issues if "madre" not in i["fields"].get("summary", "").lower()]
 
-    # ----------- FILTRO POR USUARIO ASIGNADO -----------
-    usuarios_asignados = sorted(list({i["fields"]["assignee"]["displayName"]
-                                      for i in issues if i["fields"].get("assignee")}))
-    usuarios_seleccionados = st.multiselect(
-        "Filtrar por usuario asignado (podés elegir uno o más)", 
-        usuarios_asignados,
-        default=usuarios_asignados,
-        key="filtra_user_dev"
-    )
-
-    st.subheader("Cantidad de historias de usuario por estado (sprints activos)")
-
-    rows = []
-    rows_en_desarrollo = []
     for issue in issues:
+        issue["fields"]["Sprint"] = obtener_sprint(issue)
+        issue["fields"]["Version"] = obtener_version(issue)
+        issue["fields"]["Proyecto"] = issue["fields"]["project"]["name"]
+
+    regex_version = re.compile(r"\bv\d+\.\d+\b", re.IGNORECASE)
+    sprints_con_version = sorted({i["fields"]["Sprint"] for i in issues if i["fields"]["Sprint"] and regex_version.search(i["fields"]["Sprint"])})
+    versiones_unicas = sorted({i["fields"]["Version"] for i in issues if i["fields"]["Version"]})
+
+    col1, col2, col3 = st.columns([2, 2, 2])
+    with col1:
+        sprint_sel = st.selectbox(
+            "Filtrar por sprint (solo sprints con versión)",
+            ["Todos"] + sprints_con_version,
+            key="filtro_sprint"
+        )
+    with col2:
+        version_sel = st.selectbox(
+            "Filtrar por versión",
+            ["Todas"] + versiones_unicas,
+            key="filtro_version"
+        )
+    with col3:
+        usuarios_asignados = sorted(list({i["fields"]["assignee"]["displayName"]
+                                      for i in issues if i["fields"].get("assignee")}))
+        usuarios_asignados = ["Todos"] + usuarios_asignados
+        usuario_seleccionado = st.selectbox(
+            "Usuario asignado",
+            usuarios_asignados,
+            index=0,
+            key="usuario_asignado_dev"
+        )
+
+    # ---- FILTROS ----
+    if sprint_sel == "Todos":
+        issues_filtradas = [i for i in issues if i["fields"]["Sprint"] and regex_version.search(i["fields"]["Sprint"])]
+    else:
+        issues_filtradas = [i for i in issues if i["fields"]["Sprint"] == sprint_sel]
+    if version_sel != "Todas":
+        issues_filtradas = [i for i in issues_filtradas if i["fields"]["Version"] == version_sel]
+    if usuario_seleccionado != "Todos":
+        issues_filtradas = [i for i in issues_filtradas if i["fields"].get("assignee") and i["fields"]["assignee"]["displayName"] == usuario_seleccionado]
+
+    # ==== CONTADORES DE PORCENTAJE ====
+    if version_sel != "Todas":
+        historias_version = [i for i in issues if i["fields"]["Version"] == version_sel and "madre" not in i["fields"].get("summary", "").lower()]
+        total_hist = len(historias_version)
+        listas_implementar = [i for i in historias_version if i["fields"]["status"]["name"].strip().lower() == ESTADO_LISTO_PARA_IMPLEMENTAR]
+        total_listas = len(listas_implementar)
+        en_proceso = [i for i in historias_version if i["fields"]["status"]["name"].strip().lower() in ESTADOS_EN_PROCESO]
+        total_proceso = len(en_proceso)
+        porcentaje_avance = (total_listas / total_hist * 100) if total_hist > 0 else 0
+        porcentaje_proceso = (total_proceso / total_hist * 100) if total_hist > 0 else 0
+
+        cols = st.columns(2)
+        cols[0].metric("% Avance", f"{porcentaje_avance:.1f}%")
+        cols[1].metric("% En proceso", f"{porcentaje_proceso:.1f}%")
+
+    # ==== ALERTAS ====
+    hoy = datetime.now().date()
+    alertas_vencidas = []
+    alertas_proximas = []
+
+    for issue in issues_filtradas:
+        estado = issue["fields"]["status"]["name"].strip().lower()
+        fecha_fin_str = issue["fields"].get("duedate", "")
+        asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
+        if estado == "en desarrollo" and fecha_fin_str:
+            try:
+                fecha_fin = datetime.strptime(fecha_fin_str, "%Y-%m-%d").date()
+                dias_a_vencer = (fecha_fin - hoy).days
+                alerta_row = {
+                    "Clave": issue["key"],
+                    "Resumen": issue["fields"]["summary"],
+                    "Asignado": asignado,
+                    "Fecha de fin": fecha_fin.strftime("%d/%m/%Y"),
+                    "Estado": estado.capitalize()
+                }
+                if fecha_fin < hoy:
+                    alertas_vencidas.append(alerta_row)
+                elif 0 <= dias_a_vencer <= 2:
+                    alertas_proximas.append(alerta_row)
+            except Exception:
+                pass
+
+    if alertas_vencidas:
+        st.error("⚠️ Historias EN DESARROLLO con fecha de fin vencida:")
+        df_vencidas = pd.DataFrame(alertas_vencidas)
+        st.dataframe(df_vencidas, use_container_width=True, hide_index=True)
+    if alertas_proximas:
+        st.warning("⏳ Historias EN DESARROLLO que vencen en <= 2 días:")
+        df_proximas = pd.DataFrame(alertas_proximas)
+        st.dataframe(df_proximas, use_container_width=True, hide_index=True)
+    if not alertas_vencidas and not alertas_proximas:
+        st.success("No hay historias en desarrollo vencidas ni próximas a vencer.")
+
+    # -- Construcción de filas --
+    rows = []
+    for issue in issues_filtradas:
         estado = issue["fields"]["status"]["name"]
-        # Epica: buscamos por todos los métodos posibles
         epic_name = None
-        # 1. Parent > summary
         if "parent" in issue["fields"] and issue["fields"]["parent"]:
             parent = issue["fields"]["parent"]
-            # Puede venir como dict plano o anidado en fields
             if "summary" in parent:
                 epic_name = parent["summary"]
             elif "fields" in parent and "summary" in parent["fields"]:
                 epic_name = parent["fields"]["summary"]
-        # 2. Campo custom (a veces viene solo el key)
-        if not epic_name or epic_name == "Sin épica":
+        if not epic_name:
             epica_custom = issue["fields"].get("customfield_10016", None)
             if epica_custom and isinstance(epica_custom, dict) and "value" in epica_custom:
                 epic_name = epica_custom["value"]
             elif epica_custom:
                 epic_name = str(epica_custom)
-        # 3. Fallback
         if not epic_name:
             epic_name = "Sin épica"
 
         puntos = issue["fields"].get("customfield_10026", "")
-        if puntos is None:
-            puntos = ""
+        try:
+            puntos = float(puntos)
+        except (TypeError, ValueError):
+            puntos = 0
 
         fila = {
             "Clave": issue["key"],
             "Resumen": issue["fields"]["summary"],
             "Estado": estado,
-            "Proyecto": issue["fields"]["project"]["name"],
+            "Proyecto": issue["fields"]["Proyecto"],
             "Epica": epic_name,
             "Asignado": None,
-            "Fecha en que la tomó": None,
-            "Fecha finalización": "Sin fecha de fin",
+            "Sprint": issue["fields"]["Sprint"],
+            "Version": issue["fields"]["Version"],
+            "Fecha en que la tomó": issue["fields"].get("statuscategorychangedate", "")[:10] if issue["fields"].get("statuscategorychangedate") else "",
+            "Fecha finalización": issue["fields"].get("duedate", "Sin fecha de fin"),
             "Porcentaje avance": "Sin calcular",
             "Puntos": puntos
         }
@@ -318,139 +414,36 @@ if opcion == "Desarrollo Postventas":
         if issue["fields"].get("assignee"):
             fila["Asignado"] = issue["fields"]["assignee"]["displayName"]
 
-        if "statuscategorychangedate" in issue["fields"] and issue["fields"]["statuscategorychangedate"]:
-            fila["Fecha en que la tomó"] = issue["fields"]["statuscategorychangedate"][:10]
-
-        if "duedate" in issue["fields"] and issue["fields"]["duedate"]:
-            fila["Fecha finalización"] = issue["fields"]["duedate"]
-
         rows.append(fila)
-        if estado.lower() == "en desarrollo":
-            rows_en_desarrollo.append(fila)
 
-    # -------- Métricas por estado (según filtro) --------
-    if usuarios_seleccionados:
-        rows_filtrados = [r for r in rows if r["Asignado"] in usuarios_seleccionados]
-        rows_en_desarrollo_filtrados = [r for r in rows_en_desarrollo if r["Asignado"] in usuarios_seleccionados]
-    else:
-        rows_filtrados = rows
-        rows_en_desarrollo_filtrados = rows_en_desarrollo
+    mostrar_todas = st.checkbox("Mostrar todas las historias filtradas (no solo las que están en desarrollo)", value=False)
 
     estados = {}
-    for fila in rows_filtrados:
+    for fila in rows:
         estado = fila["Estado"]
         estados[estado] = estados.get(estado, 0) + 1
     estado_names = sorted(estados.keys())
-    cols = st.columns(len(estado_names))
-    for col, estado in zip(cols, estado_names):
-        col.metric(label=estado, value=estados[estado])
+    if estado_names:
+        cols = st.columns(len(estado_names))
+        for col, estado in zip(cols, estado_names):
+            col.metric(label=estado, value=estados[estado])
 
-    # ==========================
-    # ALERTAS VISUALES AGREGADAS
-    # ==========================
-
-    # Alertas solo para historias EN DESARROLLO
-    alerta_liberacion = []
-    alerta_vencimiento = []
-    hoy = datetime.now().date()
-
-    for fila in rows_en_desarrollo_filtrados:
-        fecha_vto_str = fila["Fecha finalización"]
-        asignado = fila.get("Asignado", "")
-        clave = fila.get("Clave", "")
-        resumen = fila.get("Resumen", "")
-        estado = fila.get("Estado", "")
-
-        # Solo consideramos si tiene fecha válida
-        if fecha_vto_str and fecha_vto_str != "Sin fecha de fin":
-            try:
-                fecha_vto = datetime.strptime(fecha_vto_str[:10], "%Y-%m-%d").date()
-                dias_restantes = (fecha_vto - hoy).days
-            except Exception:
-                continue
-
-            # Alerta 1: usuario se libera en 2 días
-            if asignado and dias_restantes == 2:
-                alerta_liberacion.append({
-                    "Usuario": asignado,
-                    "Clave": clave,
-                    "Resumen": resumen,
-                    "Fecha vencimiento": fecha_vto_str
-                })
-            # Alerta 2: historia vencida o por vencer
-            if dias_restantes < 0:
-                alerta_vencimiento.append({
-                    "Alerta": "Vencida",
-                    "Clave": clave,
-                    "Resumen": resumen,
-                    "Asignado": asignado,
-                    "Fecha vencimiento": fecha_vto_str,
-                    "Estado": estado
-                })
-            elif dias_restantes in [0, 1]:
-                alerta_vencimiento.append({
-                    "Alerta": "Por vencer",
-                    "Clave": clave,
-                    "Resumen": resumen,
-                    "Asignado": asignado,
-                    "Fecha vencimiento": fecha_vto_str,
-                    "Estado": estado
-                })
-
-    # Mostramos las alertas (si hay)
-    if alerta_liberacion:
-        st.warning("🔔 *Usuarios que se liberan de tarea en 2 días*")
-        st.dataframe(
-            pd.DataFrame(alerta_liberacion)[["Usuario", "Clave", "Resumen", "Fecha vencimiento"]],
-            use_container_width=True,
-            hide_index=True
-        )
-
-    if alerta_vencimiento:
-        st.markdown(
-            "<div style='padding: 10px; background-color: #b30000; color: #fff; font-weight: bold; border-radius: 5px; margin-bottom: 8px;'>⚠️ Historias vencidas o por vencer</div>",
-            unsafe_allow_html=True
-        )
-        df_alertas = pd.DataFrame(alerta_vencimiento)[["Alerta", "Clave", "Resumen", "Asignado", "Fecha vencimiento", "Estado"]]
-
-        def color_alerta(row):
-            if row["Alerta"] == "Vencida":
-                return ['background-color: #b30000; color: #fff; font-weight:bold']*len(row)
-            elif row["Alerta"] == "Por vencer":
-                return ['background-color: #ffd500; color: #000; font-weight:bold']*len(row)
-            else:
-                return ['']*len(row)
-
-        st.dataframe(
-            df_alertas.style.apply(color_alerta, axis=1),
-            use_container_width=True,
-            hide_index=True
-        )
-
-    # ==========================
-    # FIN ALERTAS VISUALES
-    # ==========================
-
-    # Checkbox para mostrar el detalle de todas las historias en el sprint
-    mostrar_todas = st.checkbox("Mostrar detalle de historias de usuario (todas las del sprint)", value=False)
-
+    # Tabla
     if mostrar_todas:
-        df_todas = pd.DataFrame(rows_filtrados)
-        st.dataframe(
-            df_todas[["Clave", "Resumen", "Epica", "Puntos", "Asignado", "Fecha en que la tomó", "Fecha finalización", "Estado"]],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    st.markdown("---")
-    st.markdown("### Historias de usuario EN DESARROLLO")
-
-    if not rows_en_desarrollo_filtrados:
-        st.info("No hay historias de usuario en estado En Desarrollo.")
+        rows_a_mostrar = rows
+        label_tabla = "Todas las historias filtradas"
     else:
-        calcular_avance = st.checkbox("Mostrar % de avance de subtareas (puede demorar)", value=False)
+        rows_a_mostrar = [r for r in rows if r["Estado"].strip().lower() == "en desarrollo"]
+        label_tabla = "Todas las historias EN DESARROLLO"
+
+    st.markdown(f"### {label_tabla}")
+
+    if not rows_a_mostrar:
+        st.info("No hay historias para mostrar con los filtros seleccionados.")
+    else:
+        calcular_avance = st.checkbox("Mostrar % de avance de subtareas (puede demorar)", value=False, key="avance_subtareas")
         if calcular_avance:
-            for fila in rows_en_desarrollo_filtrados:
+            for fila in rows_a_mostrar:
                 issue = next((i for i in issues if i["key"] == fila["Clave"]), None)
                 if not issue:
                     fila["Porcentaje avance"] = "Sin subtareas"
@@ -464,7 +457,7 @@ if opcion == "Desarrollo Postventas":
                         try:
                             st_info = jira._get_json(f'issue/{st_key}?fields=status')
                             st_status = st_info["fields"]["status"]["name"]
-                            if st_status.lower() in ESTADOS_HECHOS:
+                            if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
                                 hechas += 1
                         except Exception:
                             pass
@@ -473,48 +466,52 @@ if opcion == "Desarrollo Postventas":
                 else:
                     fila["Porcentaje avance"] = "Sin subtareas"
         else:
-            for fila in rows_en_desarrollo_filtrados:
+            for fila in rows_a_mostrar:
                 fila["Porcentaje avance"] = "Sin calcular"
 
-        df_desarrollo = pd.DataFrame(rows_en_desarrollo_filtrados)
+        df_tabla = pd.DataFrame(rows_a_mostrar)
+        df_tabla["Puntos"] = pd.to_numeric(df_tabla["Puntos"], errors="coerce").fillna(0).astype(float)
         st.dataframe(
-            df_desarrollo[["Clave", "Resumen", "Epica", "Puntos", "Asignado", "Fecha en que la tomó", "Fecha finalización", "Porcentaje avance"]],
+            df_tabla[["Clave", "Resumen", "Epica", "Puntos", "Asignado", "Sprint", "Proyecto", "Version", "Fecha en que la tomó", "Fecha finalización", "Porcentaje avance", "Estado"]],
             use_container_width=True,
             hide_index=True,
         )
         st.caption('Nota: "% de avance" se calcula por subtareas solo si tildás la opción, así la carga es mucho más rápida.')
 
-    # === GANTT para historias con fecha de vencimiento ===
+    # ========== GANTT ==========
     st.markdown("---")
-    st.subheader("Gantt: Historias con fecha de vencimiento (solo las que tienen fecha definida)")
+    st.subheader("Gantt: Historias EN DESARROLLO (con fechas válidas)")
+
     gantt_rows = [
-        fila for fila in rows_filtrados
-        if fila["Fecha finalización"] != "Sin fecha de fin"
-        and (fila["Estado"].lower() == "en desarrollo")
+        fila for fila in rows
+        if fila["Estado"].strip().lower() == "en desarrollo" and fila["Fecha finalización"] != "Sin fecha de fin"
     ]
     gantt_df = pd.DataFrame(gantt_rows)
     if not gantt_df.empty:
-        # Convertir fechas a datetime
         gantt_df["Inicio"] = pd.to_datetime(gantt_df["Fecha en que la tomó"], errors="coerce")
         gantt_df["Fin"] = pd.to_datetime(gantt_df["Fecha finalización"], errors="coerce")
-        # Filtrar solo las filas válidas
+        gantt_df["Puntos"] = pd.to_numeric(gantt_df["Puntos"], errors="coerce").fillna(0).astype(float)
         gantt_df = gantt_df[gantt_df["Inicio"].notnull() & gantt_df["Fin"].notnull()]
         if gantt_df.empty:
             st.info("No hay historias con fechas válidas para mostrar en el Gantt.")
         else:
+            import plotly.express as px
             fig = px.timeline(
                 gantt_df,
                 x_start="Inicio",
                 x_end="Fin",
                 y="Clave",
                 color="Asignado",
-                hover_data=["Resumen", "Puntos", "Estado"]
+                hover_data=["Resumen", "Puntos", "Sprint", "Proyecto", "Version"]
             )
             fig.update_yaxes(autorange="reversed")
-            fig.update_layout(title='Historias con Fecha de Vencimiento (Gantt)')
+            fig.update_layout(title='Historias EN DESARROLLO (Gantt)')
             st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("No hay historias con fecha de vencimiento para mostrar en el Gantt.")
+        st.info("No hay historias en desarrollo con fecha de vencimiento para mostrar en el Gantt.")
+
+
+
 
 # === ENTREGABLES POSTVENTAS ===
 if opcion == "Entregables postventas":
@@ -881,7 +878,7 @@ if opcion == "BUGS Postventas":
     import json
     from datetime import datetime
     import streamlit as st
-
+    st.warning("⚠️ Pestaña en construcción. Pronto habrá más detalles.")
     def normalize(s):
         if not s:
             return ""
@@ -1085,13 +1082,11 @@ if opcion == "Histórico postventa":
     issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
     issues = issues_tal + issues_rep
 
-    # Eliminar duplicados por key
     issues_unicos = {}
     for issue in issues:
         issues_unicos[issue['key']] = issue
     issues = list(issues_unicos.values())
 
-    # --- Agrupar historias por épica ---
     EPIC_LINK_CAMPO = "customfield_10016"
     epicas = {}
     for issue in issues:
@@ -1113,7 +1108,7 @@ if opcion == "Histórico postventa":
 
         summary = issue["fields"]["summary"]
         if "madre" in summary.lower():
-            continue  # No contar historias MADRE
+            continue
 
         estado = (issue["fields"]["status"]["name"] or "").strip().lower()
         asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
@@ -1193,40 +1188,34 @@ if opcion == "Histórico postventa":
                     )
             else:
                 st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
-
-
 #velocidad devs
+
+# Pestaña Velocidad de devs
+
 if opcion == "Velocidad de devs":
-    st.title("Velocidad de devs (últimos 3 meses)")
     import pandas as pd
-    import numpy as np
-    from datetime import datetime
-    import os, json
-
-    # --- Leer horas históricas (Tempo) ---
-    horas_path = "data/horas_historicas.csv"
-    if not os.path.exists(horas_path):
-        st.error("No existe el archivo de horas históricas. Generalo primero.")
-        st.stop()
-    df_horas = pd.read_csv(horas_path)
-    df_horas["Fecha"] = pd.to_datetime(df_horas["Fecha"], errors="coerce")
-
-    # --- Mapping accountId → nombre de usuario ---
-    with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
-        accountid_to_name = json.load(f)
-    df_horas["Dev"] = df_horas["Usuario"].map(accountid_to_name)
-
-    # --- Traer historias de usuario de Jira ---
+    import streamlit as st
+    import json
     from jira_conexion import jira
 
-    fields = "key,summary,status,assignee,customfield_10026,parent,created,updated,customfield_10016"
-    jql = 'project in (TAL, REP) AND issuetype = Historia'
-    def traer_todos_los_issues(jira, jql, fields, max_results=100):
+    st.header("Velocidad de devs")
+    st.warning("⚠️ Esta pestaña está en construcción. Los datos y cálculos pueden no ser definitivos.")
+    # Mapping usuarios
+    with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
+        accountid_to_name = json.load(f)
+
+    # Cargar horas históricas
+    df_horas = pd.read_csv("data/horas_historicas.csv")
+    df_horas["Usuario_nombre"] = df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"])
+
+    # Traer historias de Jira (TAL, REP, ATI)
+    fields = "key,summary,status,project,issuetype,assignee,customfield_10026,statuscategorychangedate"
+    def traer_todas_las_issues(jira, jql, fields, max_results=100):
         issues = []
         start_at = 0
         while True:
             endpoint = (
-                f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}&expand=changelog'
+                f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
             )
             data = jira._get_json(endpoint)
             batch = data.get("issues", [])
@@ -1236,10 +1225,13 @@ if opcion == "Velocidad de devs":
             start_at += max_results
         return issues
 
-    issues = traer_todos_los_issues(jira, jql, fields)
+    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields)
+    issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+    issues = issues_tal + issues_rep + issues_ati
 
-    # --- Procesar historias ---
-    rows = []
+    # Dataframe de historias
+    rows_issues = []
     for issue in issues:
         key = issue["key"]
         puntos = issue["fields"].get("customfield_10026", 0)
@@ -1247,121 +1239,230 @@ if opcion == "Velocidad de devs":
             puntos = float(puntos)
         except Exception:
             puntos = 0
-        dev_accountid = issue["fields"]["assignee"]["accountId"] if issue["fields"].get("assignee") else None
-        dev = accountid_to_name.get(dev_accountid, "Sin asignar") if dev_accountid else "Sin asignar"
-        summary = issue["fields"].get("summary", "")
-
-        # --- Historial de estados (solo si viene expandido el changelog) ---
-        fecha_inicio, fecha_fin = None, None
-        if "changelog" in issue and "histories" in issue["changelog"]:
-            for hist in sorted(issue["changelog"]["histories"], key=lambda h: h["created"]):
-                for item in hist["items"]:
-                    if item["field"] == "status":
-                        if not fecha_inicio and "desarrollo" in (item["toString"] or "").lower():
-                            fecha_inicio = pd.to_datetime(hist["created"], utc=True)
-                        if "testing" in (item["toString"] or "").lower():
-                            fecha_fin = pd.to_datetime(hist["created"], utc=True)
-                            break
-        # Si no se encuentra el historial, intentar con updated y created
-        if not fecha_inicio:
-            fecha_inicio = pd.to_datetime(issue["fields"]["created"], utc=True)
-        if not fecha_fin:
-            fecha_fin = pd.to_datetime(issue["fields"]["updated"], utc=True)
-        # --- Solución zonas horarias: Pasar todo a naive ---
-        if hasattr(fecha_inicio, "tzinfo") and fecha_inicio.tzinfo is not None:
-            fecha_inicio = fecha_inicio.tz_convert(None) if hasattr(fecha_inicio, "tz_convert") else fecha_inicio.tz_localize(None)
-        if hasattr(fecha_fin, "tzinfo") and fecha_fin.tzinfo is not None:
-            fecha_fin = fecha_fin.tz_convert(None) if hasattr(fecha_fin, "tz_convert") else fecha_fin.tz_localize(None)
-
-        # Solo contar historias finalizadas (con paso por "en testing" en los últimos 3 meses)
-        if not fecha_inicio or not fecha_fin:
-            continue
-        if fecha_fin < datetime.now() - pd.DateOffset(months=3):
-            continue
-
-        dias = (fecha_fin - fecha_inicio).days
-        # --- Horas reales cargadas en Tempo para esa historia ---
-        mask = (df_horas["Issue"] == key)
-        horas_real = df_horas.loc[mask, "Horas"].sum()
-        velocidad = horas_real / puntos if puntos else np.nan
-
-        # --- Contar bugs asociados: buscar issues Bug cuyo parent sea esta historia ---
-        bugs = 0  # De momento, en 0
-
-        rows.append({
-            "Dev": dev,
-            "Historia": key,
-            "Resumen": summary,
+        estado = (issue["fields"]["status"]["name"] or "").strip().lower()
+        asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
+        fecha_estado = issue["fields"].get("statuscategorychangedate", "")
+        proyecto = issue["fields"]["project"]["key"] if issue["fields"].get("project") else ""
+        rows_issues.append({
+            "Issue": key,
             "Puntos": puntos,
-            "Días": dias,
-            "Horas Tempo": round(horas_real,2),
-            "Velocidad (hs/punto)": round(velocidad, 2) if not np.isnan(velocidad) else np.nan,
-            "Bugs asociados": bugs
+            "Estado": estado,
+            "Asignado": asignado,
+            "Fecha_estado": fecha_estado,
+            "Proyecto": proyecto
         })
+    df_issues = pd.DataFrame(rows_issues)
+    df_issues["Fecha_estado"] = pd.to_datetime(df_issues["Fecha_estado"], errors="coerce").dt.tz_localize(None)
 
-    df = pd.DataFrame(rows)
+    # Filtrar historias "quemadas" y asignadas desde marzo 2025
+    estados_quemados = ["lista para implementar", "en testing"]
+    fecha_limite = pd.to_datetime("2025-03-01")
+    df_issues = df_issues[
+        (df_issues["Puntos"] > 0)
+        & (df_issues["Estado"].isin(estados_quemados))
+        & (df_issues["Fecha_estado"] >= fecha_limite)
+    ].copy()
 
-    # --- FILTROS base ---
-    df = df[df["Dev"] != "Sin asignar"]
-    df = df[~df["Dev"].isna()]
-    df = df[df["Puntos"].notnull() & (df["Puntos"] > 0)]
+    # Traer bugs asociados (tipo "Error" en Jira)
+    bug_fields = "key,issuetype,project,parent,assignee"
+    bugs_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Error', bug_fields)
+    bugs_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Error', bug_fields)
+    bugs_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Error', bug_fields)
+    bugs = bugs_tal + bugs_rep + bugs_ati
+    bug_map = {}
+    for bug in bugs:
+        parent = bug["fields"].get("parent", {})
+        parent_key = parent.get("key")
+        if parent_key:
+            bug_map.setdefault(parent_key, 0)
+            bug_map[parent_key] += 1
 
-    if df.empty:
-        st.info("No hay historias resueltas con usuario asignado y puntos para los últimos 3 meses.")
+    # Unir historias con horas cargadas
+    df_velocidad = pd.merge(df_horas, df_issues, on="Issue", how="inner")
+    df_velocidad = df_velocidad[
+        (df_velocidad["Horas"] > 0) &
+        (df_velocidad["Usuario_nombre"] == df_velocidad["Asignado"])
+    ].copy()
+
+    # Quitar usuarios no mapeados (que quedan como IDs)
+    usuarios_validos = sorted([u for u in df_velocidad["Usuario_nombre"].dropna().unique() if " " in u or "." in u])
+    usuario_sel = st.selectbox("Seleccioná usuario", ["Todos"] + usuarios_validos)
+
+    # ========== FILTRO POR USUARIO ==========
+    if usuario_sel != "Todos":
+        df_user = df_velocidad[df_velocidad["Usuario_nombre"] == usuario_sel].copy()
+        if not df_user.empty:
+            # Armamos la tabla histórica de historias (por historia, por usuario)
+            df_user["Mes_dt"] = pd.to_datetime(df_user["Fecha"], errors="coerce")
+            df_user["Mes"] = df_user["Mes_dt"].dt.strftime("%B %Y")
+            tabla_hist = (
+                df_user.groupby(["Mes", "Mes_dt", "Issue", "Puntos", "Estado"], as_index=False)
+                .agg({"Horas": "sum"})
+                .sort_values(["Mes_dt", "Issue"])
+            )
+            tabla_hist["Velocidad"] = (tabla_hist["Horas"] / tabla_hist["Puntos"]).apply(lambda x: int(-(-x // 1)) if pd.notnull(x) else 0)
+            tabla_hist["Bugs"] = tabla_hist["Issue"].map(lambda k: bug_map.get(k, 0))
+            tabla_hist = tabla_hist.rename(columns={
+                "Mes": "Mes",
+                "Issue": "Clave",
+                "Puntos": "Puntos",
+                "Horas": "Horas",
+                "Velocidad": "Velocidad",
+                "Estado": "Estado",
+                "Bugs": "Bugs"
+            })
+
+            # ---- PROMEDIOS SOLO SOBRE TABLA HISTÓRICA ----
+            resumen = pd.DataFrame([{
+                "Usuario_nombre": usuario_sel,
+                "Promedio_puntos": tabla_hist["Puntos"].mean(),
+                "Promedio_horas": tabla_hist["Horas"].mean(),
+                "Historias_quemadas": tabla_hist.shape[0],
+                "Velocidad": int(-(-tabla_hist["Horas"].mean() // tabla_hist["Puntos"].mean())) if tabla_hist["Puntos"].mean() > 0 else 0,
+                "Bugs": tabla_hist["Bugs"].sum()
+            }])
+
+            st.subheader("Velocidad promedio por dev")
+            st.dataframe(resumen, hide_index=True)
+
+            # ---- TABLA HISTÓRICA POR HISTORIA ----
+            st.markdown("### Velocidad por historia")
+            st.dataframe(tabla_hist[["Mes", "Clave", "Puntos", "Horas", "Velocidad", "Bugs", "Estado"]], hide_index=True, use_container_width=True)
+
+            # ---- GRÁFICO DE VELOCIDAD MENSUAL ORDENADO POR FECHA ----
+            vel_mensual = tabla_hist.groupby(["Mes", "Mes_dt"])["Velocidad"].mean().reset_index()
+            vel_mensual = vel_mensual.sort_values("Mes_dt")
+            st.markdown("#### Velocidad promedio mensual")
+            st.line_chart(vel_mensual.set_index("Mes")["Velocidad"])
+
+        else:
+            st.warning("No hay datos con las condiciones seleccionadas.")
+
     else:
-        # --- Filtros: Mes y Usuario, ambos en la misma fila ---
-        df["Mes cierre"] = pd.to_datetime(datetime.now() - pd.to_timedelta(df["Días"], unit="d")).dt.strftime("%Y-%m")
-        meses_unicos = sorted(df["Mes cierre"].unique())
-        devs_unicos = sorted(df["Dev"].unique())
+        # Si selecciona TODOS, mostramos promedios de todos (como antes, pero ordenados)
+        resumen = (
+            df_velocidad.groupby("Usuario_nombre")
+            .agg(
+                Promedio_puntos=("Puntos", "mean"),
+                Promedio_horas=("Horas", "mean"),
+                Historias_quemadas=("Issue", "count"),
+                Bugs=("Issue", lambda x: sum([bug_map.get(k, 0) for k in x])),
+            )
+            .reset_index()
+        )
+        resumen["Velocidad"] = (resumen["Promedio_horas"] / resumen["Promedio_puntos"]).apply(lambda x: int(-(-x // 1)) if pd.notnull(x) else 0)
+        resumen = resumen.sort_values("Velocidad")
+        resumen = resumen[["Usuario_nombre", "Promedio_puntos", "Promedio_horas", "Historias_quemadas", "Velocidad", "Bugs"]]
+        st.subheader("Velocidad promedio por dev")
+        st.dataframe(resumen, hide_index=True)
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            mes_seleccionado = st.selectbox("Mes de cierre", meses_unicos, index=len(meses_unicos)-1)
-        with col2:
-            dev_seleccionado = st.selectbox("Usuario", ["Todos"] + devs_unicos)
+#ganttentregables
 
-        # --- Tabla promedios: SIEMPRE todo el histórico (con filtro de usuario si aplica) ---
-        df_historico = df.copy()
-        if dev_seleccionado != "Todos":
-            df_historico = df_historico[df_historico["Dev"] == dev_seleccionado]
-        # Numérico robusto
-        df_historico["Velocidad (hs/punto)"] = pd.to_numeric(df_historico["Velocidad (hs/punto)"], errors="coerce")
-        df_historico["Puntos"] = pd.to_numeric(df_historico["Puntos"], errors="coerce")
-        df_historico["Horas Tempo"] = pd.to_numeric(df_historico["Horas Tempo"], errors="coerce")
+if opcion == "Gantt":
+    import pandas as pd
+    import plotly.express as px
+    from datetime import datetime
 
-        velos = df_historico.groupby("Dev").agg(
-            Puntos_total=("Puntos", "sum"),
-            Historias=("Historia", "count"),
-            Horas_total=("Horas Tempo", "sum"),
-            Velocidad_promedio=("Velocidad (hs/punto)", "mean"),
-        ).reset_index()
-        velos = velos.sort_values("Velocidad_promedio", ascending=True)
+    # --- URLs de los CSV ---
+    link_postventas = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTRvUazuzfWjGl5VWuZJUJslZEf-PpYyHZ_5G2SXwPtu16R71mPSKVQTYjen9UBwQ/pub?gid=865145678&single=true&output=csv"
+    link_ati = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6s9qMzmA_sJRko5EDggumO4sybGVq3n-uOmZOMj8CJDnHo9AWZeZOXZGz7cTg4XoqeiPDIgQP3QER/pub?output=csv"
+    link_afupost = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3rrcWGJWtEbowD_8bJ35lbziZ208DFGdo1JkHKhMvRK9SBjxxlTolXjeoKVMu4v447yfgQn0tUjsT/pub?output=csv"
+    link_afuati = "https://docs.google.com/spreadsheets/d/e/2PACX-1vThHnFUDJm9AlT-rODLiPhLSTqH1O12_yz0Z_0SJJ3EAtS84GH6lptWpr2eSMPuyv50ShS3ysozwsKe/pub?output=csv"
 
-        # Fila de totales
-        total = pd.DataFrame([{
-            "Dev": "TOTAL",
-            "Puntos_total": velos["Puntos_total"].sum(),
-            "Historias": velos["Historias"].sum(),
-            "Horas_total": velos["Horas_total"].sum(),
-            "Velocidad_promedio": (velos["Horas_total"].sum() / velos["Puntos_total"].sum()) if velos["Puntos_total"].sum() else np.nan
-        }])
-        velos = pd.concat([velos, total], ignore_index=True)
+    # --- Paleta de colores por estado ---
+    color_estado = {
+        'Entregado': '#2ecc71',
+        'En desarrollo': '#1abc9c',
+        'Backlog': '#f1c40f',
+        'Para refinar': '#f5d76e',
+        'Escribiendo': '#e67e22',
+        'Para escribir': '#e74c3c',
+        'En análisis': '#9b59b6',
+        'Cancelado': '#95a5a6',
+        'Error': '#e74c3c'
+    }
 
-        st.markdown("### Velocidad promedio por dev (HISTÓRICO, NO SOLO MES)")
-        st.dataframe(velos, use_container_width=True)
-        st.bar_chart(velos.set_index("Dev")[["Puntos_total", "Velocidad_promedio"]])
+    def cargar_datos_gantt(link, tipo="postventas"):
+        df = pd.read_csv(link)
+        df.columns = df.columns.str.strip().str.lower()
+        df['rn'] = df['rn'].astype(str).str.strip()
+        # Fechas
+        for col in ['inicio', 'fin']:
+            df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
+        df = df.dropna(subset=['inicio', 'fin'])
+        # Mes de entrega
+        if 'mes' in df.columns:
+            df['mes de entrega'] = df['mes']
+        else:
+            df['mes de entrega'] = df['fin'].dt.to_period('M').astype(str)
+        # Truncar RN para mejor visual
+        df['rn_trunc'] = df['rn'].apply(lambda x: x if len(x) <= 30 else x[:27] + '...')
+        # Por si no está la columna 'afu asignado'
+        if 'afu asignado' not in df.columns:
+            df['afu asignado'] = 'Sin asignar'
+        return df
 
-        # --- Filtro solo para la tabla de historias (por mes y usuario) ---
-        df_filtro = df[df["Mes cierre"] == mes_seleccionado]
-        if dev_seleccionado != "Todos":
-            df_filtro = df_filtro[df_filtro["Dev"] == dev_seleccionado]
+    st.markdown("## Gantt - SUMMA")
+    gantt_proyecto = st.radio(
+        "Seleccioná el Gantt que querés ver:",
+        ("Desarrollo Postventas", "Desarrollo ATI", "AFUs Postventas", "AFUs ATI"),
+        horizontal=True,
+        key="gantt_proyecto"
+    )
 
-        df_filtro["Velocidad (hs/punto)"] = pd.to_numeric(df_filtro["Velocidad (hs/punto)"], errors="coerce")
-        df_filtro["Puntos"] = pd.to_numeric(df_filtro["Puntos"], errors="coerce")
-        df_filtro["Horas Tempo"] = pd.to_numeric(df_filtro["Horas Tempo"], errors="coerce")
+    if gantt_proyecto == "Desarrollo Postventas":
+        df_gantt = cargar_datos_gantt(link_postventas, tipo="postventas")
+        filtros = ['mes de entrega', 'estado']
+    elif gantt_proyecto == "Desarrollo ATI":
+        df_gantt = cargar_datos_gantt(link_ati, tipo="ati")
+        filtros = ['mes de entrega', 'estado']
+    elif gantt_proyecto == "AFUs Postventas":
+        df_gantt = cargar_datos_gantt(link_afupost, tipo="afupost")
+        filtros = ['mes de entrega', 'estado', 'afu asignado']
+    elif gantt_proyecto == "AFUs ATI":
+        df_gantt = cargar_datos_gantt(link_afuati, tipo="afuati")
+        filtros = ['mes de entrega', 'estado', 'afu asignado']
 
-        st.markdown("### Historias resueltas por dev (mes y usuario seleccionados)")
-        st.dataframe(df_filtro, use_container_width=True)
+    # --- Filtros dinámicos según el gantt seleccionado ---
+    cols = st.columns(len(filtros))
+    filtros_seleccionados = {}
+    for i, filtro in enumerate(filtros):
+        opciones = ['Todos'] + sorted(df_gantt[filtro].dropna().unique())
+        valor = cols[i].selectbox(filtro.replace("_", " ").title(), opciones, key=f"{gantt_proyecto}_{filtro}")
+        filtros_seleccionados[filtro] = valor
+
+    # --- Aplicar filtros ---
+    df_filtrado = df_gantt.copy()
+    for filtro, valor in filtros_seleccionados.items():
+        if valor != 'Todos':
+            df_filtrado = df_filtrado[df_filtrado[filtro] == valor]
+
+    # --- Orden visual igual que en el dash ---
+    df_filtrado = df_filtrado.sort_values('inicio', ascending=True)
+    df_filtrado['rn_trunc'] = pd.Categorical(df_filtrado['rn_trunc'], categories=df_filtrado['rn_trunc'].unique(), ordered=True)
+
+    # --- Gantt ---
+    if not df_filtrado.empty:
+        fig = px.timeline(
+            df_filtrado,
+            x_start="inicio",
+            x_end="fin",
+            y="rn_trunc",
+            color="estado",
+            color_discrete_map=color_estado,
+            hover_data=[c for c in df_filtrado.columns if c not in ["inicio", "fin", "rn_trunc"]],
+        )
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(
+            height=600,
+            xaxis_title="Fecha",
+            legend_title="Estado",
+            margin=dict(l=200, r=50, t=60, b=30),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("No hay datos para los filtros seleccionados.")
+
 
 
 
