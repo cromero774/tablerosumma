@@ -1,7 +1,7 @@
 import os
 import requests
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 import json
 import pandas as pd
@@ -78,11 +78,9 @@ def save_issue_to_project(mapping):
         json.dump(mapping, f, ensure_ascii=False, indent=2)
 
 def main():
-    # --- Traer worklogs de los ÚLTIMOS 3 MESES ---
-    hoy = datetime.now().date()
-    tres_meses_atras = hoy - timedelta(days=90)
-    fecha_inicio = tres_meses_atras.strftime("%Y-%m-%d")
-    fecha_fin = hoy.strftime("%Y-%m-%d")
+    # --- Traer worklogs de Tempo SOLO desde 2025-06-01 ---
+    fecha_inicio = "2025-06-01"
+    fecha_fin = datetime.now().date().strftime("%Y-%m-%d")
     print(f"Descargando worklogs de Tempo desde {fecha_inicio} hasta {fecha_fin}...")
     worklogs = get_tempo_worklogs(fecha_inicio, fecha_fin)
     print(f"Cantidad total de registros: {len(worklogs)}")
@@ -121,7 +119,6 @@ def main():
         usuario = w.get("author", {}).get("accountId", "SinUsuario")
         horas = w.get("timeSpentSeconds", 0) / 3600
         issue_id = str(w.get("issue", {}).get("id"))
-        # Intentar obtener el key directamente del objeto, si no, buscarlo en Jira (con cache)
         issue_key = w.get("issue", {}).get("key")
         if not issue_key and issue_id:
             issue_key = get_jira_issue_key(issue_id, key_cache)
