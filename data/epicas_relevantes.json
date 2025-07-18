@@ -83,5 +83,15 @@
         "rn": "TAL-7",
         "nombre": "[RECLAMOS DE GARANTIA A FABRICA]",
         "mes_entrega": "Septiembre"
+    },
+    {
+        "rn": "REP-5129",
+        "nombre": "Autorización de Anulaciones",
+        "mes_entrega": "Septiembre"
+    },
+    {
+        "rn": "REP-5158",
+        "nombre": "Gestor de OV (Gestor de operaciones)",
+        "mes_entrega": "Septiembre"
     }
 ]

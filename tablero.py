@@ -1190,33 +1190,30 @@ if opcion == "Histórico postventa":
                 st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
 #velocidad devs
 
-# Pestaña Velocidad de devs
-
 if opcion == "Velocidad de devs":
     import pandas as pd
-    import streamlit as st
     import json
+    import streamlit as st
+    import altair as alt
     from jira_conexion import jira
 
     st.header("Velocidad de devs")
-    st.warning("⚠️ Esta pestaña está en construcción. Los datos y cálculos pueden no ser definitivos.")
-    # Mapping usuarios
+
     with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
         accountid_to_name = json.load(f)
 
-    # Cargar horas históricas
     df_horas = pd.read_csv("data/horas_historicas.csv")
+    df_horas["Fecha"] = pd.to_datetime(df_horas["Fecha"], errors="coerce")
+    df_horas["Mes"] = df_horas["Fecha"].dt.strftime("%B %Y")
     df_horas["Usuario_nombre"] = df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"])
 
-    # Traer historias de Jira (TAL, REP, ATI)
-    fields = "key,summary,status,project,issuetype,assignee,customfield_10026,statuscategorychangedate"
+    estados_quemados = ["lista para implementar", "en testing"]
+
     def traer_todas_las_issues(jira, jql, fields, max_results=100):
         issues = []
         start_at = 0
         while True:
-            endpoint = (
-                f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
-            )
+            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
             data = jira._get_json(endpoint)
             batch = data.get("issues", [])
             issues.extend(batch)
@@ -1225,12 +1222,19 @@ if opcion == "Velocidad de devs":
             start_at += max_results
         return issues
 
-    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields)
-    issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields)
-    issues = issues_tal + issues_rep + issues_ati
+    fields_issues = "key,summary,status,project,issuetype,assignee,customfield_10026,statuscategorychangedate,subtasks"
+    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields_issues)
+    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields_issues)
+    issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields_issues)
+    issues = issues_rep + issues_tal + issues_ati
 
-    # Dataframe de historias
+    parent_map = {}
+    for issue in issues:
+        key = issue["key"]
+        for sub in issue["fields"].get("subtasks", []):
+            sub_key = sub["key"]
+            parent_map[sub_key] = key
+
     rows_issues = []
     for issue in issues:
         key = issue["key"]
@@ -1242,226 +1246,465 @@ if opcion == "Velocidad de devs":
         estado = (issue["fields"]["status"]["name"] or "").strip().lower()
         asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
         fecha_estado = issue["fields"].get("statuscategorychangedate", "")
-        proyecto = issue["fields"]["project"]["key"] if issue["fields"].get("project") else ""
-        rows_issues.append({
-            "Issue": key,
-            "Puntos": puntos,
-            "Estado": estado,
-            "Asignado": asignado,
-            "Fecha_estado": fecha_estado,
-            "Proyecto": proyecto
-        })
-    df_issues = pd.DataFrame(rows_issues)
-    df_issues["Fecha_estado"] = pd.to_datetime(df_issues["Fecha_estado"], errors="coerce").dt.tz_localize(None)
-
-    # Filtrar historias "quemadas" y asignadas desde marzo 2025
-    estados_quemados = ["lista para implementar", "en testing"]
-    fecha_limite = pd.to_datetime("2025-03-01")
-    df_issues = df_issues[
-        (df_issues["Puntos"] > 0)
-        & (df_issues["Estado"].isin(estados_quemados))
-        & (df_issues["Fecha_estado"] >= fecha_limite)
-    ].copy()
-
-    # Traer bugs asociados (tipo "Error" en Jira)
-    bug_fields = "key,issuetype,project,parent,assignee"
-    bugs_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Error', bug_fields)
-    bugs_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Error', bug_fields)
-    bugs_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Error', bug_fields)
-    bugs = bugs_tal + bugs_rep + bugs_ati
-    bug_map = {}
-    for bug in bugs:
-        parent = bug["fields"].get("parent", {})
-        parent_key = parent.get("key")
-        if parent_key:
-            bug_map.setdefault(parent_key, 0)
-            bug_map[parent_key] += 1
-
-    # Unir historias con horas cargadas
-    df_velocidad = pd.merge(df_horas, df_issues, on="Issue", how="inner")
-    df_velocidad = df_velocidad[
-        (df_velocidad["Horas"] > 0) &
-        (df_velocidad["Usuario_nombre"] == df_velocidad["Asignado"])
-    ].copy()
-
-    # Quitar usuarios no mapeados (que quedan como IDs)
-    usuarios_validos = sorted([u for u in df_velocidad["Usuario_nombre"].dropna().unique() if " " in u or "." in u])
-    usuario_sel = st.selectbox("Seleccioná usuario", ["Todos"] + usuarios_validos)
-
-    # ========== FILTRO POR USUARIO ==========
-    if usuario_sel != "Todos":
-        df_user = df_velocidad[df_velocidad["Usuario_nombre"] == usuario_sel].copy()
-        if not df_user.empty:
-            # Armamos la tabla histórica de historias (por historia, por usuario)
-            df_user["Mes_dt"] = pd.to_datetime(df_user["Fecha"], errors="coerce")
-            df_user["Mes"] = df_user["Mes_dt"].dt.strftime("%B %Y")
-            tabla_hist = (
-                df_user.groupby(["Mes", "Mes_dt", "Issue", "Puntos", "Estado"], as_index=False)
-                .agg({"Horas": "sum"})
-                .sort_values(["Mes_dt", "Issue"])
-            )
-            tabla_hist["Velocidad"] = (tabla_hist["Horas"] / tabla_hist["Puntos"]).apply(lambda x: int(-(-x // 1)) if pd.notnull(x) else 0)
-            tabla_hist["Bugs"] = tabla_hist["Issue"].map(lambda k: bug_map.get(k, 0))
-            tabla_hist = tabla_hist.rename(columns={
-                "Mes": "Mes",
-                "Issue": "Clave",
-                "Puntos": "Puntos",
-                "Horas": "Horas",
-                "Velocidad": "Velocidad",
-                "Estado": "Estado",
-                "Bugs": "Bugs"
+        fecha_estado_dt = pd.to_datetime(fecha_estado, errors="coerce")
+        mes_estado = fecha_estado_dt.strftime("%B %Y") if not pd.isnull(fecha_estado_dt) else ""
+        if estado in estados_quemados and puntos > 0 and asignado != "":
+            rows_issues.append({
+                "Issue": key,
+                "Puntos": puntos,
+                "Estado": estado,
+                "Usuario_nombre": asignado,
+                "Mes": mes_estado,
+                "Proyecto": issue["fields"]["project"]["key"]
             })
+    df_issues = pd.DataFrame(rows_issues)
 
-            # ---- PROMEDIOS SOLO SOBRE TABLA HISTÓRICA ----
-            resumen = pd.DataFrame([{
-                "Usuario_nombre": usuario_sel,
-                "Promedio_puntos": tabla_hist["Puntos"].mean(),
-                "Promedio_horas": tabla_hist["Horas"].mean(),
-                "Historias_quemadas": tabla_hist.shape[0],
-                "Velocidad": int(-(-tabla_hist["Horas"].mean() // tabla_hist["Puntos"].mean())) if tabla_hist["Puntos"].mean() > 0 else 0,
-                "Bugs": tabla_hist["Bugs"].sum()
-            }])
+    fields_bugs = "key,summary,status,project,issuetype,assignee,customfield_10026,created,parent,issuelinks,statuscategorychangedate"
+    issues_bugs_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Error', fields_bugs)
+    issues_bugs_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Error', fields_bugs)
+    issues_bugs_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Error', fields_bugs)
+    issues_bugs = issues_bugs_rep + issues_bugs_tal + issues_bugs_ati
 
-            st.subheader("Velocidad promedio por dev")
-            st.dataframe(resumen, hide_index=True)
+    bugs_por_hu = {}
+    for bug in issues_bugs:
+        parent_key = ""
+        if "parent" in bug["fields"] and bug["fields"]["parent"]:
+            parent_key = bug["fields"]["parent"]["key"]
+            if parent_key:
+                bugs_por_hu.setdefault(parent_key, []).append(bug["key"])
+        for l in bug["fields"].get("issuelinks", []):
+            if l.get("type", {}).get("name", "").lower() == "blocks":
+                for link_dir in ["inwardIssue", "outwardIssue"]:
+                    linked = l.get(link_dir)
+                    if linked and linked.get("key", "").startswith(("REP-", "TAL-", "ATI-")):
+                        bugs_por_hu.setdefault(linked["key"], []).append(bug["key"])
 
-            # ---- TABLA HISTÓRICA POR HISTORIA ----
-            st.markdown("### Velocidad por historia")
-            st.dataframe(tabla_hist[["Mes", "Clave", "Puntos", "Horas", "Velocidad", "Bugs", "Estado"]], hide_index=True, use_container_width=True)
+    rows_bugs_extra = []
+    for bug in issues_bugs:
+        asignado = bug["fields"].get("assignee")
+        asignado_nombre = asignado.get("displayName") if asignado else None
+        estado_bug = (bug["fields"].get("status", {}).get("name") or "").strip().lower()
+        if asignado_nombre is None or estado_bug != "hecha":
+            continue
+        fecha_hecha = bug["fields"].get("statuscategorychangedate", "")
+        fecha_hecha_dt = pd.to_datetime(fecha_hecha, errors="coerce")
+        mes_bug = fecha_hecha_dt.strftime("%B %Y") if not pd.isnull(fecha_hecha_dt) else None
+        proyecto_bug = bug["fields"]["project"]["key"]
+        if mes_bug is None or proyecto_bug is None:
+            continue
+        rows_bugs_extra.append({
+            "Bug_key": bug["key"],
+            "Usuario_nombre": asignado_nombre,
+            "Mes": mes_bug,
+            "Proyecto": proyecto_bug
+        })
+    df_bugs_extra = pd.DataFrame(rows_bugs_extra).drop_duplicates(subset=["Bug_key", "Usuario_nombre", "Mes", "Proyecto"])
 
-            # ---- GRÁFICO DE VELOCIDAD MENSUAL ORDENADO POR FECHA ----
-            vel_mensual = tabla_hist.groupby(["Mes", "Mes_dt"])["Velocidad"].mean().reset_index()
-            vel_mensual = vel_mensual.sort_values("Mes_dt")
-            st.markdown("#### Velocidad promedio mensual")
-            st.line_chart(vel_mensual.set_index("Mes")["Velocidad"])
+    fecha_enero = pd.to_datetime("2025-01-01")
+    df_horas["Es_enero_o_mas"] = df_horas["Fecha"] >= fecha_enero
 
-        else:
-            st.warning("No hay datos con las condiciones seleccionadas.")
+    df_antes_enero = df_horas[~df_horas["Es_enero_o_mas"]].copy()
+    df_antes_enero_group = df_antes_enero.groupby(["Usuario_nombre", "Mes"]).agg({"Horas": "sum"}).reset_index()
+    df_antes_enero_group["Puntos"] = 0
+    df_antes_enero_group["Claves"] = ""
+    df_antes_enero_group["Bugs"] = 0
 
-    else:
-        # Si selecciona TODOS, mostramos promedios de todos (como antes, pero ordenados)
-        resumen = (
-            df_velocidad.groupby("Usuario_nombre")
-            .agg(
-                Promedio_puntos=("Puntos", "mean"),
-                Promedio_horas=("Horas", "mean"),
-                Historias_quemadas=("Issue", "count"),
-                Bugs=("Issue", lambda x: sum([bug_map.get(k, 0) for k in x])),
-            )
-            .reset_index()
-        )
-        resumen["Velocidad"] = (resumen["Promedio_horas"] / resumen["Promedio_puntos"]).apply(lambda x: int(-(-x // 1)) if pd.notnull(x) else 0)
-        resumen = resumen.sort_values("Velocidad")
-        resumen = resumen[["Usuario_nombre", "Promedio_puntos", "Promedio_horas", "Historias_quemadas", "Velocidad", "Bugs"]]
-        st.subheader("Velocidad promedio por dev")
-        st.dataframe(resumen, hide_index=True)
+    for idx, row in df_antes_enero_group.iterrows():
+        usuario = row["Usuario_nombre"]
+        mes = row["Mes"]
+        tareas_usuario_mes = df_issues[(df_issues["Usuario_nombre"] == usuario) & (df_issues["Mes"] == mes)]
+        if not tareas_usuario_mes.empty:
+            puntos_sum = tareas_usuario_mes["Puntos"].sum()
+            claves_join = ", ".join(sorted(set(tareas_usuario_mes["Issue"])))
+            bugs_sum = 0
+            for claves_str in tareas_usuario_mes["Issue"]:
+                claves_lista = claves_str.split(", ")
+                for clave in claves_lista:
+                    bugs_sum += len(bugs_por_hu.get(clave, []))
+            df_antes_enero_group.at[idx, "Puntos"] = puntos_sum
+            df_antes_enero_group.at[idx, "Claves"] = claves_join
+            df_antes_enero_group.at[idx, "Bugs"] = bugs_sum
 
-#ganttentregables
-
-if opcion == "Gantt":
-    import pandas as pd
-    import plotly.express as px
-    from datetime import datetime
-
-    # --- URLs de los CSV ---
-    link_postventas = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTRvUazuzfWjGl5VWuZJUJslZEf-PpYyHZ_5G2SXwPtu16R71mPSKVQTYjen9UBwQ/pub?gid=865145678&single=true&output=csv"
-    link_ati = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6s9qMzmA_sJRko5EDggumO4sybGVq3n-uOmZOMj8CJDnHo9AWZeZOXZGz7cTg4XoqeiPDIgQP3QER/pub?output=csv"
-    link_afupost = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3rrcWGJWtEbowD_8bJ35lbziZ208DFGdo1JkHKhMvRK9SBjxxlTolXjeoKVMu4v447yfgQn0tUjsT/pub?output=csv"
-    link_afuati = "https://docs.google.com/spreadsheets/d/e/2PACX-1vThHnFUDJm9AlT-rODLiPhLSTqH1O12_yz0Z_0SJJ3EAtS84GH6lptWpr2eSMPuyv50ShS3ysozwsKe/pub?output=csv"
-
-    # --- Paleta de colores por estado ---
-    color_estado = {
-        'Entregado': '#2ecc71',
-        'En desarrollo': '#1abc9c',
-        'Backlog': '#f1c40f',
-        'Para refinar': '#f5d76e',
-        'Escribiendo': '#e67e22',
-        'Para escribir': '#e74c3c',
-        'En análisis': '#9b59b6',
-        'Cancelado': '#95a5a6',
-        'Error': '#e74c3c'
-    }
-
-    def cargar_datos_gantt(link, tipo="postventas"):
-        df = pd.read_csv(link)
-        df.columns = df.columns.str.strip().str.lower()
-        df['rn'] = df['rn'].astype(str).str.strip()
-        # Fechas
-        for col in ['inicio', 'fin']:
-            df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
-        df = df.dropna(subset=['inicio', 'fin'])
-        # Mes de entrega
-        if 'mes' in df.columns:
-            df['mes de entrega'] = df['mes']
-        else:
-            df['mes de entrega'] = df['fin'].dt.to_period('M').astype(str)
-        # Truncar RN para mejor visual
-        df['rn_trunc'] = df['rn'].apply(lambda x: x if len(x) <= 30 else x[:27] + '...')
-        # Por si no está la columna 'afu asignado'
-        if 'afu asignado' not in df.columns:
-            df['afu asignado'] = 'Sin asignar'
-        return df
-
-    st.markdown("## Gantt - SUMMA")
-    gantt_proyecto = st.radio(
-        "Seleccioná el Gantt que querés ver:",
-        ("Desarrollo Postventas", "Desarrollo ATI", "AFUs Postventas", "AFUs ATI"),
-        horizontal=True,
-        key="gantt_proyecto"
+    df_antes_enero_group["Velocidad"] = df_antes_enero_group.apply(
+        lambda row: round(row["Horas"] / row["Puntos"], 4) if row["Puntos"] > 0 else 0,
+        axis=1
     )
 
-    if gantt_proyecto == "Desarrollo Postventas":
-        df_gantt = cargar_datos_gantt(link_postventas, tipo="postventas")
-        filtros = ['mes de entrega', 'estado']
-    elif gantt_proyecto == "Desarrollo ATI":
-        df_gantt = cargar_datos_gantt(link_ati, tipo="ati")
-        filtros = ['mes de entrega', 'estado']
-    elif gantt_proyecto == "AFUs Postventas":
-        df_gantt = cargar_datos_gantt(link_afupost, tipo="afupost")
-        filtros = ['mes de entrega', 'estado', 'afu asignado']
-    elif gantt_proyecto == "AFUs ATI":
-        df_gantt = cargar_datos_gantt(link_afuati, tipo="afuati")
-        filtros = ['mes de entrega', 'estado', 'afu asignado']
+    df_enero_en_adelante = df_horas[df_horas["Es_enero_o_mas"]].copy()
 
-    # --- Filtros dinámicos según el gantt seleccionado ---
-    cols = st.columns(len(filtros))
-    filtros_seleccionados = {}
-    for i, filtro in enumerate(filtros):
-        opciones = ['Todos'] + sorted(df_gantt[filtro].dropna().unique())
-        valor = cols[i].selectbox(filtro.replace("_", " ").title(), opciones, key=f"{gantt_proyecto}_{filtro}")
-        filtros_seleccionados[filtro] = valor
+    df_enero_group = df_enero_en_adelante.groupby(["Usuario_nombre", "Mes"]).agg({"Horas": "sum"}).reset_index()
+    df_enero_group["Horas"] = df_enero_group["Horas"] * 0.8  # Aplicamos el 80% desde enero 2025
 
-    # --- Aplicar filtros ---
-    df_filtrado = df_gantt.copy()
-    for filtro, valor in filtros_seleccionados.items():
-        if valor != 'Todos':
-            df_filtrado = df_filtrado[df_filtrado[filtro] == valor]
+    df_tareas_quemadas_group = df_issues.groupby(["Usuario_nombre", "Mes"]).agg({
+        "Puntos": "sum",
+        "Issue": lambda x: ", ".join(sorted(set(", ".join(x).split(", ")))),
+    }).reset_index().rename(columns={"Issue": "Claves"})
 
-    # --- Orden visual igual que en el dash ---
-    df_filtrado = df_filtrado.sort_values('inicio', ascending=True)
-    df_filtrado['rn_trunc'] = pd.Categorical(df_filtrado['rn_trunc'], categories=df_filtrado['rn_trunc'].unique(), ordered=True)
+    df_merge = df_enero_group.merge(df_tareas_quemadas_group, on=["Usuario_nombre", "Mes"], how="left")
+    df_merge["Puntos"] = df_merge["Puntos"].fillna(0)
+    df_merge["Claves"] = df_merge["Claves"].fillna("")
 
-    # --- Gantt ---
-    if not df_filtrado.empty:
-        fig = px.timeline(
-            df_filtrado,
-            x_start="inicio",
-            x_end="fin",
-            y="rn_trunc",
-            color="estado",
-            color_discrete_map=color_estado,
-            hover_data=[c for c in df_filtrado.columns if c not in ["inicio", "fin", "rn_trunc"]],
+    df_merge["Bugs"] = df_merge.apply(
+        lambda row: sum(len(bugs_por_hu.get(clave, [])) for clave in row["Claves"].split(", ")) if row["Claves"] else 0,
+        axis=1
+    )
+
+    df_merge["Velocidad"] = df_merge.apply(
+        lambda row: round(row["Horas"] / row["Puntos"], 4) if row["Puntos"] > 0 else 0,
+        axis=1
+    )
+
+    bugs_extra_unicos = {}
+    for usuario, mes, proyecto in df_bugs_extra[["Usuario_nombre", "Mes", "Proyecto"]].drop_duplicates().values:
+        df_bugs_usuario_mes_proy = df_bugs_extra[
+            (df_bugs_extra["Usuario_nombre"] == usuario) &
+            (df_bugs_extra["Mes"] == mes) &
+            (df_bugs_extra["Proyecto"] == proyecto)
+        ]
+        claves_usuario_mes_proyecto = df_issues[(df_issues["Usuario_nombre"] == usuario) & (df_issues["Mes"] == mes)]["Issue"].tolist()
+        bugs_filtrados = df_bugs_usuario_mes_proy[~df_bugs_usuario_mes_proy["Bug_key"].isin(
+            set(b for clave in claves_usuario_mes_proyecto for b in bugs_por_hu.get(clave, []))
+        )]
+
+        bugs_extra_unicos[(usuario, mes, proyecto)] = {
+            "bugs_extra_count": len(bugs_filtrados),
+            "bugs_extra_keys": ", ".join(sorted(bugs_filtrados["Bug_key"].unique())) if len(bugs_filtrados) > 0 else "0"
+        }
+
+    def sumar_bugs_extra(usuario, mes):
+        suma = 0
+        for (u, m, p), valores in bugs_extra_unicos.items():
+            if u == usuario and m == mes:
+                suma += valores.get("bugs_extra_count", 0)
+        return suma
+
+    df_merge["Bugs_resueltos_extra"] = df_merge.apply(
+        lambda row: sumar_bugs_extra(row["Usuario_nombre"], row["Mes"]),
+        axis=1
+    )
+
+    df_merge = df_merge.merge(
+        df_bugs_extra.groupby(["Usuario_nombre", "Mes"]).agg({
+            "Bug_key": lambda x: ", ".join(sorted(x.unique()))
+        }).reset_index().rename(columns={"Bug_key": "Claves_bugs_resueltos_extra"}),
+        on=["Usuario_nombre", "Mes"],
+        how="left"
+    )
+
+    df_merge["Claves_bugs_resueltos_extra"] = df_merge["Claves_bugs_resueltos_extra"].fillna("0")
+
+    df_final = pd.concat([df_antes_enero_group, df_merge], ignore_index=True).sort_values(["Usuario_nombre", "Mes"])
+
+    df_final = df_final.groupby(["Usuario_nombre", "Mes"]).agg({
+        "Horas": "sum",
+        "Puntos": "sum",
+        "Claves": lambda x: ", ".join(sorted(set(", ".join(x).split(", ")))) if any(x) else "",
+        "Bugs": "sum",
+        "Velocidad": lambda x: round(x.sum(), 4),
+        "Bugs_resueltos_extra": "sum",
+        "Claves_bugs_resueltos_extra": lambda x: ", ".join(sorted(set(", ".join(x).split(", ")))) if any(x) else "",
+    }).reset_index()
+
+    # Crear columna Nota_final por cada fila (mes, usuario) según reglas nuevas
+    def calcular_nota_final(row):
+        puntos = row["Puntos"]
+        velocidad = row["Velocidad"]
+        horas = row["Horas"]
+        bugs = row["Bugs"]
+        bugs_extra = row["Bugs_resueltos_extra"]
+
+        # Puntos (50%)
+        if puntos >= 25:
+            nota_puntos = 1.0
+        elif puntos >= 20:
+            nota_puntos = 0.9
+        elif puntos >= 15:
+            nota_puntos = 0.8
+        else:
+            nota_puntos = 0.5
+
+        # Velocidad (20%)
+        if velocidad <= 15:
+            nota_velocidad = 1.0
+        elif velocidad <= 17:
+            nota_velocidad = 0.9
+        else:
+            nota_velocidad = 0.8
+
+        # Horas (20%)
+        if horas >= 120:
+            nota_horas = 1.0
+        elif horas >= 110:
+            nota_horas = 0.9
+        elif horas >= 100:
+            nota_horas = 0.8
+        else:
+            nota_horas = 0.7
+
+        # Bugs (10%)
+        if bugs == 0:
+            nota_bugs = 1.0
+        elif bugs <= 2:
+            nota_bugs = 0.9
+        elif bugs <= 4:
+            nota_bugs = 0.8
+        else:
+            nota_bugs = 0.7
+
+        # Bugs extra +5%
+        nota_bugs_extra = 0.05 if bugs_extra > 0 else 0
+
+        nota_final = (
+            nota_puntos * 0.5 +
+            nota_velocidad * 0.2 +
+            nota_horas * 0.2 +
+            nota_bugs * 0.1 +
+            nota_bugs_extra
         )
-        fig.update_yaxes(autorange="reversed")
-        fig.update_layout(
-            height=600,
-            xaxis_title="Fecha",
-            legend_title="Estado",
-            margin=dict(l=200, r=50, t=60, b=30),
+        return round(nota_final * 100, 2)
+
+    df_final["Nota_final"] = df_final.apply(calcular_nota_final, axis=1)
+
+    df_final["Mes_dt"] = pd.to_datetime(df_final["Mes"], format="%B %Y")
+    df_final = df_final.sort_values("Mes_dt")
+
+    # --- TARJETAS DE OBJETIVOS ---
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(
+            """
+            <div style="background-color:#1f77b4; padding:20px; border-radius:8px; color:white; text-align:center;">
+                <h3>Objetivo Puntos</h3>
+                <p><strong>26 puntos / mes</strong></p>
+                <p style="font-size:12px;">(Puntos quemados con estado listo para implementar o testing)</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-        st.plotly_chart(fig, use_container_width=True)
+    with col2:
+        st.markdown(
+            """
+            <div style="background-color:#ff7f0e; padding:20px; border-radius:8px; color:white; text-align:center;">
+                <h3>Objetivo Velocidad</h3>
+                <p><strong>9 hs por punto</strong></p>
+                <p style="font-size:12px;">(Horas para quemar 1 punto)</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col3:
+        st.markdown(
+            """
+            <div style="background-color:#2ca02c; padding:20px; border-radius:8px; color:white; text-align:center;">
+                <h3>Objetivo Bugs</h3>
+                <p><strong>0 bugs</strong></p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col4:
+        st.markdown(
+            """
+            <div style="background-color:#d62728; padding:20px; border-radius:8px; color:white; text-align:center;">
+                <h3>Objetivo Bugs extra</h3>
+                <p><strong>Mínimo 4 bugs extra</strong></p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # --- FILTROS PROYECTO Y USUARIO UNO AL LADO DEL OTRO ---
+    col_proj, col_user = st.columns(2)
+    with col_proj:
+        opciones_proyecto = ["Todos", "ATI", "Postventas"]
+        proyecto_sel = st.selectbox("Seleccioná proyecto", opciones_proyecto, key="proyecto_sel")
+
+    with col_user:
+        # Filtrar usuarios que tienen puntos > 0 y que cumplen filtro proyecto
+        if proyecto_sel == "Postventas":
+            df_filtrado_usuarios = df_final[
+                df_final["Claves"].str.contains("TAL|REP", case=False, na=False) |
+                df_final["Claves_bugs_resueltos_extra"].str.contains("TAL|REP", case=False, na=False)
+            ]
+        elif proyecto_sel == "Todos":
+            df_filtrado_usuarios = df_final.copy()
+        else:
+            df_filtrado_usuarios = df_final[
+                df_final["Claves"].str.contains(proyecto_sel, case=False, na=False) |
+                df_final["Claves_bugs_resueltos_extra"].str.contains(proyecto_sel, case=False, na=False)
+            ]
+
+        usuarios_validos = sorted(set(accountid_to_name.values()) & set(df_filtrado_usuarios[df_filtrado_usuarios["Puntos"] > 0]["Usuario_nombre"].unique()))
+        usuario_sel = st.selectbox("Seleccioná usuario", ["Todos"] + usuarios_validos, key="usuario_sel")
+
+    # --- FILTRO ÚLTIMOS 6 MESES ---
+    fecha_limite = pd.to_datetime("today") - pd.DateOffset(months=6)
+    df_filtrado = df_final.copy()
+    if proyecto_sel == "Postventas":
+        df_filtrado = df_filtrado[
+            df_filtrado["Claves"].str.contains("TAL|REP", case=False, na=False) |
+            df_filtrado["Claves_bugs_resueltos_extra"].str.contains("TAL|REP", case=False, na=False)
+        ]
+    elif proyecto_sel != "Todos":
+        df_filtrado = df_filtrado[
+            df_filtrado["Claves"].str.contains(proyecto_sel, case=False, na=False) |
+            df_filtrado["Claves_bugs_resueltos_extra"].str.contains(proyecto_sel, case=False, na=False)
+        ]
+
+    if usuario_sel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["Usuario_nombre"] == usuario_sel]
+
+    df_filtrado["Mes_dt"] = pd.to_datetime(df_filtrado["Mes"], format="%B %Y")
+    df_ultimos6 = df_filtrado[df_filtrado["Mes_dt"] >= fecha_limite]
+
+    # --- RANKING ---
+    ranking = []
+
+    for usuario in usuarios_validos:
+        df_user = df_ultimos6[df_ultimos6["Usuario_nombre"] == usuario]
+        avg_puntos = df_user["Puntos"].mean()
+        avg_velocidad = df_user["Velocidad"].mean()
+        avg_bugs = df_user["Bugs"].mean()
+        avg_bugs_extra = df_user["Bugs_resueltos_extra"].mean()
+
+        if avg_puntos <= 0:
+            continue
+
+        # Objetivos y reglas de nota final
+        nota_puntos = 0
+        if avg_puntos >= 25:
+            nota_puntos = 1.0
+        elif avg_puntos >= 20:
+            nota_puntos = 0.9
+        elif avg_puntos >= 15:
+            nota_puntos = 0.8
+        else:
+            nota_puntos = 0.5
+
+        nota_velocidad = 0
+        if avg_velocidad <= 15:
+            nota_velocidad = 1.0
+        elif avg_velocidad <= 17:
+            nota_velocidad = 0.9
+        else:
+            nota_velocidad = 0.8
+
+        nota_horas = 0
+        if df_user["Horas"].mean() >= 120:
+            nota_horas = 1.0
+        elif df_user["Horas"].mean() >= 110:
+            nota_horas = 0.9
+        elif df_user["Horas"].mean() >= 100:
+            nota_horas = 0.8
+        else:
+            nota_horas = 0.7
+
+        nota_bugs = 0
+        if avg_bugs == 0:
+            nota_bugs = 1.0
+        elif avg_bugs <= 2:
+            nota_bugs = 0.9
+        elif avg_bugs <= 4:
+            nota_bugs = 0.8
+        else:
+            nota_bugs = 0.7
+
+        nota_bugs_extra = 0
+        if avg_bugs_extra > 0:
+            nota_bugs_extra = 0.05
+
+        nota_final = (
+            nota_puntos * 0.5 +
+            nota_velocidad * 0.2 +
+            nota_horas * 0.2 +
+            nota_bugs * 0.1 +
+            nota_bugs_extra
+        )
+
+        ranking.append({
+            "Usuario_nombre": usuario,
+            "Promedio_puntos": round(avg_puntos, 2),
+            "Promedio_velocidad": round(avg_velocidad, 2),
+            "Promedio_bugs": round(avg_bugs, 2),
+            "Promedio_bugs_extra": round(avg_bugs_extra, 2),
+            "Nota_final": round(nota_final * 100, 2)
+        })
+
+    df_ranking = pd.DataFrame(ranking).sort_values("Nota_final", ascending=False).reset_index(drop=True)
+
+    if usuario_sel == "Todos":
+        st.subheader("Ranking de devs (últimos 6 meses)")
+        st.markdown(
+            """
+            **Objetivos para nota final:**  
+            - Puntos ≥ 25: 100% (50% del total)  
+            - Velocidad ≤ 15 hs: 100% (20% del total)  
+            - Horas ≥ 120: 100% (20% del total)  
+            - Bugs = 0: 100% (10% del total)  
+            - Bugs extras suman +5%  
+            """
+        )
+        st.dataframe(df_ranking, use_container_width=True, hide_index=True)
+
+        chart_data = (
+            df_final[df_final["Puntos"] > 0]
+            .groupby("Usuario_nombre")
+            .agg(Velocidad_promedio=("Velocidad", "mean"))
+            .reset_index()
+        )
+
+        chart = (
+            alt.Chart(chart_data)
+            .mark_bar()
+            .encode(
+                x=alt.X("Usuario_nombre:N", sort=alt.EncodingSortField(field="Velocidad_promedio", op="sum", order="ascending"), title="Usuario"),
+                y=alt.Y("Velocidad_promedio:Q", title="Velocidad promedio"),
+                tooltip=["Usuario_nombre", "Velocidad_promedio"]
+            )
+            .properties(width=700, height=300)
+        )
+        st.altair_chart(chart, use_container_width=True)
+
     else:
-        st.warning("No hay datos para los filtros seleccionados.")
+        df_usuario = df_final[df_final["Usuario_nombre"] == usuario_sel].copy()
+
+        # Asegurar columna Mes_dt
+        if "Mes_dt" not in df_usuario.columns:
+            df_usuario["Mes_dt"] = pd.to_datetime(df_usuario["Mes"], format="%B %Y")
+        else:
+            df_usuario["Mes_dt"] = pd.to_datetime(df_usuario["Mes_dt"], errors="coerce")
+
+        df_usuario = df_usuario.sort_values("Mes_dt")
+
+        st.subheader(f"Historial de {usuario_sel}")
+        st.dataframe(df_usuario[[
+            "Usuario_nombre", "Mes", "Horas", "Puntos", "Claves", "Bugs",
+            "Velocidad", "Bugs_resueltos_extra", "Claves_bugs_resueltos_extra", "Nota_final"
+        ]], use_container_width=True, hide_index=True)
+
+        st.subheader(f"Velocidad por mes - {usuario_sel}")
+
+        chart_data = df_usuario[["Mes_dt", "Velocidad"]].copy()
+        chart_data = chart_data.sort_values("Mes_dt")
+
+        chart = (
+            alt.Chart(chart_data)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("Mes_dt:T", title="Mes", axis=alt.Axis(format="%b %Y", tickCount="month")),
+                y=alt.Y("Velocidad:Q", title="Velocidad"),
+                tooltip=[alt.Tooltip("Mes_dt:T", title="Mes"), alt.Tooltip("Velocidad:Q", title="Velocidad")]
+            )
+            .properties(width=700, height=300)
+        )
+        st.altair_chart(chart, use_container_width=True)
+
+        st.caption(" | ".join(df_usuario["Mes"].tolist()))
+
+
+
+
+
 
 
 
