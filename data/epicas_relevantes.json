@@ -93,5 +93,10 @@
         "rn": "REP-5158",
         "nombre": "Gestor de OV (Gestor de operaciones)",
         "mes_entrega": "Septiembre"
+    },
+    {
+        "rn": "TAL-3856",
+        "nombre": "AGENDA FORD",
+        "mes_entrega": "Octubre"
     }
 ]

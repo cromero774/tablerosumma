@@ -7,3 +7,4 @@ __pycache__/
 data/horas_con_proyecto.csv
 data/horas_historicas.csv
 data/issue_to_project.json
+data/changelog_cache.json
