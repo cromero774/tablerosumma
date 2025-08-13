@@ -1318,7 +1318,6 @@ if opcion == "Histórico postventa":
                 st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
 #velocidad devs
 # === PESTAÑA VELOCIDAD DE DEVS ===
-# === PESTAÑA VELOCIDAD DE DEVS ===
 if opcion == "Velocidad de devs":
     import json
     from datetime import datetime, timedelta
@@ -1329,7 +1328,7 @@ if opcion == "Velocidad de devs":
 
     # Conexión JIRA (si no existe, no rompe)
     try:
-        from jira_conexion import jira  # objeto ya autenticado
+        from jira_conexion import jira  # objeto ya autenticado (usa tus variables de entorno)
     except Exception:
         jira = None
 
@@ -1349,13 +1348,14 @@ if opcion == "Velocidad de devs":
             return ""
         return dt.strftime("%B %Y")
 
-    def _proy_ok(val: str, sel: str) -> bool:
-        """Regla de filtro de proyecto:
-           - 'ATI' -> solo ATI
-           - 'Postventas' -> REP o TAL
-           - 'Todos' -> todo
+    def _proy_ok(project_key: str, sel: str) -> bool:
         """
-        v = _norm(val)
+        Regla de filtro de proyecto:
+          - 'ATI'         -> solo issues del proyecto ATI
+          - 'Postventas'  -> solo issues de REP o TAL
+          - 'Todos'       -> todo
+        """
+        v = _norm(project_key)
         if sel == "ATI":
             return v == "ATI"
         if sel == "Postventas":
@@ -1418,7 +1418,7 @@ if opcion == "Velocidad de devs":
 
     st.info(f"📅 Última actualización: {meta.get('last_update', 'desconocida')}")
 
-    # ------------------ Cards de OBJETIVOS (actualizados) ------------------
+    # ------------------ Cards de OBJETIVOS (tus reglas nuevas) ------------------
     OBJ = {
         "puntos_mes": 16,     # objetivo puntos/mes
         "hs_por_punto": 8,    # objetivo velocidad
@@ -1451,7 +1451,7 @@ if opcion == "Velocidad de devs":
     with c5: _card(f"{OBJ['horas_mes']} hs / mes",       "#7e57c2")  # violeta
 
     # ==========================
-    #   Filtro de PROYECTO (primero)
+    #   Filtros de UI (Proyecto primero)
     # ==========================
     col_proj, col_user = st.columns(2)
     with col_proj:
@@ -1466,17 +1466,20 @@ if opcion == "Velocidad de devs":
         df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"])
     ).apply(_norm)
 
-    if "Fecha" in df_horas.columns:
-        df_horas["Fecha"] = pd.to_datetime(df_horas["Fecha"], errors="coerce")
-        df_horas["Mes_dt"] = df_horas["Fecha"].apply(lambda d: _mes_start(d) if pd.notna(d) else pd.NaT)
-    else:
-        df_horas["Mes_dt"] = pd.NaT
-
-    # ✳️ Aplicar filtro de proyecto a HORAS antes de agrupar
+    # Filtro por proyecto sobre HORAS (usa la col. Proyecto = ATI | REP | TAL)
     if "Proyecto" in df_horas.columns:
         df_horas = df_horas[df_horas["Proyecto"].apply(lambda v: _proy_ok(v, proyecto_sel))]
 
+    if "Fecha" in df_horas.columns:
+        df_horas["Fecha"] = pd.to_datetime(df_horas["Fecha"], errors="coerce")
+        df_horas["Mes_dt"] = df_horas["Fecha"].apply(
+            lambda d: _mes_start(d) if pd.notna(d) else pd.NaT
+        )
+    else:
+        df_horas["Mes_dt"] = pd.NaT
+
     df_horas["Mes"] = df_horas["Mes_dt"].dt.strftime("%B %Y")
+
     df_horas_sum = (
         df_horas.dropna(subset=["Mes_dt"])
         .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
@@ -1484,9 +1487,10 @@ if opcion == "Velocidad de devs":
     )
     df_horas_sum["Mes"] = df_horas_sum["Mes_dt"].dt.strftime("%B %Y")
 
-    # ------------------ Dueño de HU en la 1ª vez "En testing" (usando accountId) ------------------
+    # ------------------ Dueño de HU en 1ª vez "En testing" (accountId) ------------------
     hu_owner_name = {}  # {HU_KEY: visible_name_at_testing}
     hu_owner_id   = {}  # {HU_KEY: accountId_at_testing}
+    hu_project    = {}  # {HU_KEY: project.key} (para filtrar por proyecto)
 
     def _owner_al_momento_testing(iss):
         """Devuelve (owner_visible_name, owner_account_id, first_testing_dt)."""
@@ -1522,13 +1526,17 @@ if opcion == "Velocidad de devs":
 
         return None, None, None
 
-    # Recolectamos mapping y puntos por HU (mes = 1ª vez en Testing)
+    # Recolectamos mapping y puntos por HU (mes = 1ª vez en Testing) **filtrando por proyecto**
     rows_issues = []
     for iss in issues:
         f = iss.get("fields", {}) or {}
         itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
         if itype != "historia":
             continue
+
+        proj_key = _norm((f.get("project") or {}).get("key"))
+        if not _proy_ok(proj_key, proyecto_sel):
+            continue  # filtro de proyecto
 
         key = iss.get("key", "")
         pts = f.get("customfield_10026", 0) or 0
@@ -1539,13 +1547,16 @@ if opcion == "Velocidad de devs":
 
         owner_name, owner_id, first_dt = _owner_al_momento_testing(iss)
         if pd.notna(first_dt) and pts > 0 and owner_name and owner_id:
+            hu_owner_name[key] = owner_name
+            hu_owner_id[key]   = owner_id
+            hu_project[key]    = proj_key
             rows_issues.append(
                 {
                     "Issue": key,
                     "Puntos": pts,
                     "Usuario_nombre": owner_name,
                     "Mes": _mes_label(_mes_start(first_dt)),
-                    "Proyecto": (f.get("project") or {}).get("key", ""),
+                    "Proyecto": proj_key,
                 }
             )
 
@@ -1553,9 +1564,12 @@ if opcion == "Velocidad de devs":
         rows_issues, columns=["Issue", "Puntos", "Usuario_nombre", "Mes", "Proyecto"]
     )
 
-    # ------------------ BUGS (regla EXACTA) ------------------
-    bug_rows_raw = []         # (Usuario_nombre, Mes, Bug_key, ProyectoHU)
-    bugs_extra_raw = []       # (Usuario_nombre, Mes, Bug_key, ProyectoBUG)
+    # ------------------ BUGS (regla EXACTA + filtro proyecto) ------------------
+    bug_rows = []         # (Usuario_nombre, Mes, Bug_key)  -> dueño HU; mes = creación
+    bugs_extra_rows = []  # (Usuario_nombre, Mes, Bug_key)  -> asignado al cerrar; mes = cierre
+
+    # HU válidas del proyecto (para contar bugs normales)
+    hus_validas = set(df_issues["Issue"].unique())
 
     for iss in issues:
         f = iss.get("fields", {}) or {}
@@ -1564,25 +1578,23 @@ if opcion == "Velocidad de devs":
             continue
 
         bug_key = iss.get("key", "")
+        bug_proj = _norm((f.get("project") or {}).get("key"))
 
-        # Mes de creación del bug (para BUGS normales)
+        # Mes de creación (para BUGS normales)
         bug_created = pd.to_datetime(f.get("created"), errors="coerce")
         bug_mes_creacion = _mes_label(_mes_start(bug_created)) if pd.notna(bug_created) else None
 
-        # Mes de cierre (Hecha/Resuelto/Done) (para BUGS EXTRA)
+        # Mes de cierre (para BUGS EXTRA)
         estado_bug = _norm((f.get("status", {}) or {}).get("name")).lower()
         fecha_cierre = pd.to_datetime(f.get("statuscategorychangedate", ""), errors="coerce")
         bug_mes_cierre = _mes_label(_mes_start(fecha_cierre)) if pd.notna(fecha_cierre) else None
 
-        # Assignee del bug
+        # Assignee del bug (al cerrar)
         assg = f.get("assignee") or {}
         bug_assignee_id = assg.get("accountId")
         bug_assignee_nm = _norm(accountid_to_name.get(bug_assignee_id) or assg.get("displayName"))
 
-        # Proyecto del bug (para extra)
-        bug_proyecto = (f.get("project") or {}).get("key", "")
-
-        # HUs candidatas: parent + cualquier link
+        # HUs candidatas: parent + TODOS los links
         candidate_hus = set()
         parent_key = (f.get("parent") or {}).get("key", "")
         if parent_key:
@@ -1594,71 +1606,36 @@ if opcion == "Velocidad de devs":
                 if k:
                     candidate_hus.add(k)
 
-        # Buscar dueño de HU y su proyecto (desde df_issues/rows_issues)
+        # Buscar una HU válida (del proyecto filtrado y presente en df_issues)
+        hu_duenio_acc = None
         hu_duenio_vis = None
-        hu_proyecto = None
+        hu_link_valida = None
         for hu in candidate_hus:
-            for r in rows_issues:
-                if r["Issue"] == hu:
-                    hu_duenio_vis = r["Usuario_nombre"]
-                    hu_proyecto = r["Proyecto"]
-                    break
-            if hu_duenio_vis:
+            if hu in hus_validas:
+                hu_duenio_acc = hu_owner_id.get(hu)
+                hu_duenio_vis = hu_owner_name.get(hu)
+                hu_link_valida = hu
                 break
 
-        # BUGS normales: dueño HU, mes creación, usando proyecto de la HU
-        if bug_mes_creacion and hu_duenio_vis and hu_proyecto:
-            bug_rows_raw.append((hu_duenio_vis, bug_mes_creacion, bug_key, hu_proyecto))
+        # BUG normal: necesita HU válida + mes de creación
+        if bug_mes_creacion and hu_duenio_vis and (hu_link_valida in hus_validas):
+            bug_rows.append((hu_duenio_vis, bug_mes_creacion, bug_key))
 
-        # BUGS EXTRA: sin HU / HU de otro dev -> asignado al cerrar, usando proyecto del BUG
+        # BUG extra: (sin HU válida para este proyecto) y bug pertenece al proyecto filtrado
         if (
             bug_assignee_nm
             and bug_mes_cierre
             and estado_bug in ("hecha", "resuelto", "resuelta", "done")
-            and (hu_duenio_vis is None or hu_duenio_vis != bug_assignee_nm)
+            and (hu_duenio_acc is None or hu_duenio_acc != bug_assignee_id)
+            and _proy_ok(bug_proj, proyecto_sel)  # extra se filtra por proyecto del BUG
         ):
-            bugs_extra_raw.append((bug_assignee_nm, bug_mes_cierre, bug_key, bug_proyecto))
+            bugs_extra_rows.append((bug_assignee_nm, bug_mes_cierre, bug_key))
 
-    # DataFrames de bugs RAW
-    df_bugs_raw = pd.DataFrame(bug_rows_raw, columns=["Usuario_nombre", "Mes", "Bug_key", "Proyecto"])
-    df_bugs_extra_raw = pd.DataFrame(bugs_extra_raw, columns=["Usuario_nombre", "Mes", "Bug_key", "Proyecto"])
-
-    # ==========================
-    #   APLICAR FILTRO DE PROYECTO A ISSUES/BUGS
-    # ==========================
-    # Filtrar historias/puntos por proyecto seleccionado
-    if not df_issues.empty:
-        df_issues_f = df_issues[df_issues["Proyecto"].apply(lambda v: _proy_ok(v, proyecto_sel))].copy()
-    else:
-        df_issues_f = df_issues.copy()
-
-    # Filtrar BUGS normales por proyecto de la HU
-    if not df_bugs_raw.empty:
-        df_bugs_raw_f = df_bugs_raw[df_bugs_raw["Proyecto"].apply(lambda v: _proy_ok(v, proyecto_sel))].copy()
-    else:
-        df_bugs_raw_f = df_bugs_raw.copy()
-
-    # Filtrar BUGS EXTRA por proyecto del BUG
-    if not df_bugs_extra_raw.empty:
-        df_bugs_extra_raw_f = df_bugs_extra_raw[df_bugs_extra_raw["Proyecto"].apply(lambda v: _proy_ok(v, proyecto_sel))].copy()
-    else:
-        df_bugs_extra_raw_f = df_bugs_extra_raw.copy()
-
-    # Agrupar tras el filtro
-    if not df_issues_f.empty:
-        df_puntos = (
-            df_issues_f.groupby(["Usuario_nombre", "Mes"], as_index=False)
-            .agg(
-                Puntos=("Puntos", "sum"),
-                Claves=("Issue", lambda x: ", ".join(sorted(set(k for k in x if k)))),
-            )
-        )
-    else:
-        df_puntos = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Puntos", "Claves"])
-
-    if not df_bugs_raw_f.empty:
+    # DataFrames de bugs con conteo y CLAVES
+    if bug_rows:
+        df_bugs_mes = pd.DataFrame(bug_rows, columns=["Usuario_nombre", "Mes", "Bug_key"])
         df_bugs_mes = (
-            df_bugs_raw_f.groupby(["Usuario_nombre", "Mes"], as_index=False)
+            df_bugs_mes.groupby(["Usuario_nombre", "Mes"], as_index=False)
             .agg(
                 Bug_cnt=("Bug_key", "nunique"),
                 Bugs_claves=("Bug_key", lambda x: ", ".join(sorted(set(x)))),
@@ -1667,9 +1644,10 @@ if opcion == "Velocidad de devs":
     else:
         df_bugs_mes = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Bug_cnt", "Bugs_claves"])
 
-    if not df_bugs_extra_raw_f.empty:
+    if bugs_extra_rows:
+        df_bugs_extra = pd.DataFrame(bugs_extra_rows, columns=["Usuario_nombre", "Mes", "Bug_key"])
         df_bugs_extra = (
-            df_bugs_extra_raw_f.groupby(["Usuario_nombre", "Mes"], as_index=False)
+            df_bugs_extra.groupby(["Usuario_nombre", "Mes"], as_index=False)
             .agg(
                 Bugs_resueltos_extra=("Bug_key", "nunique"),
                 Bugs_extra_claves=("Bug_key", lambda x: ", ".join(sorted(set(x)))),
@@ -1679,6 +1657,18 @@ if opcion == "Velocidad de devs":
         df_bugs_extra = pd.DataFrame(
             columns=["Usuario_nombre", "Mes", "Bugs_resueltos_extra", "Bugs_extra_claves"]
         )
+
+    # ------------------ Puntos por usuario/mes ------------------
+    if not df_issues.empty:
+        df_puntos = (
+            df_issues.groupby(["Usuario_nombre", "Mes"], as_index=False)
+            .agg(
+                Puntos=("Puntos", "sum"),
+                Claves=("Issue", lambda x: ", ".join(sorted(set(k for k in x if k)))),
+            )
+        )
+    else:
+        df_puntos = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Puntos", "Claves"])
 
     # ------------------ Merge HORAS + PUNTOS + BUGS ------------------
     df_merge = df_horas_sum.merge(df_puntos, on=["Usuario_nombre", "Mes"], how="left")
@@ -1691,9 +1681,7 @@ if opcion == "Velocidad de devs":
 
     # Bugs asociados (conteo + claves)
     df_merge = df_merge.merge(
-        df_bugs_mes.rename(columns={"Bug_cnt": "Bugs"}),
-        on=["Usuario_nombre", "Mes"],
-        how="left",
+        df_bugs_mes.rename(columns={"Bug_cnt": "Bugs"}), on=["Usuario_nombre", "Mes"], how="left"
     )
     for c in ["Bugs", "Bugs_claves"]:
         if c not in df_merge.columns:
@@ -1709,7 +1697,7 @@ if opcion == "Velocidad de devs":
     df_merge["Bugs_resueltos_extra"] = df_merge["Bugs_resueltos_extra"].fillna(0).astype(int)
     df_merge["Bugs_extra_claves"] = df_merge["Bugs_extra_claves"].fillna("").astype(str)
 
-    # Velocidad y Nota final (reglas nuevas)
+    # Velocidad y Nota final (tus reglas)
     df_merge["Velocidad"] = df_merge.apply(
         lambda r: round(r["Horas"] / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
     )
@@ -1721,6 +1709,7 @@ if opcion == "Velocidad de devs":
         v = float(r.get("Velocidad", 0.0))
         bex = int(r.get("Bugs_resueltos_extra", 0))
 
+        # Puntos
         if p >= 20: sp = 1.05
         elif 17 <= p <= 19: sp = 1.02
         elif p == 16: sp = 1.00
@@ -1728,15 +1717,18 @@ if opcion == "Velocidad de devs":
         elif 10 <= p <= 12: sp = 0.80
         else: sp = 0.70
 
+        # Horas
         if h >= 128: sh = 1.00
         elif 100 <= h <= 127: sh = 0.95
         else: sh = 0.70
 
+        # Bugs
         if b == 0: sb = 1.00
         elif 1 <= b <= 3: sb = 0.95
         elif 4 <= b <= 5: sb = 0.90
         else: sb = 0.80
 
+        # Velocidad (hs/punto)
         if v <= 5: sv = 1.10
         elif 6 <= v <= 7: sv = 1.05
         elif abs(v - 8.0) < 1e-9: sv = 1.00
@@ -1746,6 +1738,7 @@ if opcion == "Velocidad de devs":
 
         base = (sp * 0.40) + (sh * 0.25) + (sv * 0.25) + (sb * 0.10)
 
+        # Bono por bugs extra
         if 1 <= bex <= 5: bonus = 0.02
         elif 6 <= bex <= 10: bonus = 0.03
         elif bex > 10: bonus = 0.05
@@ -1759,25 +1752,27 @@ if opcion == "Velocidad de devs":
         df_merge["Nota_final"] = pd.Series(dtype=float)
 
     # Mes_dt para ordenar / últimos 6 meses
+    df_merge["Mes"] = df_merge["Mes"].fillna("")
     df_merge["Mes_dt"] = pd.to_datetime(df_merge["Mes"], format="%B %Y", errors="coerce")
     fecha_limite6 = pd.Timestamp.today().normalize() - pd.DateOffset(months=6)
     df_ult6 = df_merge[df_merge["Mes_dt"] >= _mes_start(fecha_limite6)].copy()
 
     # ==========================
-    #   Selector de USUARIO (sin IDs, ya con filtro de proyecto aplicado)
+    #   Selector de usuario (sin IDs)
     # ==========================
+    df_ult6["Usuario_nombre"] = df_ult6["Usuario_nombre"].apply(_norm)
+    users_with_points = set(
+        df_ult6.loc[df_ult6["Puntos"] > 0, "Usuario_nombre"].dropna().astype(str)
+    )
+    usuarios_validos = sorted(list(allowed_names & users_with_points))
+
     with col_user:
-        df_ult6["Usuario_nombre"] = df_ult6["Usuario_nombre"].apply(_norm)
-        users_with_points = set(
-            df_ult6.loc[df_ult6["Puntos"] > 0, "Usuario_nombre"].dropna().astype(str)
-        )
-        usuarios_validos = sorted(list(allowed_names & users_with_points))
         usuario_sel = st.selectbox(
             "Seleccioná usuario", ["Todos"] + usuarios_validos, key="vel_usuario"
         )
 
     # ==========================
-    #   Ranking (últimos 6 meses, con filtro de proyecto)
+    #   Ranking (últimos 6 meses)
     # ==========================
     df_rank_src = df_ult6[df_ult6["Usuario_nombre"].isin(usuarios_validos)].copy()
     st.subheader("Ranking de devs (últimos 6 meses)")
@@ -1844,8 +1839,8 @@ if opcion == "Velocidad de devs":
     else:
         # Historial del usuario (consolidado por mes) + gráfico PUNTOS por mes
         df_user = df_ult6[df_ult6["Usuario_nombre"] == usuario_sel].copy()
-
         if not df_user.empty:
+
             def _combinar_claves(series):
                 vals = [str(v) for v in series.dropna() if str(v).strip()]
                 if not vals:
@@ -1908,6 +1903,7 @@ if opcion == "Velocidad de devs":
             st.altair_chart(ch_u, use_container_width=True)
         else:
             st.info("No hay datos del usuario en los últimos 6 meses.")
+
 
 
 #GANTT
