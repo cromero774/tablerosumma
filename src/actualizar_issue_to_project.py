@@ -5,6 +5,7 @@ from datetime import datetime
 import time
 import json
 import pandas as pd
+import base64
 
 # --- Configuración
 load_dotenv()
@@ -14,35 +15,37 @@ JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
 JIRA_EMAIL = os.getenv("JIRA_EMAIL")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ISSUE_TO_PROJECT_FILE = os.path.join(BASE_DIR, "../data/issue_to_project.json")
-HORAS_CON_PROYECTO_FILE = os.path.join(BASE_DIR, "../data/horas_con_proyecto.csv")
+DATA_DIR = os.path.join(BASE_DIR, "../data")
+ISSUE_TO_PROJECT_FILE = os.path.join(DATA_DIR, "issue_to_project.json")
+HORAS_CON_PROYECTO_FILE = os.path.join(DATA_DIR, "horas_con_proyecto.csv")
+ACCOUNT_MAP_FILE = os.path.join(DATA_DIR, "accountid_to_name.json")
 
+# ===== Helpers =====
 def get_jira_auth_headers():
-    import base64
     auth_string = f"{JIRA_EMAIL}:{JIRA_API_TOKEN}"
     return {
         "Authorization": f"Basic {base64.b64encode(auth_string.encode()).decode()}",
-        "Accept": "application/json"
+        "Accept": "application/json",
     }
 
 def get_project_from_issue(issue_id):
+    """Devuelve (project_key, project_name) para un issueId."""
     url = f"{JIRA_API_URL}/issue/{issue_id}"
-    resp = requests.get(url, headers=get_jira_auth_headers())
+    resp = requests.get(url, headers=get_jira_auth_headers(), timeout=60)
     if resp.status_code == 200:
         data = resp.json()
-        project = data.get("fields", {}).get("project", {})
-        project_name = project.get("name")
-        return project_name
+        proj = data.get("fields", {}).get("project", {}) or {}
+        return (proj.get("key") or ""), (proj.get("name") or "")
     else:
         print(f"❌ Error buscando issue {issue_id}: {resp.status_code} - {resp.text}")
-        return None
+        return ("", "")
 
 def get_jira_issue_key(issue_id, key_cache):
-    # Devuelve el issue key dado el issue_id usando la API de Jira (usa cache en memoria para evitar llamadas repetidas)
+    """Devuelve issue key para un issueId (con caché en memoria)."""
     if issue_id in key_cache:
         return key_cache[issue_id]
     url = f"{JIRA_API_URL}/issue/{issue_id}"
-    resp = requests.get(url, headers=get_jira_auth_headers())
+    resp = requests.get(url, headers=get_jira_auth_headers(), timeout=60)
     if resp.status_code == 200:
         data = resp.json()
         key = data.get("key", "")
@@ -53,92 +56,147 @@ def get_jira_issue_key(issue_id, key_cache):
         key_cache[issue_id] = ""
         return ""
 
-def get_tempo_worklogs(from_date, to_date, limit=1000):
-    url = f"https://api.tempo.io/4/worklogs?from={from_date}&to={to_date}&limit={limit}"
+def get_tempo_worklogs(date_from, date_to, limit=1000):
+    """GET /4/worklogs paginado por metadata.next (sin 'worker' para evitar problemas de permisos)."""
+    url = f"https://api.tempo.io/4/worklogs?from={date_from}&to={date_to}&limit={limit}"
     worklogs = []
+    headers = {"Authorization": f"Bearer {TEMPO_TOKEN}", "Accept": "application/json"}
     while url:
-        response = requests.get(url, headers={"Authorization": f"Bearer {TEMPO_TOKEN}", "Accept": "application/json"})
-        if response.status_code != 200:
-            print("Error en la API Tempo:", response.text)
+        resp = requests.get(url, headers=headers, timeout=60)
+        if resp.status_code != 200:
+            print("Error en la API Tempo:", resp.text)
             break
-        data = response.json()
-        worklogs.extend(data.get("results", []))
-        url = data.get("metadata", {}).get("next", None)
+        data = resp.json() or {}
+        results = data.get("results", [])
+        if isinstance(results, dict):
+            results = [results]
+        if not isinstance(results, list):
+            results = []
+        worklogs.extend(results)
+        url = (data.get("metadata") or {}).get("next")
     return worklogs
 
 def load_issue_to_project():
     if os.path.exists(ISSUE_TO_PROJECT_FILE):
         with open(ISSUE_TO_PROJECT_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    else:
-        return {}
+    return {}
 
 def save_issue_to_project(mapping):
     with open(ISSUE_TO_PROJECT_FILE, "w", encoding="utf-8") as f:
         json.dump(mapping, f, ensure_ascii=False, indent=2)
 
+def extract_tempo_account(w):
+    """Extrae el Tempo Account (id o key) desde attributes."""
+    attrs = w.get("attributes")
+    if isinstance(attrs, dict):
+        for k, v in attrs.items():
+            k_l = str(k).lower()
+            if "account" in k_l:
+                if isinstance(v, dict):
+                    return str(v.get("id") or v.get("key") or "")
+                return str(v)
+    elif isinstance(attrs, list):
+        for item in attrs:
+            if not isinstance(item, dict):
+                continue
+            k = str(item.get("key") or "").lower()
+            if "account" in k or "tempo:account" in k:
+                val = item.get("value")
+                if isinstance(val, dict):
+                    return str(val.get("id") or val.get("key") or "")
+                return str(val or "")
+    return ""
+
+def load_account_map():
+    if os.path.exists(ACCOUNT_MAP_FILE):
+        with open(ACCOUNT_MAP_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+# ===== MAIN =====
 def main():
-    # --- Traer worklogs de Tempo SOLO desde 2025-06-01 ---
+    # Ventana: desde 2025-06-01 (como tenías) hasta hoy
     fecha_inicio = "2025-06-01"
     fecha_fin = datetime.now().date().strftime("%Y-%m-%d")
-    print(f"Descargando worklogs de Tempo desde {fecha_inicio} hasta {fecha_fin}...")
+
+    # Usuarios válidos (solo los que están en tu JSON)
+    account_map = load_account_map()
+    allowed_users = set(account_map.keys())
+
+    print(f"Descargando worklogs de Tempo {fecha_inicio} → {fecha_fin}…")
     worklogs = get_tempo_worklogs(fecha_inicio, fecha_fin)
-    print(f"Cantidad total de registros: {len(worklogs)}")
+    print(f"Total worklogs (visibles): {len(worklogs)}")
+
+    # Filtrar localmente por usuarios del JSON
+    wlogs = [w for w in worklogs if (w.get("author") or {}).get("accountId") in allowed_users]
+    print(f"Worklogs tras filtrar por usuarios del JSON: {len(wlogs)}")
+
+    # 1) Recolectar issueIds
     issue_ids = set()
-    for w in worklogs:
-        issue = w.get("issue", {})
-        issue_id = str(issue.get("id"))
+    for w in wlogs:
+        issue = w.get("issue", {}) or {}
+        issue_id = str(issue.get("id") or "")
         if issue_id:
             issue_ids.add(issue_id)
     print(f"Issues únicos detectados: {len(issue_ids)}")
 
-    # --- Paso 2: Cargar el mapping local
+    # 2) Cargar mapping local y consultar Jira solo por faltantes
     issue_to_project = load_issue_to_project()
     faltantes = [iid for iid in issue_ids if iid not in issue_to_project]
     print(f"Hay {len(faltantes)} issues nuevos a consultar en Jira...")
 
-    # --- Paso 3: Consultar Jira solo por los faltantes
-    for idx, issue_id in enumerate(faltantes):
-        project_name = get_project_from_issue(issue_id)
-        if project_name:
-            issue_to_project[issue_id] = project_name
-        else:
-            issue_to_project[issue_id] = "Desconocido"
-        print(f"[{idx+1}/{len(faltantes)}] Issue {issue_id} => Proyecto: {issue_to_project[issue_id]}")
-        time.sleep(0.2)  # Evita rate limit
+    for idx, issue_id in enumerate(faltantes, 1):
+        proj_key, proj_name = get_project_from_issue(issue_id)
+        issue_to_project[issue_id] = proj_key or proj_name or "Desconocido"
+        print(f"[{idx}/{len(faltantes)}] IssueId {issue_id} => Proyecto: {issue_to_project[issue_id]}")
+        time.sleep(0.2)  # evita rate limit
 
-    # --- Paso 4: Guardar mapping actualizado
     save_issue_to_project(issue_to_project)
-    print(f"\nMapping actualizado en '{ISSUE_TO_PROJECT_FILE}'.")
+    print(f"Mapping actualizado en '{ISSUE_TO_PROJECT_FILE}'.")
 
-    # --- Generar un DataFrame de horas con nombre de proyecto y clave de issue ---
-    print("\nGenerando DataFrame de resumen...")
-    key_cache = {}  # cache local en memoria para no consultar dos veces el mismo id
-    data = []
-    for w in worklogs:
-        usuario = w.get("author", {}).get("accountId", "SinUsuario")
-        horas = w.get("timeSpentSeconds", 0) / 3600
-        issue_id = str(w.get("issue", {}).get("id"))
-        issue_key = w.get("issue", {}).get("key")
+    # 3) Armar CSV de salida
+    key_cache = {}
+    rows = []
+    for w in wlogs:
+        author = w.get("author") or {}
+        usuario = author.get("accountId", "SinUsuario")
+        horas = (w.get("timeSpentSeconds") or 0) / 3600.0
+        issue = w.get("issue") or {}
+        issue_id = str(issue.get("id") or "")
+        issue_key = issue.get("key") or ""
         if not issue_key and issue_id:
             issue_key = get_jira_issue_key(issue_id, key_cache)
-        fecha = w.get("startDate")
+        fecha = w.get("startDate") or (w.get("dateStarted") or "")[:10]
         proyecto = issue_to_project.get(issue_id, "Desconocido")
-        data.append({
+        cuenta = extract_tempo_account(w)
+        tempo_wid = str(w.get("id") or "")
+
+        rows.append({
             "Usuario": usuario,
-            "Proyecto": proyecto,
+            "Proyecto": proyecto,           # KEY (REP/TAL/ATI)
+            "Cuenta": cuenta,               # Tempo Account (para alertas de TEM no mapeada)
             "Fecha": fecha,
-            "Horas": horas,
-            "Issue": issue_key
+            "Horas": round(horas, 4),
+            "Issue": issue_key,
+            "IssueId": issue_id,
+            "TempoWorklogId": tempo_wid
         })
-    df = pd.DataFrame(data)
-    print("Primeras filas del resumen:")
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
+        df["Horas"] = pd.to_numeric(df["Horas"], errors="coerce").fillna(0.0).round(4)
+
+    print("Preview:")
     print(df.head())
+    os.makedirs(DATA_DIR, exist_ok=True)
     df.to_csv(HORAS_CON_PROYECTO_FILE, index=False, encoding="utf-8")
     print(f"Resumen guardado en '{HORAS_CON_PROYECTO_FILE}'.")
 
 if __name__ == "__main__":
     main()
+
 
 
 
