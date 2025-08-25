@@ -1178,22 +1178,42 @@ if opcion == "BUGS Postventas":
 
 
 #Historico postventas
+# === PESTAÑA HISTÓRICO POSTVENTA (COMPLETA) ===
 if opcion == "Histórico postventa":
     from jira_conexion import jira
     import unicodedata
     import pandas as pd
 
+    # ------------------ Helpers ------------------
     def normalize(s):
         if not s:
             return ""
         return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII').lower().strip()
 
+    def _status_norm(s: str) -> str:
+        return (s or "").strip().lower()
+
     def traer_todos_los_issues(jira, jql, fields, max_results=100):
         issues = []
         start_at = 0
         while True:
+            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        return issues
+
+    def traer_bugs_con_changelog(jira, jql, fields, max_results=100):
+        """Trae BUGS con expand=changelog para medir tiempos."""
+        issues = []
+        start_at = 0
+        while True:
             endpoint = (
-                f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+                f'search?jql={jql}&fields={fields}'
+                f'&expand=changelog&startAt={start_at}&maxResults={max_results}'
             )
             data = jira._get_json(endpoint)
             batch = data.get("issues", [])
@@ -1203,78 +1223,167 @@ if opcion == "Histórico postventa":
             start_at += max_results
         return issues
 
+    def _bug_resolution_hours(bug_issue) -> float | None:
+        """
+        Demora (hs) desde la PRIMERA vez que el bug pasa a 'Haciendo' (o 'In Progress')
+        hasta la PRIMERA vez que pasa a 'Hecha/Resuelto/Resuelta/Done'.
+        Si no hay 'Haciendo', usa fecha de creación como inicio.
+        """
+        f = bug_issue.get("fields", {}) or {}
+        created = pd.to_datetime(f.get("created"), errors="coerce")
+
+        start_dt = None
+        end_dt = None
+
+        histories = (bug_issue.get("changelog", {}) or {}).get("histories", []) or []
+        histories = sorted(histories, key=lambda h: pd.to_datetime(h.get("created"), errors="coerce"))
+
+        for hist in histories:
+            h_created = pd.to_datetime(hist.get("created"), errors="coerce")
+            for it in hist.get("items", []) or []:
+                if _status_norm(it.get("field")) == "status":
+                    to_str = _status_norm(it.get("toString"))
+                    if start_dt is None and to_str in ("haciendo", "in progress"):
+                        start_dt = h_created
+                    if end_dt is None and to_str in ("hecha", "resuelto", "resuelta", "done"):
+                        end_dt = h_created
+
+        if start_dt is None:
+            start_dt = created
+        if pd.isna(start_dt) or end_dt is None or pd.isna(end_dt):
+            return None
+
+        return float((end_dt - start_dt).total_seconds() / 3600.0)
+
+    def _bugs_por_hu(bugs_issues) -> dict:
+        """
+        Dict { HU_KEY: {"bugs": [bug_key,...], "hrs": [resol_horas,...]} }
+        HU detectada por parent y por cualquier issuelink.
+        """
+        por_hu = {}
+        for iss in bugs_issues:
+            f = iss.get("fields", {}) or {}
+            itype = _status_norm((f.get("issuetype", {}) or {}).get("name"))
+            if itype != "error":
+                continue
+
+            bug_key = iss.get("key", "")
+            if not bug_key:
+                continue
+
+            # HUs candidatas: parent + TODOS los links
+            candidate_hus = set()
+            parent_key = (f.get("parent") or {}).get("key", "")
+            if parent_key:
+                candidate_hus.add(parent_key)
+            for link in (f.get("issuelinks") or []):
+                for side in ("inwardIssue", "outwardIssue"):
+                    lk = link.get(side) or {}
+                    k = lk.get("key")
+                    if k:
+                        candidate_hus.add(k)
+
+            hrs = _bug_resolution_hours(iss)
+
+            for hu in candidate_hus:
+                if not hu:
+                    continue
+                slot = por_hu.setdefault(hu, {"bugs": [], "hrs": []})
+                slot["bugs"].append(bug_key)
+                if hrs is not None:
+                    slot["hrs"].append(hrs)
+        return por_hu
+
+    # ------------------ Fuente de datos ------------------
     meses_orden = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-    fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated"
-    issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-    issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
+    # Historias (REP + TAL)
+    fields_hist = (
+        "key,summary,status,project,issuetype,assignee,parent,"
+        "customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated"
+    )
+    issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields_hist)
+    issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields_hist)
     issues = issues_tal + issues_rep
 
-    issues_unicos = {}
-    for issue in issues:
-        issues_unicos[issue['key']] = issue
+    # Desduplico por key
+    issues_unicos = {iss['key']: iss for iss in issues}
     issues = list(issues_unicos.values())
 
+    # BUGS (REP + TAL) con changelog
+    fields_bugs = "key,project,issuetype,status,assignee,parent,issuelinks,created"
+    bugs_rep = traer_bugs_con_changelog(jira, 'project = REP AND issuetype = Error', fields_bugs)
+    bugs_tal = traer_bugs_con_changelog(jira, 'project = TAL AND issuetype = Error', fields_bugs)
+    bugs_all = bugs_rep + bugs_tal
+
+    # Mapa HU -> {bugs, hrs}
+    mapa_bugs_hu = _bugs_por_hu(bugs_all)
+
+    # ------------------ Agrupar historias por Épica (RN) ------------------
     EPIC_LINK_CAMPO = "customfield_10016"
     epicas = {}
     for issue in issues:
+        f = issue.get("fields", {}) or {}
+
+        # Nombre de épica (RN)
         epic_name = None
-        if "parent" in issue["fields"] and issue["fields"]["parent"]:
-            parent = issue["fields"]["parent"]
-            if "summary" in parent and parent["summary"]:
-                epic_name = parent["summary"]
-            elif "fields" in parent and "summary" in parent["fields"]:
-                epic_name = parent["fields"]["summary"]
+        parent = f.get("parent")
+        if parent:
+            # parent.summary directo o dentro de fields
+            epic_name = (parent.get("summary")
+                         or (parent.get("fields") or {}).get("summary"))
+
         if not epic_name or epic_name.lower() in ["sin epica", "sin épica", "none", ""]:
-            epica_custom = issue["fields"].get(EPIC_LINK_CAMPO, None)
-            if epica_custom and isinstance(epica_custom, dict) and epica_custom.get("value"):
+            epica_custom = f.get(EPIC_LINK_CAMPO, None)
+            if isinstance(epica_custom, dict) and epica_custom.get("value"):
                 epic_name = epica_custom["value"]
-            elif epica_custom and isinstance(epica_custom, str):
+            elif isinstance(epica_custom, str) and epica_custom:
                 epic_name = epica_custom
+
         if not epic_name or epic_name.lower() in ["sin epica", "sin épica", "none", ""]:
             epic_name = "Sin epica"
 
-        summary = issue["fields"]["summary"]
+        summary = f.get("summary", "")
         if "madre" in summary.lower():
             continue
 
-        estado = (issue["fields"]["status"]["name"] or "").strip().lower()
-        asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
-        puntos = issue["fields"].get("customfield_10026", 0)
+        estado = _status_norm((f.get("status") or {}).get("name"))
+        asg = (f.get("assignee") or {})
+        asignado = asg.get("displayName", "")
+        puntos = f.get("customfield_10026", 0) or 0
         try:
             puntos = float(puntos)
         except Exception:
-            puntos = 0
-        key = issue["key"]
-        fecha_estado = issue["fields"].get("statuscategorychangedate") or issue["fields"].get("updated") or ""
-        duedate = issue["fields"].get("duedate") or ""
+            puntos = 0.0
 
-        if epic_name not in epicas:
-            epicas[epic_name] = {
-                "Historias": [],
-                "Mes de entrega": None
-            }
-        epicas[epic_name]["Historias"].append({
+        key = issue.get("key", "")
+        fecha_estado = f.get("statuscategorychangedate") or f.get("updated") or ""
+        duedate = f.get("duedate") or ""
+
+        slot = epicas.setdefault(epic_name, {"Historias": [], "Mes de entrega": None})
+        slot["Historias"].append({
             "Clave": key,
             "Nombre": summary,
-            "Estado": estado,
+            "Estado": estado,  # normalizado
             "Asignado": asignado,
             "Fecha_estado": fecha_estado,
             "Duedate": duedate,
-            "Puntos": puntos
+            "Puntos": puntos,
         })
 
+    # ------------------ Tabla de histórico (usa tu lista 'epicas_relevantes') ------------------
     def ordenar_mes(m):
         try:
             return meses_orden.index(m)
-        except:
+        except Exception:
             return 99
 
     tabla_historico = []
-    for epica_rn in epicas_relevantes:
+    for epica_rn in epicas_relevantes:  # ← tu lista existente con {"nombre", "mes_entrega"}
         nombre_epica = epica_rn.get("nombre", "")
         mes_entrega = epica_rn.get("mes_entrega", "")
         epic_match = next((epic for epic in epicas if normalize(nombre_epica) == normalize(epic)), None)
+
         if epic_match:
             data = epicas[epic_match]
             historias = data["Historias"]
@@ -1282,20 +1391,49 @@ if opcion == "Histórico postventa":
             listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
             porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
             puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+
+            # === BUGS por RN (a partir de las HUs del RN) ===
+            hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
+            bugs_keys = []
+            bugs_hrs = []
+            for hu in hu_keys:
+                info = mapa_bugs_hu.get(hu)
+                if not info:
+                    continue
+                bugs_keys.extend(info.get("bugs", []))
+                bugs_hrs.extend(info.get("hrs", []))
+
+            uniq_bugs = sorted(set(bugs_keys))
+            bugs_cnt = len(uniq_bugs)
+            prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
+
         else:
             historias = []
             porcentaje_num = 0
             puntos_totales = 0
+            uniq_bugs = []
+            bugs_cnt = 0
+            prom_hrs = None
+
         tabla_historico.append({
             "Épica": nombre_epica,
             "Mes entrega": mes_entrega,
             "%_num": porcentaje_num,
             "Historias": historias,
-            "Puntos totales": puntos_totales
+            "Puntos totales": puntos_totales,
+            # Nuevos campos
+            "Bugs_asociados": bugs_cnt,
+            "Bugs_asociados_claves": ", ".join(uniq_bugs),
+            "Bugs_total_RN": bugs_cnt,
+            "Promedio_resolucion_bugs_hs": prom_hrs,
         })
 
-    tabla_historico = sorted(tabla_historico, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
+    tabla_historico = sorted(
+        tabla_historico,
+        key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"])
+    )
 
+    # ------------------ UI ------------------
     st.markdown("## Histórico de RNs postventa")
     for row in tabla_historico:
         nombre = row["Épica"]
@@ -1303,19 +1441,43 @@ if opcion == "Histórico postventa":
         porcentaje = row["%_num"]
         puntos_totales = row["Puntos totales"]
         historias = row["Historias"]
-        completado = porcentaje == 100
 
-        expander_title = f"{nombre} | Porcentaje de avance: {porcentaje:.1f}% | {mes} | Puntos totales: {puntos_totales}"
+        bugs_cnt = row["Bugs_asociados"]
+        prom_hrs = row["Promedio_resolucion_bugs_hs"]
+        prom_txt = f"{prom_hrs:.2f} hs" if prom_hrs is not None else "-"
+
+        expander_title = (
+            f"{nombre} | Avance: {porcentaje:.1f}% | {mes} | "
+            f"Puntos: {puntos_totales} | Bugs: {bugs_cnt} | Prom. resolución: {prom_txt}"
+        )
         with st.expander(expander_title, expanded=False):
+            # Resumen de bugs del RN
+            st.markdown(
+                f"**Bugs asociados:** {bugs_cnt} &nbsp;|&nbsp; "
+                f"**Promedio resolución:** {prom_txt} &nbsp;|&nbsp; "
+                f"**Claves:** {row['Bugs_asociados_claves'] or '-'}"
+            )
+            st.markdown("---")
+
+            # Lista de historias del RN
             if historias:
                 for h in historias:
-                    color_estado = "#39d353" if h["Estado"]=="lista para implementar" else "#fa4" if h["Estado"]=="en desarrollo" else "#bbb"
+                    estado = h["Estado"]
+                    color_estado = (
+                        "#39d353" if estado == "lista para implementar"
+                        else "#fa4" if estado == "en desarrollo"
+                        else "#bbb"
+                    )
+                    asignado = h["Asignado"] if h["Asignado"] else "<i>Sin asignar</i>"
                     st.markdown(
-                        f"- **{h['Clave']}** — {h['Nombre']} | <span style='color:{color_estado}'>{h['Estado'].capitalize()}</span> | {h['Asignado'] if h['Asignado'] else '<i>Sin asignar</i>'} | <b>Puntos:</b> {h['Puntos']}",
-                        unsafe_allow_html=True
+                        f"- **{h['Clave']}** — {h['Nombre']} | "
+                        f"<span style='color:{color_estado}'>{estado.capitalize()}</span> | "
+                        f"{asignado} | <b>Puntos:</b> {h['Puntos']}",
+                        unsafe_allow_html=True,
                     )
             else:
                 st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
+
 #velocidad devs
 # === PESTAÑA VELOCIDAD DE DEVS ===
 if opcion == "Velocidad de devs":
@@ -1349,12 +1511,6 @@ if opcion == "Velocidad de devs":
         return dt.strftime("%B %Y")
 
     def _proy_ok(project_key: str, sel: str) -> bool:
-        """
-        Regla de filtro de proyecto:
-          - 'ATI'         -> solo issues del proyecto ATI
-          - 'Postventas'  -> solo issues de REP o TAL
-          - 'Todos'       -> todo
-        """
         v = _norm(project_key)
         if sel == "ATI":
             return v == "ATI"
@@ -1418,16 +1574,57 @@ if opcion == "Velocidad de devs":
 
     st.info(f"📅 Última actualización: {meta.get('last_update', 'desconocida')}")
 
-    # ------------------ Cards de OBJETIVOS (tus reglas nuevas) ------------------
+    # ------------------ Cards de OBJETIVOS con explicación ------------------
     OBJ = {
-        "puntos_mes": 16,     # objetivo puntos/mes
-        "hs_por_punto": 8,    # objetivo velocidad
+        "puntos_mes": 16,
+        "hs_por_punto": 8,
         "bugs_max": 0,
-        "bugs_extra_min": 10, # umbral para bono máximo
+        "bugs_extra_min": 10,
         "horas_mes": 128,
     }
+    PESOS = {"puntos": 0.40, "horas": 0.25, "velocidad": 0.25, "bugs": 0.10}
+    BONUS_MAX = 0.05
 
-    def _card(texto: str, color_hex: str):
+    RUBRICAS = {
+        "puntos": """
+**Regla de puntos (mensual):**
+- ≥ 20 puntos → **105%**
+- 17–19 → **102%**
+- **16** → **100%**
+- 13–15 → **90%**
+- 10–12 → **80%**
+- < 10 → **70%**
+""",
+        "horas": """
+**Regla de horas (mensual):**
+- ≥ **128 hs** → **100%**
+- 100–127 hs → **95%**
+- < 100 hs → **70%**
+""",
+        "velocidad": """
+**Velocidad (hs por punto, menor es mejor):**
+- ≤ **5** → **110%** · 6–7 → **105%**
+- **8** → **100%**
+- 8–10 → **95%** · 10–12 → **90%** · >12 → **80%**
+""",
+        "bugs": """
+**Bugs (por mes):**
+- **0** → **100%** · 1–3 → **95%**
+- 4–5 → **90%** · ≥6 → **80%**
+""",
+        "bonus": """
+**Bono por bugs extra resueltos:**
+- 1–5 → **+2%** · 6–10 → **+3%** · >10 → **+5%**
+""",
+    }
+
+    def _popover(title: str):
+        try:
+            return st.popover(title, use_container_width=True)
+        except Exception:
+            return st.expander(title, expanded=False)
+
+    def _card_objetivo(texto: str, color_hex: str, peso: float | None, rubrica_md: str, key: str):
         st.markdown(
             f"""
             <div style="
@@ -1435,23 +1632,41 @@ if opcion == "Velocidad de devs":
                 padding:14px 18px;
                 border-radius:12px;
                 text-align:center;
-                font-weight:600;
-                color:#fff;">
+                font-weight:700;
+                color:#fff;
+                box-shadow:0 2px 8px rgba(0,0,0,0.12);
+                ">
                 {texto}
             </div>
             """,
             unsafe_allow_html=True,
         )
+        with _popover("¿Cómo se calcula?"):
+            if peso is not None:
+                st.markdown(f"**Pesa {int(peso*100)}% de la nota final.**")
+            else:
+                st.markdown(f"**Bono adicional hasta +{int(BONUS_MAX*100)}%** sobre la nota.")
+            st.markdown(rubrica_md)
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: _card(f"{OBJ['puntos_mes']} puntos / mes",  "#1976d2")  # azul
-    with c2: _card(f"{OBJ['hs_por_punto']} hs por punto", "#fb8c00")  # naranja
-    with c3: _card(f"{OBJ['bugs_max']} bugs",            "#2e7d32")  # verde
-    with c4: _card(f"Mínimo {OBJ['bugs_extra_min']} bugs extra", "#c62828")  # rojo
-    with c5: _card(f"{OBJ['horas_mes']} hs / mes",       "#7e57c2")  # violeta
+    with c1:
+        _card_objetivo(f"{OBJ['puntos_mes']} puntos / mes", "#1976d2",
+                       PESOS["puntos"], RUBRICAS["puntos"], key="card_puntos")
+    with c2:
+        _card_objetivo(f"{OBJ['hs_por_punto']} hs por punto", "#fb8c00",
+                       PESOS["velocidad"], RUBRICAS["velocidad"], key="card_vel")
+    with c3:
+        _card_objetivo(f"{OBJ['bugs_max']} bugs", "#2e7d32",
+                       PESOS["bugs"], RUBRICAS["bugs"], key="card_bugs")
+    with c4:
+        _card_objetivo(f"Mínimo {OBJ['bugs_extra_min']} bugs extra", "#c62828",
+                       None, RUBRICAS["bonus"], key="card_bonus")
+    with c5:
+        _card_objetivo(f"{OBJ['horas_mes']} hs / mes", "#7e57c2",
+                       PESOS["horas"], RUBRICAS["horas"], key="card_horas")
 
     # ==========================
-    #   Filtros de UI (Proyecto primero)
+    #   Filtros de UI
     # ==========================
     col_proj, col_user = st.columns(2)
     with col_proj:
@@ -1466,45 +1681,49 @@ if opcion == "Velocidad de devs":
         df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"])
     ).apply(_norm)
 
-    # Filtro por proyecto sobre HORAS (usa la col. Proyecto = ATI | REP | TAL)
-    if "Proyecto" in df_horas.columns:
-        df_horas = df_horas[df_horas["Proyecto"].apply(lambda v: _proy_ok(v, proyecto_sel))]
-
     if "Fecha" in df_horas.columns:
         df_horas["Fecha"] = pd.to_datetime(df_horas["Fecha"], errors="coerce")
-        df_horas["Mes_dt"] = df_horas["Fecha"].apply(
-            lambda d: _mes_start(d) if pd.notna(d) else pd.NaT
-        )
+        df_horas["Mes_dt"] = df_horas["Fecha"].apply(lambda d: _mes_start(d) if pd.notna(d) else pd.NaT)
     else:
         df_horas["Mes_dt"] = pd.NaT
-
     df_horas["Mes"] = df_horas["Mes_dt"].dt.strftime("%B %Y")
 
-    df_horas_sum = (
+    # Sumas de horas (globales) + por proyecto cuando existan
+    df_horas_sum_total = (
         df_horas.dropna(subset=["Mes_dt"])
         .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
         .agg(Horas=("Horas", "sum"))
     )
-    df_horas_sum["Mes"] = df_horas_sum["Mes_dt"].dt.strftime("%B %Y")
+    df_horas_sum_total["Mes"] = df_horas_sum_total["Mes_dt"].dt.strftime("%B %Y")
 
-    # ------------------ Dueño de HU en 1ª vez "En testing" (accountId) ------------------
-    hu_owner_name = {}  # {HU_KEY: visible_name_at_testing}
-    hu_owner_id   = {}  # {HU_KEY: accountId_at_testing}
-    hu_project    = {}  # {HU_KEY: project.key} (para filtrar por proyecto)
+    df_horas_sum_proj = pd.DataFrame(columns=["Usuario_nombre", "Mes_dt", "Horas", "Mes"])
+    if "Proyecto" in df_horas.columns and proyecto_sel != "Todos":
+        df_horas_proj = df_horas[df_horas["Proyecto"].apply(lambda v: _proy_ok(v, proyecto_sel))]
+        if not df_horas_proj.empty:
+            df_horas_sum_proj = (
+                df_horas_proj.dropna(subset=["Mes_dt"])
+                .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
+                .agg(Horas=("Horas", "sum"))
+            )
+            df_horas_sum_proj["Mes"] = df_horas_sum_proj["Mes_dt"].dt.strftime("%B %Y")
+
+    usar_horas_por_proyecto = (proyecto_sel != "Todos") and (not df_horas_sum_proj.empty)
+    df_horas_sum = df_horas_sum_proj if usar_horas_por_proyecto else df_horas_sum_total
+    if proyecto_sel != "Todos" and not usar_horas_por_proyecto:
+        st.caption("ℹ️ No hay horas por proyecto en el CSV (o columna 'Proyecto' inexistente). La **velocidad** se calcula con horas **globales**.")
+
+    # ------------------ Dueño de HU en 1ª vez "En testing" ------------------
+    hu_owner_name = {}
+    hu_owner_id   = {}
 
     def _owner_al_momento_testing(iss):
-        """Devuelve (owner_visible_name, owner_account_id, first_testing_dt)."""
         f = iss.get("fields", {}) or {}
         current_id = (f.get("assignee") or {}).get("accountId")
         current_name = _norm(accountid_to_name.get(current_id) or (f.get("assignee") or {}).get("displayName"))
-
         histories = (iss.get("changelog", {}) or {}).get("histories", []) or []
         histories = sorted(histories, key=lambda h: pd.to_datetime(h.get("created"), errors="coerce"))
-
         for hist in histories:
             h_created = pd.to_datetime(hist.get("created"), errors="coerce")
-
-            # aplicar cambios de assignee primero
             for it in hist.get("items", []) or []:
                 if _norm(it.get("field")).lower() == "assignee":
                     new_id = it.get("to")
@@ -1517,39 +1736,32 @@ if opcion == "Velocidad de devs":
                         if infer_id:
                             current_id = infer_id
                         current_name = new_name or current_name
-
-            # luego ver si cambia a "En testing"
             for it in hist.get("items", []) or []:
                 if _norm(it.get("field")).lower() == "status" and _norm(it.get("toString")).lower() == "en testing":
                     if pd.notna(h_created):
                         return current_name, current_id, h_created
-
         return None, None, None
 
-    # Recolectamos mapping y puntos por HU (mes = 1ª vez en Testing) **filtrando por proyecto**
+    # Issues (puntos) filtrando por proyecto
     rows_issues = []
     for iss in issues:
         f = iss.get("fields", {}) or {}
         itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
         if itype != "historia":
             continue
-
         proj_key = _norm((f.get("project") or {}).get("key"))
         if not _proy_ok(proj_key, proyecto_sel):
-            continue  # filtro de proyecto
-
+            continue
         key = iss.get("key", "")
         pts = f.get("customfield_10026", 0) or 0
         try:
             pts = float(pts)
         except Exception:
             pts = 0.0
-
         owner_name, owner_id, first_dt = _owner_al_momento_testing(iss)
         if pd.notna(first_dt) and pts > 0 and owner_name and owner_id:
             hu_owner_name[key] = owner_name
             hu_owner_id[key]   = owner_id
-            hu_project[key]    = proj_key
             rows_issues.append(
                 {
                     "Issue": key,
@@ -1564,11 +1776,10 @@ if opcion == "Velocidad de devs":
         rows_issues, columns=["Issue", "Puntos", "Usuario_nombre", "Mes", "Proyecto"]
     )
 
-    # ------------------ BUGS (regla EXACTA + filtro proyecto) ------------------
-    bug_rows = []         # (Usuario_nombre, Mes, Bug_key)  -> dueño HU; mes = creación
-    bugs_extra_rows = []  # (Usuario_nombre, Mes, Bug_key)  -> asignado al cerrar; mes = cierre
+    # ------------------ BUGS (regla + filtro proyecto) ------------------
+    bug_rows = []
+    bugs_extra_rows = []
 
-    # HU válidas del proyecto (para contar bugs normales)
     hus_validas = set(df_issues["Issue"].unique())
 
     for iss in issues:
@@ -1580,21 +1791,17 @@ if opcion == "Velocidad de devs":
         bug_key = iss.get("key", "")
         bug_proj = _norm((f.get("project") or {}).get("key"))
 
-        # Mes de creación (para BUGS normales)
         bug_created = pd.to_datetime(f.get("created"), errors="coerce")
         bug_mes_creacion = _mes_label(_mes_start(bug_created)) if pd.notna(bug_created) else None
 
-        # Mes de cierre (para BUGS EXTRA)
         estado_bug = _norm((f.get("status", {}) or {}).get("name")).lower()
         fecha_cierre = pd.to_datetime(f.get("statuscategorychangedate", ""), errors="coerce")
         bug_mes_cierre = _mes_label(_mes_start(fecha_cierre)) if pd.notna(fecha_cierre) else None
 
-        # Assignee del bug (al cerrar)
         assg = f.get("assignee") or {}
         bug_assignee_id = assg.get("accountId")
         bug_assignee_nm = _norm(accountid_to_name.get(bug_assignee_id) or assg.get("displayName"))
 
-        # HUs candidatas: parent + TODOS los links
         candidate_hus = set()
         parent_key = (f.get("parent") or {}).get("key", "")
         if parent_key:
@@ -1606,7 +1813,6 @@ if opcion == "Velocidad de devs":
                 if k:
                     candidate_hus.add(k)
 
-        # Buscar una HU válida (del proyecto filtrado y presente en df_issues)
         hu_duenio_acc = None
         hu_duenio_vis = None
         hu_link_valida = None
@@ -1617,21 +1823,18 @@ if opcion == "Velocidad de devs":
                 hu_link_valida = hu
                 break
 
-        # BUG normal: necesita HU válida + mes de creación
         if bug_mes_creacion and hu_duenio_vis and (hu_link_valida in hus_validas):
             bug_rows.append((hu_duenio_vis, bug_mes_creacion, bug_key))
 
-        # BUG extra: (sin HU válida para este proyecto) y bug pertenece al proyecto filtrado
         if (
             bug_assignee_nm
             and bug_mes_cierre
             and estado_bug in ("hecha", "resuelto", "resuelta", "done")
             and (hu_duenio_acc is None or hu_duenio_acc != bug_assignee_id)
-            and _proy_ok(bug_proj, proyecto_sel)  # extra se filtra por proyecto del BUG
+            and _proy_ok(bug_proj, proyecto_sel)
         ):
             bugs_extra_rows.append((bug_assignee_nm, bug_mes_cierre, bug_key))
 
-    # DataFrames de bugs con conteo y CLAVES
     if bug_rows:
         df_bugs_mes = pd.DataFrame(bug_rows, columns=["Usuario_nombre", "Mes", "Bug_key"])
         df_bugs_mes = (
@@ -1670,34 +1873,32 @@ if opcion == "Velocidad de devs":
     else:
         df_puntos = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Puntos", "Claves"])
 
-    # ------------------ Merge HORAS + PUNTOS + BUGS ------------------
-    df_merge = df_horas_sum.merge(df_puntos, on=["Usuario_nombre", "Mes"], how="left")
-    if "Puntos" not in df_merge.columns:
-        df_merge["Puntos"] = 0.0
-    df_merge["Puntos"] = df_merge["Puntos"].fillna(0.0)
-    if "Claves" not in df_merge.columns:
-        df_merge["Claves"] = ""
-    df_merge["Claves"] = df_merge["Claves"].fillna("")
+    # ------------------ BASE unificada y merges ------------------
+    df_puntos["_Mes_dt_aux"] = pd.to_datetime(df_puntos["Mes"], format="%B %Y", errors="coerce")
+    base_horas = df_horas_sum[["Usuario_nombre", "Mes_dt"]].drop_duplicates() if "Mes_dt" in df_horas_sum.columns else pd.DataFrame(columns=["Usuario_nombre","Mes_dt"])
+    base_puntos = df_puntos[["Usuario_nombre", "_Mes_dt_aux"]].rename(columns={"_Mes_dt_aux":"Mes_dt"}).drop_duplicates()
+    df_base = pd.concat([base_horas, base_puntos], ignore_index=True).dropna(subset=["Mes_dt"]).drop_duplicates()
+    df_base["Mes"] = df_base["Mes_dt"].dt.strftime("%B %Y")
 
-    # Bugs asociados (conteo + claves)
-    df_merge = df_merge.merge(
-        df_bugs_mes.rename(columns={"Bug_cnt": "Bugs"}), on=["Usuario_nombre", "Mes"], how="left"
-    )
-    for c in ["Bugs", "Bugs_claves"]:
-        if c not in df_merge.columns:
-            df_merge[c] = 0 if c == "Bugs" else ""
-    df_merge["Bugs"] = df_merge["Bugs"].fillna(0).astype(int)
-    df_merge["Bugs_claves"] = df_merge["Bugs_claves"].fillna("").astype(str)
+    df_merge = df_base.merge(df_horas_sum[["Usuario_nombre","Mes_dt","Horas"]], on=["Usuario_nombre","Mes_dt"], how="left")
+    df_merge = df_merge.merge(df_puntos[["Usuario_nombre","Mes","Puntos","Claves"]], on=["Usuario_nombre","Mes"], how="left")
 
-    # Bugs extra (conteo + claves)
-    df_merge = df_merge.merge(df_bugs_extra, on=["Usuario_nombre", "Mes"], how="left")
-    for c in ["Bugs_resueltos_extra", "Bugs_extra_claves"]:
-        if c not in df_merge.columns:
-            df_merge[c] = 0 if c == "Bugs_resueltos_extra" else ""
-    df_merge["Bugs_resueltos_extra"] = df_merge["Bugs_resueltos_extra"].fillna(0).astype(int)
-    df_merge["Bugs_extra_claves"] = df_merge["Bugs_extra_claves"].fillna("").astype(str)
+    if not df_bugs_mes.empty:
+        df_merge = df_merge.merge(
+            df_bugs_mes.rename(columns={"Bug_cnt": "Bugs"}),
+            on=["Usuario_nombre", "Mes"],
+            how="left",
+        )
+    if not df_bugs_extra.empty:
+        df_merge = df_merge.merge(df_bugs_extra, on=["Usuario_nombre", "Mes"], how="left")
 
-    # Velocidad y Nota final (tus reglas)
+    for col, fill in [("Horas", 0.0), ("Puntos", 0.0), ("Bugs", 0), ("Bugs_resueltos_extra", 0)]:
+        if col in df_merge.columns:
+            df_merge[col] = df_merge[col].fillna(fill)
+    for col in ["Claves", "Bugs_claves", "Bugs_extra_claves"]:
+        if col in df_merge.columns:
+            df_merge[col] = df_merge[col].fillna("").astype(str)
+
     df_merge["Velocidad"] = df_merge.apply(
         lambda r: round(r["Horas"] / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
     )
@@ -1709,7 +1910,6 @@ if opcion == "Velocidad de devs":
         v = float(r.get("Velocidad", 0.0))
         bex = int(r.get("Bugs_resueltos_extra", 0))
 
-        # Puntos
         if p >= 20: sp = 1.05
         elif 17 <= p <= 19: sp = 1.02
         elif p == 16: sp = 1.00
@@ -1717,18 +1917,15 @@ if opcion == "Velocidad de devs":
         elif 10 <= p <= 12: sp = 0.80
         else: sp = 0.70
 
-        # Horas
         if h >= 128: sh = 1.00
         elif 100 <= h <= 127: sh = 0.95
         else: sh = 0.70
 
-        # Bugs
         if b == 0: sb = 1.00
         elif 1 <= b <= 3: sb = 0.95
         elif 4 <= b <= 5: sb = 0.90
         else: sb = 0.80
 
-        # Velocidad (hs/punto)
         if v <= 5: sv = 1.10
         elif 6 <= v <= 7: sv = 1.05
         elif abs(v - 8.0) < 1e-9: sv = 1.00
@@ -1738,7 +1935,6 @@ if opcion == "Velocidad de devs":
 
         base = (sp * 0.40) + (sh * 0.25) + (sv * 0.25) + (sb * 0.10)
 
-        # Bono por bugs extra
         if 1 <= bex <= 5: bonus = 0.02
         elif 6 <= bex <= 10: bonus = 0.03
         elif bex > 10: bonus = 0.05
@@ -1751,14 +1947,12 @@ if opcion == "Velocidad de devs":
     else:
         df_merge["Nota_final"] = pd.Series(dtype=float)
 
-    # Mes_dt para ordenar / últimos 6 meses
-    df_merge["Mes"] = df_merge["Mes"].fillna("")
-    df_merge["Mes_dt"] = pd.to_datetime(df_merge["Mes"], format="%B %Y", errors="coerce")
+    df_merge["Mes_dt"] = pd.to_datetime(df_merge["Mes_dt"], errors="coerce")
     fecha_limite6 = pd.Timestamp.today().normalize() - pd.DateOffset(months=6)
     df_ult6 = df_merge[df_merge["Mes_dt"] >= _mes_start(fecha_limite6)].copy()
 
     # ==========================
-    #   Selector de usuario (sin IDs)
+    #   Selector de usuario
     # ==========================
     df_ult6["Usuario_nombre"] = df_ult6["Usuario_nombre"].apply(_norm)
     users_with_points = set(
@@ -1811,7 +2005,6 @@ if opcion == "Velocidad de devs":
     #   Gráficos
     # ==========================
     if usuario_sel == "Todos":
-        # Gráfico general: Velocidad promedio por usuario (6m)
         if not df_rank_src.empty:
             chart_data = (
                 df_rank_src.groupby("Usuario_nombre", as_index=False)
@@ -1821,26 +2014,17 @@ if opcion == "Velocidad de devs":
                 alt.Chart(chart_data)
                 .mark_bar()
                 .encode(
-                    x=alt.X(
-                        "Usuario_nombre:N",
-                        sort="-y",
-                        title="Usuario",
-                        axis=alt.Axis(labelAngle=-40),
-                    ),
+                    x=alt.X("Usuario_nombre:N", sort="-y", title="Usuario", axis=alt.Axis(labelAngle=-40)),
                     y=alt.Y("Velocidad_promedio:Q", title="Velocidad promedio"),
-                    tooltip=[
-                        "Usuario_nombre",
-                        alt.Tooltip("Velocidad_promedio:Q", format=".2f"),
-                    ],
+                    tooltip=["Usuario_nombre", alt.Tooltip("Velocidad_promedio:Q", format=".2f")],
                 )
                 .properties(height=280)
             )
             st.altair_chart(ch, use_container_width=True)
     else:
-        # Historial del usuario (consolidado por mes) + gráfico PUNTOS por mes
+        # Historial del usuario (UN registro por mes) + gráfico de **Velocidad** con línea objetivo roja
         df_user = df_ult6[df_ult6["Usuario_nombre"] == usuario_sel].copy()
         if not df_user.empty:
-
             def _combinar_claves(series):
                 vals = [str(v) for v in series.dropna() if str(v).strip()]
                 if not vals:
@@ -1886,24 +2070,39 @@ if opcion == "Velocidad de devs":
                 hide_index=True,
             )
 
-            ch_u = (
-                alt.Chart(df_user)
+            # -------- Gráfico: Velocidad por mes (único por mes) + línea objetivo --------
+            df_user_plot = (
+                df_user[["Mes_dt", "Velocidad"]]
+                .dropna()
+                .groupby("Mes_dt", as_index=False)
+                .agg(Velocidad=("Velocidad", "mean"))
+                .sort_values("Mes_dt")
+            )
+            df_user_plot["Mes_lbl"] = df_user_plot["Mes_dt"].dt.strftime("%b %Y")
+
+            linea_usuario = (
+                alt.Chart(df_user_plot)
                 .mark_line(point=True)
                 .encode(
                     x=alt.X("Mes_dt:T", title="Mes", axis=alt.Axis(format="%b %Y")),
-                    y=alt.Y("Puntos:Q", title="Puntos"),
+                    y=alt.Y("Velocidad:Q", title="Velocidad (hs/punto)"),
                     tooltip=[
-                        alt.Tooltip("Mes:N", title="Mes"),
-                        alt.Tooltip("Puntos:Q", title="Puntos"),
-                        alt.Tooltip("Horas:Q", title="Horas"),
+                        alt.Tooltip("Mes_lbl:N", title="Mes"),
+                        alt.Tooltip("Velocidad:Q", format=".2f", title="Velocidad"),
                     ],
                 )
-                .properties(height=260)
             )
+
+            linea_objetivo = (
+                alt.Chart(pd.DataFrame({"y": [OBJ["hs_por_punto"]]}))
+                .mark_rule(color="red", strokeWidth=2)
+                .encode(y="y:Q")
+            )
+
+            ch_u = (linea_usuario + linea_objetivo).properties(height=260)
             st.altair_chart(ch_u, use_container_width=True)
         else:
             st.info("No hay datos del usuario en los últimos 6 meses.")
-
 
 
 #GANTT
