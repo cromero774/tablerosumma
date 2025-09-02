@@ -999,181 +999,513 @@ if opcion == "Entregables postventas":
 
 
 #Bugsmaipu
+# === BUGS POSTVENTAS (Proyecto BUG) ===
+# === BUGS POSTVENTAS (Proyecto BUG) ===
 if opcion == "BUGS Postventas":
     from jira_conexion import jira
     import pandas as pd
     import unicodedata
-    import json
-    from datetime import datetime
-    import streamlit as st
-    st.warning("⚠️ Pestaña en construcción. Pronto habrá más detalles.")
-    def normalize(s):
-        if not s:
+    import re
+
+    st.subheader("Bugs creados por Mes – Proyecto BUG")
+
+    # ----------------------------
+    # Helpers
+    # ----------------------------
+    def traer_todas_las_issues(jira, jql, fields, max_results=100):
+        issues, start_at = [], 0
+        while True:
+            endpoint = (
+                f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            )
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        return issues
+
+    def get_issue_type(key, cache):
+        """Devuelve issuetype.name para una KEY (usa caché)."""
+        if key in cache:
+            return cache[key]
+        try:
+            data = jira._get_json(f'issue/{key}?fields=issuetype')
+            tname = ((data.get("fields") or {}).get("issuetype") or {}).get("name") or ""
+        except Exception:
+            tname = ""
+        cache[key] = tname
+        return tname
+
+    def get_issue_links(key, cache):
+        """Devuelve issuelinks para una KEY (usa caché)."""
+        if key in cache:
+            return cache[key]
+        try:
+            data = jira._get_json(f'issue/{key}?fields=issuelinks')
+            links = (data.get("fields") or {}).get("issuelinks") or []
+        except Exception:
+            links = []
+        cache[key] = links
+        return links
+
+    def get_issue_summary(key, cache):
+        """Devuelve summary para una KEY (usa caché)."""
+        if key in cache:
+            return cache[key]
+        try:
+            data = jira._get_json(f'issue/{key}?fields=summary')
+            s = (data.get("fields") or {}).get("summary") or ""
+        except Exception:
+            s = ""
+        cache[key] = s
+        return s
+
+    def detectar_campo_epic_link():
+        """
+        Descubre el id/clave del campo 'Epic Link' en esta instancia.
+        Devuelve algo tipo 'customfield_10014' o '' si no encuentra.
+        """
+        try:
+            fields = jira._get_json("field")
+            candidatos = []
+            for f in fields:
+                name = (f.get("name") or "").strip().lower()
+                key  = (f.get("key") or f.get("id") or "").strip()
+                if any(x in name for x in ["epic link", "enlace épico", "enlace epico", "epik link"]):
+                    candidatos.append(key)
+            # preferir customfield_*
+            for c in candidatos:
+                if c.startswith("customfield_"):
+                    return c
+            return candidatos[0] if candidatos else ""
+        except Exception:
             return ""
-        s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII')
+
+    MESES_ES = {
+        1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
+        7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"
+    }
+    PRIORIDADES_ORDEN = ["Muy alta", "Alta", "Media", "Baja", "Muy baja"]
+    PROYECTOS_VALIDOS = ["Taller", "Repuestos", "ATI"]
+
+    def _strip(s: str) -> str:
+        """lowercase sin acentos."""
+        s = s or ""
+        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
         return s.lower().strip()
 
-    # Cargar el JSON con los usuarios del equipo (accountId => nombre)
-    with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
-        equipo_accountid_to_name = json.load(f)
-    equipo_account_ids = set(equipo_accountid_to_name.keys())
+    def normalizar_prioridad(name: str) -> str:
+        p = re.sub(r"[\s_\-]+", " ", _strip(name))
+        if re.search(r"\b(p0|p1)\b", p): return "Muy alta"
+        if re.search(r"\bp2\b", p):      return "Alta"
+        if re.search(r"\bp3\b", p):      return "Media"
+        if re.search(r"\bp4\b", p):      return "Baja"
+        if re.search(r"\bp5\b", p):      return "Muy baja"
+        if any(k in p for k in ["critical","critica","highest","muy alta"]): return "Muy alta"
+        if "lowest" in p or "muy baja" in p: return "Muy baja"
+        if "high" in p or "alta" in p:       return "Alta"
+        if "low" in p or "baja" in p:        return "Baja"
+        if "medium" in p or "media" in p or "normal" in p: return "Media"
+        return "Media"
 
-    # Lista de palabras de RN (cada palabra única de cada RN, normalizada)
-    rns_palabras = set()
-    for rn in epicas_relevantes:
-        nombre = normalize(rn.get('nombre', ''))
-        for palabra in nombre.split():
-            if palabra:
-                rns_palabras.add(palabra)
+    def es_bug_type(name: str) -> bool:
+        """Detecta tipos de bug en ES/EN (Bug/Error/Defecto/Incidencia)."""
+        n = _strip(name)
+        return any(k in n for k in ["bug", "error", "defecto", "incidencia"])
 
-    st.header("Bugs Postventas - Bugs reportados por Maipú")
+    def proyecto_por_prefijo_key(key: str) -> str:
+        k = (key or "").upper()
+        if k.startswith("TAL-"): return "Taller"
+        if k.startswith("REP-"): return "Repuestos"
+        if k.startswith("ATI-"): return "ATI"
+        return ""
 
-    jql = (
-        'project in (REP, TAL) AND issuetype = Error '
-        'AND Sprint = "BUGS REPORTADOS POR MAIPU" '
-        'ORDER BY created ASC'
-    )
+    def proyecto_por_prefijo_summary(summary: str) -> str:
+        """Detecta [REP]/[TAL]/[ATI] al inicio del summary."""
+        m = re.match(r"^\s*\[\s*(REP|TAL|ATI)\s*\]", (summary or ""), flags=re.IGNORECASE)
+        if not m: return ""
+        tag = m.group(1).upper()
+        return {"REP": "Repuestos", "TAL": "Taller", "ATI": "ATI"}[tag]
 
-    max_results = 200
-    endpoint = (
-        f'search?jql={jql}&fields=key,summary,priority,status,project,sprint,issuetype,assignee,parent,created,customfield_10008&maxResults={max_results}'
-    )
-    data = jira._get_json(endpoint)
-    issues = data.get("issues", [])
-
-    rows_equipo = []
-    rows_devuelto = []
-
-    for issue in issues:
-        fields = issue["fields"]
-        prioridad = fields["priority"]["name"] if fields.get("priority") else "Sin Prioridad"
-        fecha_creacion = fields["created"][:10]
-        resumen = fields.get("summary", "")
-        resumen_norm = normalize(resumen)
-        epica = ""
-        if fields.get("parent") and fields["parent"].get("fields", {}).get("summary"):
-            epica = fields["parent"]["fields"]["summary"]
-        elif fields.get("customfield_10008"):
-            epica = fields.get("customfield_10008")
-        else:
-            epica = "Sin épica"
-
-        responsable_id = None
-        responsable = "Sin asignar"
-        if fields.get("assignee") and fields["assignee"].get("accountId"):
-            responsable_id = fields["assignee"]["accountId"]
-            responsable = equipo_accountid_to_name.get(responsable_id, fields["assignee"].get("displayName", "Sin asignar"))
-
-        estado = fields["status"]["name"] if fields.get("status") else ""
-        mes = fecha_creacion[:7]  # YYYY-MM
-
-        # Visual de prioridad igual a Jira
-        if prioridad.lower() == "muy alta":
-            icono = "🔺🔺"
-        elif prioridad.lower() == "alta":
-            icono = "🔺"
-        elif prioridad.lower() == "media":
-            icono = "🟡"
-        elif prioridad.lower() == "baja":
-            icono = "🔵⬇️"
-        elif prioridad.lower() == "muy baja":
-            icono = "🔵⬇️⬇️"
-        else:
-            icono = ""
-
-        accion = "Resolver dentro del próximo mes"
-        if prioridad.lower() == "muy alta":
-            accion = "Resolver en menos de 24/48hs (bloqueante para el cliente)"
-        dias_abierto = (datetime.now() - datetime.strptime(fecha_creacion, "%Y-%m-%d")).days
-        if dias_abierto > 30 and prioridad.lower() not in ["muy alta"]:
-            accion = "Revisar: abierto hace más de un mes"
-
-        bug_row = {
-            "Mes": mes,
-            "Prioridad": prioridad,
-            "Icono": icono,
-            "Epica": epica,
-            "ID": issue["key"],
-            "Título": resumen,
-            "Título_norm": resumen_norm,
-            "Fecha de carga": fecha_creacion,
-            "Responsable": responsable,
-            "Estado": estado,
-            "Acción sugerida": accion
-        }
-
-        # Separar bugs según si están asignados al equipo o no
-        if responsable_id and responsable_id in equipo_account_ids:
-            rows_equipo.append(bug_row)
-        elif responsable_id:  # Asignado pero NO es del equipo
-            rows_devuelto.append(bug_row)
-
-    df_bugs = pd.DataFrame(rows_equipo)
-    df_devuelto = pd.DataFrame(rows_devuelto)
-
-    hoy = datetime.now()
-    mes_actual = hoy.strftime("%Y-%m")
-    bugs_total = len(df_bugs)
-    bugs_mes = df_bugs[df_bugs["Mes"] == mes_actual]
-    n_bugs_mes = len(bugs_mes)
-    n_bugs_devueltos = len(df_devuelto)
-    n_bugs_pendientes_mes = len(df_bugs[
-        (df_bugs["Mes"] == mes_actual) &
-        (~df_bugs["Estado"].str.lower().str.contains("cerrado|resuelto|descartado|hecha"))
-    ])
-    n_bugs_prioritarios = 0  # Contamos luego
-    n_bugs_hecho = len(df_bugs[df_bugs["Estado"].str.lower() == "hecha"])
-
-    # --- LÓGICA de priorización: prioritario si prioridad muy alta o si el título contiene alguna palabra de RN ---
-    def es_prioritario(row):
-        if row["Prioridad"].lower() == "muy alta":
-            return True
-        for palabra in rns_palabras:
-            if palabra and palabra in row["Título_norm"]:
-                return True
-        return False
-
-    if not df_bugs.empty:
-        df_bugs["Prioritario"] = df_bugs.apply(es_prioritario, axis=1)
-        n_bugs_prioritarios = df_bugs["Prioritario"].sum()
-    else:
-        df_bugs["Prioritario"] = False
-
-    # --- CARDS GRANDES de contadores ---
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    col1.metric("🟦 Bugs activos", bugs_total)
-    col2.metric("🗓️ Mes actual", n_bugs_mes)
-    col3.metric("🦾 Devueltos a Maipú", n_bugs_devueltos)
-    col4.metric("🕑 Pend. mes", n_bugs_pendientes_mes)
-    col5.metric("🔴 Prioritarios", int(n_bugs_prioritarios))
-    col6.metric("✅ En Hecha", n_bugs_hecho)
-
-    # --- TABLA DE PRIORITARIOS ---
-    df_prioritarios = df_bugs[df_bugs["Prioritario"]]
-    if not df_prioritarios.empty:
-        st.subheader("🔴 Bugs prioritarios (bloqueantes o de entregable)")
-        st.dataframe(
-            df_prioritarios[["Icono", "Prioridad", "ID", "Título", "Epica", "Fecha de carga", "Responsable", "Estado", "Acción sugerida"]],
-            hide_index=True, use_container_width=True
+    # ----------------------------
+    # UI: filtros
+    # ----------------------------
+    col1, col2 = st.columns([1,1])
+    with col1:
+        proyecto_filtro = st.selectbox(
+            "Proyecto",
+            options=["Todos"] + PROYECTOS_VALIDOS,
+            index=0,
+            key="bugs_proyecto_filtro",
         )
 
-    # --- TABLA DEL RESTO DE LOS BUGS agrupados SOLO por mes de carga ---
-    df_no_prio = df_bugs[~df_bugs["Prioritario"]]
-    if not df_no_prio.empty:
-        for mes, grupo in df_no_prio.groupby("Mes"):
-            st.markdown(f"### Bugs reportados en {mes}")
-            st.dataframe(
-                grupo[["Icono", "Prioridad", "ID", "Título", "Epica", "Fecha de carga", "Responsable", "Estado", "Acción sugerida"]],
-                hide_index=True, use_container_width=True
+    # ----------------------------
+    # Detecto el campo Epic Link y consulto a Jira (solo 2025+)
+    # ----------------------------
+    EPIC_FIELD = detectar_campo_epic_link()
+    jql = 'project = BUG AND created >= "2025-01-01"'
+    fields = "key,created,priority,issuetype,issuelinks,summary" + (f",{EPIC_FIELD}" if EPIC_FIELD else "")
+
+    try:
+        issues = traer_todas_las_issues(jira, jql, fields)
+    except Exception as e:
+        st.error(f"Error consultando Jira: {e}")
+        issues = []
+
+    # ----------------------------
+    # Clasificación FINAL (como acordamos):
+    # 1) Si tiene BUG vinculado => Tipo="Bug" (cuenta por prioridad).
+    #    Proyecto = HU(s) de esos BUG(s) vinculados;
+    #    si no hay HU, intento prefijo [REP]/[TAL]/[ATI] en summary de los BUG(s) vinculados;
+    #    si tampoco, intento prefijo en el summary del propio bug.
+    # 2) Si NO tiene BUG y SÍ tiene HU => Tipo="Mejora" (proyecto por HU propias).
+    # 3) Si NO tiene BUG ni HU pero el summary empieza [REP]/[TAL]/[ATI] => Tipo="Bug" (proyecto por prefijo).
+    # 4) Si nada de lo anterior o proyecto ambiguo/fuera de ATI/Taller/Repuestos => Excluir y advertir.
+    #
+    # Además: guardamos Epic = valor de Epic Link (si existe).
+    # ----------------------------
+    type_cache, links_cache, summary_cache = {}, {}, {}
+    rows, excluidos = [], []
+
+    for it in issues:
+        f = it.get("fields") or {}
+        itype = ((f.get("issuetype") or {}).get("name") or "")
+        if not es_bug_type(itype):
+            continue  # sólo bugs reales del proyecto BUG
+
+        created_dt = pd.to_datetime(f.get("created"), errors="coerce")
+        if pd.isna(created_dt):
+            continue
+
+        prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
+        summary = f.get("summary") or ""
+
+        # Epic (Epic Link) del propio issue, si está disponible
+        epic_val = ""
+        if EPIC_FIELD:
+            v = f.get(EPIC_FIELD)
+            if isinstance(v, str):
+                epic_val = v.strip().upper()
+            elif isinstance(v, dict):
+                epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
+
+        # vínculos directos
+        direct_bug_keys, direct_story_keys = set(), set()
+        for lk in (f.get("issuelinks") or []):
+            for side in ("inwardIssue", "outwardIssue"):
+                other = lk.get(side)
+                if not other:
+                    continue
+                okey = (other.get("key") or "").upper()
+                ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
+                if not ot:
+                    ot = get_issue_type(okey, type_cache)
+
+                if es_bug_type(ot) or okey.startswith("BUG-"):
+                    direct_bug_keys.add(okey)
+
+                ot_l = _strip(ot)
+                if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
+                    direct_story_keys.add(okey)
+
+        tiene_bug = len(direct_bug_keys) > 0
+        tiene_hu  = len(direct_story_keys) > 0
+
+        tipo_final, proyecto = None, ""
+
+        if tiene_bug:
+            # 1º intento: proyecto por HU de los BUG(s) vinculados
+            proyectos_via_bug = set()
+            for bkey in direct_bug_keys:
+                for lk2 in get_issue_links(bkey, links_cache):
+                    for side2 in ("inwardIssue", "outwardIssue"):
+                        other2 = lk2.get(side2)
+                        if not other2:
+                            continue
+                        k2 = (other2.get("key") or "").upper()
+                        t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
+                        if not t2:
+                            t2 = get_issue_type(k2, type_cache)
+                        t2_l = _strip(t2)
+                        if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
+                            pj = proyecto_por_prefijo_key(k2)
+                            if pj:
+                                proyectos_via_bug.add(pj)
+
+            if len(proyectos_via_bug) == 1:
+                proyecto = list(proyectos_via_bug)[0]
+                tipo_final = "Bug"
+            else:
+                # 2º intento: prefijo del summary de los BUG(s) vinculados
+                proyectos_by_bugname = set()
+                for bkey in direct_bug_keys:
+                    sum_b = get_issue_summary(bkey, summary_cache)
+                    pj_b = proyecto_por_prefijo_summary(sum_b)
+                    if pj_b:
+                        proyectos_by_bugname.add(pj_b)
+
+                if len(proyectos_by_bugname) == 1:
+                    proyecto = list(proyectos_by_bugname)[0]
+                    tipo_final = "Bug"
+                else:
+                    # 3º intento: prefijo del summary del bug actual
+                    pj_by_name = proyecto_por_prefijo_summary(summary)
+                    if pj_by_name:
+                        proyecto = pj_by_name
+                        tipo_final = "Bug"
+                    else:
+                        tipo_final = "Excluir"
+
+        elif tiene_hu:
+            # MEJORA (sin bug vinculado)
+            proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
+            proyectos_de_hu.discard("")
+            if len(proyectos_de_hu) == 1:
+                proyecto = list(proyectos_de_hu)[0]
+                tipo_final = "Mejora"
+            else:
+                tipo_final = "Excluir"
+
+        else:
+            # Sin bug ni HU → intento por nombre [REP]/[TAL]/[ATI] ⇒ BUG
+            pj_by_name = proyecto_por_prefijo_summary(summary)
+            if pj_by_name:
+                proyecto = pj_by_name
+                tipo_final = "Bug"
+            else:
+                tipo_final = "Excluir"
+
+        if (tipo_final == "Excluir") or (proyecto not in PROYECTOS_VALIDOS):
+            excluidos.append(it.get("key", ""))
+            continue
+
+        anio, mes = int(created_dt.year), int(created_dt.month)
+        rows.append({
+            "Clave": it.get("key", ""),
+            "Creado": created_dt,
+            "AñoMes": f"{anio}-{mes:02d}",
+            "Mes": f"{MESES_ES[mes]} {anio}",
+            "Prioridad": prio,
+            "Proyecto": proyecto,    # Taller / Repuestos / ATI
+            "Tipo": tipo_final,      # Bug / Mejora
+            "Summary": summary,
+            "Epic": epic_val,        # <- Epic Link del issue (si existe)
+        })
+
+    # Advertencia por excluidos
+    if excluidos:
+        preview = ", ".join(sorted(excluidos[:80]))
+        extra = f" (+{len(excluidos)-80} más)" if len(excluidos) > 80 else ""
+        st.warning(
+            f"Se excluyeron {len(excluidos)} issues por no tener vínculos válidos (Bug/HU) o proyecto ambiguo/fuera de ATI-Taller-Repuestos: {preview}{extra}"
+        )
+
+    if not rows:
+        st.info("No hay datos para mostrar con las condiciones actuales.")
+    else:
+        df_all = pd.DataFrame(rows).sort_values("AñoMes")
+
+        # lookup Mes para selector
+        meses_disp = df_all[["AñoMes","Mes"]].drop_duplicates().sort_values("AñoMes")
+        mes_lookup = meses_disp.copy()
+
+        # Filtro por proyecto
+        if proyecto_filtro != "Todos":
+            df_all = df_all[df_all["Proyecto"] == proyecto_filtro]
+
+        # Selector de Mes (detalle opcional)
+        opciones_mes = ["(sin detalle)"] + meses_disp["Mes"].tolist()
+        mes_detalle = col2.selectbox(
+            "Mes (detalle opcional)",
+            options=opciones_mes,
+            index=0,
+            key="bugs_mes_detalle"
+        )
+
+        # Split final
+        df_bugs    = df_all[df_all["Tipo"] == "Bug"].copy()       # cuenta por prioridad
+        df_mejoras = df_all[df_all["Tipo"] == "Mejora"].copy()    # columna "Mejoras"
+
+        # ---- Conteos por Mes y Prioridad (solo BUGS) ----
+        if df_bugs.empty:
+            tabla_pivot = pd.DataFrame(columns=["AñoMes"] + PRIORIDADES_ORDEN)
+        else:
+            tabla = (
+                df_bugs
+                .groupby(["AñoMes", "Prioridad"], as_index=False)["Clave"]
+                .count()
+                .rename(columns={"Clave": "Cantidad"})
+            )
+            tabla_pivot = tabla.pivot_table(
+                index=["AñoMes"],
+                columns="Prioridad",
+                values="Cantidad",
+                aggfunc="sum",
+                fill_value=0
+            ).reset_index()
+
+        # Asegurar todas las prioridades
+        for p in PRIORIDADES_ORDEN:
+            if p not in tabla_pivot.columns:
+                tabla_pivot[p] = 0
+
+        # ---- Columna Mejoras (por Mes) ----
+        if df_mejoras.empty:
+            mejoras_por_mes = pd.DataFrame(columns=["AñoMes", "Mejoras"])
+            claves_mejoras = pd.DataFrame(columns=["AñoMes", "__claves_mejoras__"])
+        else:
+            mejoras_por_mes = (
+                df_mejoras.groupby(["AñoMes"], as_index=False)["Clave"]
+                .count()
+                .rename(columns={"Clave": "Mejoras"})
+            )
+            claves_mejoras = (
+                df_mejoras.groupby("AñoMes")["Clave"]
+                .apply(lambda s: ", ".join(sorted(s.tolist())))
+                .reset_index(name="__claves_mejoras__")
             )
 
-    # --- TABLA DE BUGS DEVUELTOS A MAIPÚ ---
-    if not df_devuelto.empty:
-        st.subheader("🟦 Bugs devueltos a Maipú (asignados fuera del equipo)")
+        # ---- Claves de Bugs prioridad Muy alta (solo BUGS) ----
+        if df_bugs.empty:
+            claves_muy_alta = pd.DataFrame(columns=["AñoMes", "__claves_muyalta__"])
+        else:
+            df_muy_alta = df_bugs[df_bugs["Prioridad"] == "Muy alta"]
+            claves_muy_alta = (
+                df_muy_alta.groupby("AñoMes")["Clave"]
+                .apply(lambda s: ", ".join(sorted(s.tolist())))
+                .reset_index(name="__claves_muyalta__")
+            )
+
+        # Merge y columnas finales
+        out = tabla_pivot.merge(mejoras_por_mes, on="AñoMes", how="outer")
+        out = out.merge(claves_mejoras, on="AñoMes", how="left")
+        out = out.merge(claves_muy_alta, on="AñoMes", how="left")
+        out = out.merge(mes_lookup, on="AñoMes", how="left")  # agrega nombre de Mes
+
+        out["Mejoras"] = out["Mejoras"].fillna(0).astype(int)
+        out["__claves_mejoras__"] = out["__claves_mejoras__"].fillna("")
+        out["__claves_muyalta__"] = out["__claves_muyalta__"].fillna("")
+
+        def _combinar_claves(row):
+            parts = []
+            if row["__claves_mejoras__"]:
+                parts.append(f"Mejoras: {row['__claves_mejoras__']}")
+            if row["__claves_muyalta__"]:
+                parts.append(f"Muy alta: {row['__claves_muyalta__']}")
+            return " · ".join(parts)
+
+        out["Claves (Mejoras + Muy alta)"] = out.apply(_combinar_claves, axis=1)
+        out["Total"] = out[PRIORIDADES_ORDEN].sum(axis=1) + out["Mejoras"]
+
+        out = out[["AñoMes", "Mes"] + PRIORIDADES_ORDEN + ["Mejoras", "Total", "Claves (Mejoras + Muy alta)"]]
+        out = out.sort_values("AñoMes").reset_index(drop=True)
+
+        st.markdown("### Tabla de Bugs creados por Mes")
         st.dataframe(
-            df_devuelto[["Icono", "Prioridad", "ID", "Título", "Epica", "Fecha de carga", "Responsable", "Estado", "Acción sugerida"]],
-            hide_index=True, use_container_width=True
+            out[["Mes"] + PRIORIDADES_ORDEN + ["Mejoras", "Total", "Claves (Mejoras + Muy alta)"]],
+            use_container_width=True,
+            hide_index=True
         )
+
+        # =========================
+        # DETALLE POR MES (opcional)
+        # =========================
+        if mes_detalle != "(sin detalle)":
+            inv = dict(zip(meses_disp["Mes"], meses_disp["AñoMes"]))
+            am_sel = inv.get(mes_detalle)
+            if am_sel:
+                st.markdown(f"### Detalle de {mes_detalle}")
+
+                df_mes = df_all[df_all["AñoMes"] == am_sel].copy()
+                df_mes_bugs = df_mes[df_mes["Tipo"] == "Bug"].copy()
+                df_mes_mej  = df_mes[df_mes["Tipo"] == "Mejora"].copy()
+
+                # --- Bugs: resumen por prioridad
+                if not df_mes_bugs.empty:
+                    resumen_prio = (
+                        df_mes_bugs.groupby("Prioridad", as_index=False)["Clave"]
+                        .count()
+                        .rename(columns={"Clave": "Cantidad"})
+                        .sort_values("Cantidad", ascending=False)
+                    )
+                    st.markdown("**Bugs — Resumen por Prioridad**")
+                    st.dataframe(resumen_prio, use_container_width=True, hide_index=True)
+
+                # --- Funciones de "nombre base" para agrupar por palabras del summary
+                STOP_ES = {
+                    "de","la","el","y","en","para","por","con","del","al","los","las","un","una","unos","unas",
+                    "a","se","que","no","si","es","son","como","esta","este","esto","estas","estos","su","sus",
+                    "lo","ya","hay","más","mas","cuando","donde","entre","sobre","sin","o","u","pero","muy",
+                    "the","and","of","to","in","on","for","by","from"
+                }
+                def tokens_summary(summary: str):
+                    s = _strip(summary)
+                    toks = re.split(r"[^a-z0-9áéíóúñ]+", s)
+                    toks = [t for t in toks if t and len(t) >= 4 and t not in STOP_ES and not t.isdigit()]
+                    return toks
+                def key_nombre_base(summary: str, max_tokens=3):
+                    toks = tokens_summary(summary)
+                    return " ".join(toks[:max_tokens]) if toks else "(otros)"
+
+                # --- Bugs: agrupación por “Nombre base”
+                if not df_mes_bugs.empty:
+                    df_nb = df_mes_bugs.copy()
+                    df_nb["Nombre base"] = df_nb["Summary"].apply(key_nombre_base)
+                    grupo_nb = (
+                        df_nb.groupby("Nombre base")["Clave"]
+                        .apply(lambda s: (len(s), ", ".join(sorted(s.tolist()))))
+                        .reset_index()
+                    )
+                    grupo_nb[["Cantidad","Claves"]] = pd.DataFrame(grupo_nb["Clave"].tolist(), index=grupo_nb.index)
+                    grupo_nb = grupo_nb.drop(columns=["Clave"]).sort_values("Cantidad", ascending=False)
+                    st.markdown("**Bugs — Agrupados por “Nombre base” (palabras clave)**")
+                    st.dataframe(grupo_nb[["Nombre base","Cantidad","Claves"]], use_container_width=True, hide_index=True)
+
+                # --- Bugs: agrupación por Épica (USANDO EPIC LINK)
+                if not df_mes_bugs.empty:
+                    df_ep = df_mes_bugs.copy()
+                    df_ep["Épica"] = df_ep["Epic"].apply(lambda x: x if x else "(Sin épica)")
+                    grupo_ep = (
+                        df_ep.groupby("Épica")["Clave"]
+                        .apply(lambda s: (len(s), ", ".join(sorted(s.tolist()))))
+                        .reset_index()
+                    )
+                    grupo_ep[["Cantidad","Claves"]] = pd.DataFrame(grupo_ep["Clave"].tolist(), index=grupo_ep.index)
+                    grupo_ep = grupo_ep.drop(columns=["Clave"]).sort_values("Cantidad", ascending=False)
+                    st.markdown("**Bugs — Agrupados por Épica (Epic Link)**")
+                    st.dataframe(grupo_ep[["Épica","Cantidad","Claves"]], use_container_width=True, hide_index=True)
+
+                # --- Mejoras: agrupación por “Nombre base”
+                if not df_mes_mej.empty:
+                    dfm_nb = df_mes_mej.copy()
+                    dfm_nb["Nombre base"] = dfm_nb["Summary"].apply(key_nombre_base)
+                    grupo_nb_m = (
+                        dfm_nb.groupby("Nombre base")["Clave"]
+                        .apply(lambda s: (len(s), ", ".join(sorted(s.tolist()))))
+                        .reset_index()
+                    )
+                    grupo_nb_m[["Cantidad","Claves"]] = pd.DataFrame(grupo_nb_m["Clave"].tolist(), index=grupo_nb_m.index)
+                    grupo_nb_m = grupo_nb_m.drop(columns=["Clave"]).sort_values("Cantidad", ascending=False)
+                    st.markdown("**Mejoras — Agrupadas por “Nombre base”**")
+                    st.dataframe(grupo_nb_m[["Nombre base","Cantidad","Claves"]], use_container_width=True, hide_index=True)
+
+                # --- Mejoras: agrupación por Épica (USANDO EPIC LINK)
+                if not df_mes_mej.empty:
+                    df_ep_m = df_mes_mej.copy()
+                    df_ep_m["Épica"] = df_ep_m["Epic"].apply(lambda x: x if x else "(Sin épica)")
+                    grupo_ep_m = (
+                        df_ep_m.groupby("Épica")["Clave"]
+                        .apply(lambda s: (len(s), ", ".join(sorted(s.tolist()))))
+                        .reset_index()
+                    )
+                    grupo_ep_m[["Cantidad","Claves"]] = pd.DataFrame(grupo_ep_m["Clave"].tolist(), index=grupo_ep_m.index)
+                    grupo_ep_m = grupo_ep_m.drop(columns=["Clave"]).sort_values("Cantidad", ascending=False)
+                    st.markdown("**Mejoras — Agrupadas por Épica (Epic Link)**")
+                    st.dataframe(grupo_ep_m[["Épica","Cantidad","Claves"]], use_container_width=True, hide_index=True)
+
+
 
 
 
