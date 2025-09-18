@@ -1,3 +1,117 @@
+# ===== BOOTSTRAP SRC (compat sin cambiar tu estructura) =====
+from pathlib import Path
+import sys, importlib.util as _ilu
+BASE = Path(__file__).resolve().parent
+SRC = BASE / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+try:
+    import jira_conexion as _jc  # respeta tu import original
+except ModuleNotFoundError:
+    _p = SRC / "jira_conexion.py"
+    if _p.exists():
+        _spec = _ilu.spec_from_file_location("jira_conexion", _p)
+        _jc = _ilu.module_from_spec(_spec)
+        assert _spec.loader is not None
+        _spec.loader.exec_module(_jc)
+        sys.modules.setdefault("jira_conexion", _jc)
+    else:
+        raise
+# Alias por compat para 'from src.jira_conexion import ...'
+sys.modules.setdefault("src.jira_conexion", _jc)
+# Exponer 'jira' al resto del código
+jira = getattr(_jc, "jira", None)
+if jira is None and hasattr(_jc, "get_jira"):
+    try:
+        jira = _jc.get_jira()
+    except Exception:
+        pass
+# ===== FIN BOOTSTRAP =====
+
+from pathlib import Path
+BASE = Path(__file__).resolve().parent
+
+# --- Helper de rutas para datos ---
+def _data_path(name: str):
+    cand1 = BASE / "data" / name
+    if cand1.exists():
+        return cand1
+    cand2 = BASE / name
+    return cand2  # si no existe, que falle con FileNotFoundError y muestre el path
+# --- fin helper ---
+
+# ===== Integración Jira segura (SoT v3) =====
+import jira_conexion as _jc  # módulo local sin efectos colaterales
+_jc.ensure_ready()
+jira = _jc.get_jira()  # Cliente Jira listo para usar
+# ============================================
+
+
+# ===== JIRA BOOTSTRAP (auto-inyectado) =====
+import sys, types, requests
+
+def _try_import_jira_conexion():
+    for name in ("jira_conexion", "src.jira_conexion", "tablero.jira_conexion"):
+        try:
+            return __import__(name, fromlist=["*"])
+        except Exception:
+            pass
+    return None
+
+def _build_client(mod):
+    if not mod:
+        return None
+    if hasattr(mod, "jira") and getattr(mod, "jira") is not None:
+        return getattr(mod, "jira")
+    for fname in ("get_jira", "get_client", "get_jira_client"):
+        if hasattr(mod, fname):
+            try:
+                return getattr(mod, fname)()
+            except Exception:
+                pass
+    for cname in ("JiraAPI", "JiraClient", "Jira"):
+        if hasattr(mod, cname):
+            try:
+                return getattr(mod, cname)()
+            except Exception:
+                pass
+    return None
+
+def _ensure_get_json(client):
+    if client is None:
+        return None
+    if hasattr(client, "_get_json"):
+        return client
+
+    def _shim_get_json(endpoint, params=None, label=None):
+        base = getattr(client, "base_url", "")
+        if endpoint.startswith("http"):
+            url = endpoint
+        else:
+            url = (base.rstrip("/") + "/" + endpoint.lstrip("/")) if base else endpoint
+        sess = getattr(client, "session", None) or requests.Session()
+        timeout = getattr(client, "timeout_read", 120)
+        resp = sess.get(url, params=params, timeout=timeout)
+        resp.raise_for_status()
+        try:
+            return resp.json()
+        except Exception:
+            return {"text": resp.text}
+
+    try:
+        setattr(client, "_get_json", _shim_get_json)
+    except Exception:
+        pass
+    return client
+
+_mod = _try_import_jira_conexion()
+_cli = _build_client(_mod)
+jira = _ensure_get_json(_cli)
+
+proxy = types.SimpleNamespace(jira=jira)
+sys.modules.setdefault("jira_conexion", proxy)
+# ===== FIN JIRA BOOTSTRAP =====
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -9,17 +123,38 @@ import json
 from dateutil.relativedelta import relativedelta
 
 import sys
+from jira_conexion import ensure_ready, jira  # SoT v3
+ensure_ready()  # valida auth y endpoint /search/jql
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+
+# ---- Helpers robustos para claves y formas de issues ----
+def _unwrap_issue(iss):
+    """Devuelve el diccionario del issue en caso de venir envuelto en 'issue', 'data' o 'attributes'."""
+    if isinstance(iss, dict):
+        return iss.get('issue') or iss.get('data') or iss.get('attributes') or iss
+    return iss
+
+
+def _safe_issue_key(iss):
+    """Obtiene la clave (key) del issue sin asumir un único formato."""
+    if not isinstance(iss, dict):
+        return None
+    k = iss.get('key') or iss.get('issueKey')
+    if k:
+        return k
+    f = iss.get('fields') or iss.get('attributes') or {}
+    return f.get('key') or f.get('issueKey') or f.get('issuekey')
 
 st.set_page_config(page_title="Tablero SUMMA", layout="wide")
 
-with open("data/epicas_relevantes.json", "r", encoding="utf-8") as f:
+with open(_data_path("epicas_relevantes.json"), "r", encoding="utf-8") as f:
     epicas_relevantes = json.load(f)
 
 rns_relevantes = [epica["rn"] for epica in epicas_relevantes]
 
-hist_path = "data/horas_historicas.csv"
-actual_path = "data/horas_con_proyecto.csv"
+hist_path = str(_data_path("horas_historicas.csv"))
+actual_path = str(_data_path("horas_con_proyecto.csv"))
 
 if os.path.exists(hist_path):
     df_hist = pd.read_csv(hist_path)
@@ -32,10 +167,10 @@ if os.path.exists(hist_path):
 else:
     df = pd.read_csv(actual_path)
 
-with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
+with open(_data_path("accountid_to_name.json"), "r", encoding="utf-8") as f:
     accountid_to_name = json.load(f)
 
-df["Usuario"] = df["Usuario"].map(accountid_to_name)
+df["Usuario"] = df["Usuario"].map(accountid_to_name).fillna(df["Usuario"])
 
 # ============= DICCIONARIOS Y FUNCIÓN PARA TEMPO (antes de las pestañas) =============
 
@@ -347,7 +482,7 @@ if opcion in ["Horas Postventas", "Horas ATI"]:
 
 # === PESTAÑA DESARROLLO POSTVENTAS ===
 if opcion == "Desarrollo Postventas":
-    from jira_conexion import jira
+    from src.jira_conexion import jira
     import pandas as pd
     import time
     from datetime import datetime, timedelta
@@ -643,7 +778,7 @@ if opcion == "Desarrollo Postventas":
 
 # === ENTREGABLES POSTVENTAS ===
 if opcion == "Entregables postventas":
-    from jira_conexion import jira
+    from src.jira_conexion import jira
     import pandas as pd
     import unicodedata
     from datetime import datetime, timedelta
@@ -695,9 +830,12 @@ if opcion == "Entregables postventas":
         issues = []
 
     # Eliminar duplicados
+    issues = [_unwrap_issue(iss) for iss in issues]
     issues_unicos = {}
-    for issue in issues:
-        issues_unicos[issue['key']] = issue
+    for iss in issues:
+        k = _safe_issue_key(iss)
+        if k:
+            issues_unicos[k] = iss
     issues = list(issues_unicos.values())
 
     # Filtrar épicas relevantes
@@ -971,26 +1109,7 @@ if opcion == "Entregables postventas":
             afinidad = "Sí" if candidatos else "No"
             with cols_cards[idx % 2]:
                 st.markdown(
-                    f"""
-                    <div style="border-radius:14px; background:{fondo_card}; padding:18px; margin-bottom:16px; box-shadow:0 2px 8px #0001;">
-                        <div style="font-size:1.1em; font-weight:bold; color:#fff; margin-bottom:4px;">
-                            🟡 {h['Clave']} - {h['Nombre']}
-                        </div>
-                        <div>
-                            <b>RN:</b> {h['Epica']}<br>
-                            <b>Mes de entrega:</b> <span style="color:gold;">{h['Mes entrega']}</span>
-                        </div>
-                        <div style="margin-top:8px;">
-                            <span style="font-size:1em; color:#bcbcff; font-weight:bold;">Devs sugeridos:</span> <br>
-                            <span style="font-size:1em; font-weight:bold; color:#9fffca;">{devs_sugeridos}</span>
-                            <br>
-                            <span style="font-size:0.95em; color:#ffd580;">Afinidad: {afinidad}</span>
-                        </div>
-                        <div style="margin-top:6px; color:orange;">
-                            <b>⚠️ Prioridad alta para cumplir con el entregable del mes</b>
-                        </div>
-                    </div>
-                    """,
+                    f"""\n                    <div style="border-radius:14px; background:{fondo_card}; padding:18px; margin-bottom:16px; box-shadow:0 2px 8px #0001;">\n                        <div style="font-size:1.1em; font-weight:bold; color:#fff; margin-bottom:4px;">\n                            🟡 {h['Clave']} - {h['Nombre']}\n                        </div>\n                        <div>\n                            <b>RN:</b> {h['Epica']}<br>\n                            <b>Mes de entrega:</b> <span style="color:gold;">{h['Mes entrega']}</span>\n                        </div>\n                        <div style="margin-top:8px;">\n                            <span style="font-size:1em; color:#bcbcff; font-weight:bold;">Devs sugeridos:</span> <br>\n                            <span style="font-size:1em; font-weight:bold; color:#9fffca;">{devs_sugeridos}</span>\n                            <br>\n                            <span style="font-size:0.95em; color:#ffd580;">Afinidad: {afinidad}</span>\n                        </div>\n                        <div style="margin-top:6px; color:orange;">\n                            <b>⚠️ Prioridad alta para cumplir con el entregable del mes</b>\n                        </div>\n                    </div>\n                    """,
                     unsafe_allow_html=True
                 )
     else:
@@ -1002,7 +1121,7 @@ if opcion == "Entregables postventas":
 # === BUGS POSTVENTAS (Proyecto BUG) ===
 # === BUGS POSTVENTAS (Proyecto BUG) ===
 if opcion == "BUGS Postventas":
-    from jira_conexion import jira
+    from src.jira_conexion import jira
     import pandas as pd
     import unicodedata
     import re
@@ -1063,10 +1182,7 @@ if opcion == "BUGS Postventas":
         return s
 
     def detectar_campo_epic_link():
-        """
-        Descubre el id/clave del campo 'Epic Link' en esta instancia.
-        Devuelve algo tipo 'customfield_10014' o '' si no encuentra.
-        """
+        """\n        Descubre el id/clave del campo 'Epic Link' en esta instancia.\n        Devuelve algo tipo 'customfield_10014' o '' si no encuentra.\n        """
         try:
             fields = jira._get_json("field")
             candidatos = []
@@ -1512,7 +1628,7 @@ if opcion == "BUGS Postventas":
 #Historico postventas
 # === PESTAÑA HISTÓRICO POSTVENTA (COMPLETA) ===
 if opcion == "Histórico postventa":
-    from jira_conexion import jira
+    from src.jira_conexion import jira
     import unicodedata
     import pandas as pd
 
@@ -1556,11 +1672,7 @@ if opcion == "Histórico postventa":
         return issues
 
     def _bug_resolution_hours(bug_issue) -> float | None:
-        """
-        Demora (hs) desde la PRIMERA vez que el bug pasa a 'Haciendo' (o 'In Progress')
-        hasta la PRIMERA vez que pasa a 'Hecha/Resuelto/Resuelta/Done'.
-        Si no hay 'Haciendo', usa fecha de creación como inicio.
-        """
+        """\n        Demora (hs) desde la PRIMERA vez que el bug pasa a 'Haciendo' (o 'In Progress')\n        hasta la PRIMERA vez que pasa a 'Hecha/Resuelto/Resuelta/Done'.\n        Si no hay 'Haciendo', usa fecha de creación como inicio.\n        """
         f = bug_issue.get("fields", {}) or {}
         created = pd.to_datetime(f.get("created"), errors="coerce")
 
@@ -1588,10 +1700,7 @@ if opcion == "Histórico postventa":
         return float((end_dt - start_dt).total_seconds() / 3600.0)
 
     def _bugs_por_hu(bugs_issues) -> dict:
-        """
-        Dict { HU_KEY: {"bugs": [bug_key,...], "hrs": [resol_horas,...]} }
-        HU detectada por parent y por cualquier issuelink.
-        """
+        """\n        Dict { HU_KEY: {"bugs": [bug_key,...], "hrs": [resol_horas,...]} }\n        HU detectada por parent y por cualquier issuelink.\n        """
         por_hu = {}
         for iss in bugs_issues:
             f = iss.get("fields", {}) or {}
@@ -1639,7 +1748,12 @@ if opcion == "Histórico postventa":
     issues = issues_tal + issues_rep
 
     # Desduplico por key
-    issues_unicos = {iss['key']: iss for iss in issues}
+    issues = [_unwrap_issue(iss) for iss in issues]
+    issues_unicos = {}
+    for iss in issues:
+        k = _safe_issue_key(iss)
+        if k:
+            issues_unicos[k] = iss
     issues = list(issues_unicos.values())
 
     # BUGS (REP + TAL) con changelog
@@ -1811,18 +1925,20 @@ if opcion == "Histórico postventa":
                 st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
 
 #velocidad devs
-# === PESTAÑA VELOCIDAD DE DEVS ===
+# === PESTAÑA VELOCIDAD DE DEVS (completa; ranking/historial = ventana del slider) ===
 if opcion == "Velocidad de devs":
     import json
-    from datetime import datetime, timedelta
+    from datetime import datetime
+    from urllib.parse import quote_plus
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     import altair as alt
     import pandas as pd
     import streamlit as st
 
-    # Conexión JIRA (si no existe, no rompe)
+    # ---------- Conexión JIRA (si no existe, no rompe) ----------
     try:
-        from jira_conexion import jira  # objeto ya autenticado (usa tus variables de entorno)
+        from src.jira_conexion import jira  # objeto ya autenticado (usa tus variables de entorno)
     except Exception:
         jira = None
 
@@ -1850,34 +1966,114 @@ if opcion == "Velocidad de devs":
             return v in ("REP", "TAL")
         return True  # 'Todos'
 
+    STATUS_TESTING = {
+        "en testing", "testing", "qa", "en test", "pruebas", "ready for qa", "ready for testing"
+    }
+
+    def _get_points_from_fields(fields: dict) -> float:
+        # Soporta múltiples claves posibles
+        for k in ("customfield_10026", "customfield_10016", "storyPoints"):
+            v = (fields or {}).get(k)
+            if v in (None, ""):
+                continue
+            try:
+                return float(v)
+            except Exception:
+                pass
+        return 0.0
+
     # ------------------ Mapeo accountId->nombre ------------------
-    with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
+    with open(_data_path("accountid_to_name.json"), "r", encoding="utf-8") as f:
         accountid_to_name = json.load(f)
     name_to_acc = {v: k for k, v in accountid_to_name.items()}
     allowed_names = {_norm(v) for v in accountid_to_name.values()}
 
-    # ------------------ Botón refresh ------------------
-    if st.button("Forzar actualización ahora"):
-        st.session_state["force_refresh"] = True
-    else:
-        st.session_state["force_refresh"] = st.session_state.get("force_refresh", False)
+    # ==========================
+    #   Filtros de UI (ANTES de pedir a Jira)
+    # ==========================
+    col_proj, col_meses, col_pts, col_btn = st.columns([1, 1, 1, 1])
+    with col_proj:
+        proyecto_sel = st.selectbox("Proyecto", ["Todos", "ATI", "Postventas"], key="vel_proyecto_pre")
+    with col_meses:
+        # Por defecto 3 meses
+        meses = st.slider("Meses a traer", min_value=1, max_value=12, value=3, step=1)
+    with col_pts:
+        solo_con_puntos = st.checkbox(
+            "Sólo historias con puntos",
+            True,
+            help="Filtra HUs que tengan puntos (acelera mucho)."
+        )
+    with col_btn:
+        if st.button("Forzar actualización ahora"):
+            st.session_state["force_refresh"] = True
+        else:
+            st.session_state["force_refresh"] = st.session_state.get("force_refresh", False)
 
-    # ------------------ Changelog (defensivo) ------------------
-    limite_iso = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+    # Opciones avanzadas para manejar volúmenes grandes
+    with st.expander("Opciones avanzadas", expanded=False):
+        force_large = st.checkbox(
+            "Cargar aunque supere el límite",
+            value=False,
+            help="Si hay muchas HUs, permite seguir y enriquecer sólo las N más recientes (por updated DESC)."
+        )
+        limit_n = st.slider(
+            "Límite de historias a enriquecer",
+            min_value=50, max_value=800, value=200, step=50,
+            help="Se enriquecerán sólo las últimas N historias (ordenadas por updated DESC)."
+        )
 
+    limite_iso = (pd.Timestamp.today().normalize() - pd.DateOffset(months=meses)).strftime("%Y-%m-%d")
+
+    FIELDS = (
+        "key,summary,status,project,issuetype,assignee,"
+        "customfield_10026,customfield_10016,storyPoints,"
+        "statuscategorychangedate,parent,issuelinks,created,updated"
+    )
+
+    # ------------------ Carga OPTIMIZADA desde Jira ------------------
     @st.cache_data(show_spinner=True)
-    def _traer_issues_con_changelog(_jira, _limite_iso, _force_refresh_flag):
+    def _traer_issues_fast(
+        _jira, _limite_iso, _meses, _proy_sel, _solo_pts, _force_flag,
+        _force_large, _limit_n
+    ):
+        meta = {"last_update": datetime.now().strftime("%d/%m/%Y %H:%M")}
         if _jira is None:
-            return [], {"last_update": datetime.now().strftime("%d/%m/%Y %H:%M")}
+            return [], meta
 
-        def traer_todas(jql, fields, max_results=100):
+        # Proyectos para JQL
+        if _proy_sel == "ATI":
+            proy_jql = "project = ATI"
+        elif _proy_sel == "Postventas":
+            proy_jql = "project in (REP, TAL)"
+        else:
+            proy_jql = "project in (REP, TAL, ATI)"
+
+        # Helpers de búsqueda
+        def _count(jql):
+            resp = _jira._get_json("search", params={"jql": jql, "fields": "none", "maxResults": 0})
+            return int(resp.get("total", 0))
+
+        def _paginado_limit(jql, fields, max_results=100, limit=None, order_by_updated=True):
+            if order_by_updated and "order by" not in jql.lower():
+                jql = f"{jql} ORDER BY updated DESC"
             issues, start_at = [], 0
             while True:
-                endpoint = (
-                    f'search?jql={jql}&fields={fields}&expand=changelog'
-                    f'&startAt={start_at}&maxResults={max_results}'
-                )
-                data = _jira._get_json(endpoint)
+                params = {"jql": jql, "fields": fields, "startAt": start_at, "maxResults": max_results}
+                data = _jira._get_json("search", params=params)
+                batch = data.get("issues", [])
+                issues.extend(batch)
+                if limit and len(issues) >= limit:
+                    return issues[:limit]
+                if len(batch) < max_results:
+                    break
+                start_at += max_results
+            return issues
+
+        def _paginado(jql, fields, max_results=100):
+            issues, start_at = [], 0
+            while True:
+                params = {"jql": jql, "fields": fields, "startAt": start_at, "maxResults": max_results}
+                data = _jira._get_json("search", params=params)
                 batch = data.get("issues", [])
                 issues.extend(batch)
                 if len(batch) < max_results:
@@ -1885,26 +2081,90 @@ if opcion == "Velocidad de devs":
                 start_at += max_results
             return issues
 
-        fields_issues = (
-            "key,summary,status,project,issuetype,assignee,customfield_10026,"
-            "statuscategorychangedate,parent,issuelinks,created"
-        )
-        jql = (
-            f'(project in (REP, TAL, ATI)) AND issuetype in (Historia, Error) '
-            f'AND created >= "{_limite_iso}"'
-        )
-        issues = traer_todas(jql, fields_issues)
-        meta = {"last_update": datetime.now().strftime("%d/%m/%Y %H:%M")}
+        # 1) Historias recientes (sin expand)
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND updated >= \"{_limite_iso}\""
+        if _solo_pts:
+            jql_hist += " AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
+
+        total_hist = _count(jql_hist)
+        MAX_HU = 250  # umbral de seguridad
+
+        if (total_hist > MAX_HU) and (not _force_large):
+            return [{"__too_many__": total_hist}], meta
+
+        need = total_hist if total_hist <= MAX_HU else min(total_hist, _limit_n)
+
+        # 2) Traigo historias (ordenadas por updated desc) y sólo las necesarias
+        historias = _paginado_limit(jql_hist, FIELDS, limit=need, order_by_updated=True)
+
+        # 3) Enriquecemos SOLO esas historias con changelog (paralelo)
+        historias_keys = [h.get("key") for h in historias if h.get("key")]
+        historias_enriq = []
+        if historias_keys:
+            pb = 0
+            progress = st.progress(pb, text="Cargando changelog de historias…")
+
+            def fetch_one(k):
+                endpoint = f"issue/{quote_plus(k)}?expand=changelog&fields={quote_plus(FIELDS)}"
+                return _jira._get_json(endpoint)
+
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                futs = [ex.submit(fetch_one, k) for k in historias_keys]
+                done = 0
+                total = len(futs)
+                for fut in as_completed(futs):
+                    try:
+                        historias_enriq.append(fut.result())
+                    except Exception:
+                        pass
+                    done += 1
+                    pb = int(done * 100 / max(total, 1))
+                    progress.progress(pb, text=f"Cargando changelog de historias… ({done}/{total})")
+            progress.empty()
+
+        # 4) Bugs recientes (sin expand)
+        jql_bugs = f"{proy_jql} AND issuetype = Error AND updated >= \"{_limite_iso}\""
+        bugs = _paginado(jql_bugs, FIELDS)
+
+        issues = historias_enriq + bugs
+
+        # Meta informativa si forzamos
+        if total_hist > MAX_HU and _force_large:
+            meta["forced"] = True
+            meta["total_hist"] = total_hist
+            meta["enriched"] = len(historias_keys)
+
         return issues, meta
 
+    # ---------- Ejecutar carga ----------
     try:
-        issues, meta = _traer_issues_con_changelog(
-            jira, limite_iso, st.session_state["force_refresh"]
+        issues, meta = _traer_issues_fast(
+            jira, limite_iso, meses, proyecto_sel, solo_con_puntos,
+            st.session_state["force_refresh"], force_large, limit_n
         )
     except Exception:
         issues, meta = [], {"last_update": datetime.now().strftime("%d/%m/%Y %H:%M")}
+    st.session_state["force_refresh"] = False
 
-    st.info(f"📅 Última actualización: {meta.get('last_update', 'desconocida')}")
+    # Demasiadas historias -> que el usuario ajuste filtros o fuerce
+    if len(issues) == 1 and isinstance(issues[0], dict) and "__too_many__" in issues[0]:
+        st.warning(
+            f"Se encontraron **{issues[0]['__too_many__']}** historias para enriquecer. "
+            f"Reducí los **meses** y/o activá **Sólo historias con puntos** o filtrá por **Proyecto**. "
+            f"También podés abrir **Opciones avanzadas** y marcar *Cargar aunque supere el límite*."
+        )
+        st.stop()
+
+    # Mensaje informativo
+    st.info(
+        f"📅 Última actualización: {meta.get('last_update', 'desconocida')} · "
+        f"Ventana activa: **{meses} mes(es)** (desde {limite_iso})"
+    )
+    if meta.get("forced"):
+        st.caption(
+            f"⚠️ Se encontraron {meta['total_hist']} HUs; se enriquecieron las **{meta['enriched']}** más recientes "
+            f"(ordenadas por *updated DESC*)."
+        )
 
     # ------------------ Cards de OBJETIVOS con explicación ------------------
     OBJ = {
@@ -1918,36 +2178,33 @@ if opcion == "Velocidad de devs":
     BONUS_MAX = 0.05
 
     RUBRICAS = {
-        "puntos": """
-**Regla de puntos (mensual):**
-- ≥ 20 puntos → **105%**
+        "puntos": """**Regla de puntos (mensual):**
+- ≥ 20 → **105%**
 - 17–19 → **102%**
 - **16** → **100%**
 - 13–15 → **90%**
 - 10–12 → **80%**
-- < 10 → **70%**
-""",
-        "horas": """
-**Regla de horas (mensual):**
+- < 10 → **70%**""",
+        "horas": """**Horas (mensual):**
 - ≥ **128 hs** → **100%**
 - 100–127 hs → **95%**
-- < 100 hs → **70%**
-""",
-        "velocidad": """
-**Velocidad (hs por punto, menor es mejor):**
-- ≤ **5** → **110%** · 6–7 → **105%**
+- < 100 hs → **70%**""",
+        "velocidad": """**Velocidad (hs por punto, menor es mejor):**
+- ≤ **5** → **110%**
+- 6–7 → **105%**
 - **8** → **100%**
-- 8–10 → **95%** · 10–12 → **90%** · >12 → **80%**
-""",
-        "bugs": """
-**Bugs (por mes):**
-- **0** → **100%** · 1–3 → **95%**
-- 4–5 → **90%** · ≥6 → **80%**
-""",
-        "bonus": """
-**Bono por bugs extra resueltos:**
-- 1–5 → **+2%** · 6–10 → **+3%** · >10 → **+5%**
-""",
+- 8–10 → **95%**
+- 10–12 → **90%**
+- >12 → **80%**""",
+        "bugs": """**Bugs (por mes):**
+- **0** → **100%**
+- 1–3 → **95%**
+- 4–5 → **90%**
+- ≥6 → **80%**""",
+        "bonus": """**Bono por bugs extra resueltos:**
+- 1–5 → **+2%**
+- 6–10 → **+3%**
+- >10 → **+5%**""",
     }
 
     def _popover(title: str):
@@ -1967,7 +2224,7 @@ if opcion == "Velocidad de devs":
                 font-weight:700;
                 color:#fff;
                 box-shadow:0 2px 8px rgba(0,0,0,0.12);
-                ">
+            ">
                 {texto}
             </div>
             """,
@@ -1997,17 +2254,8 @@ if opcion == "Velocidad de devs":
         _card_objetivo(f"{OBJ['horas_mes']} hs / mes", "#7e57c2",
                        PESOS["horas"], RUBRICAS["horas"], key="card_horas")
 
-    # ==========================
-    #   Filtros de UI
-    # ==========================
-    col_proj, col_user = st.columns(2)
-    with col_proj:
-        proyecto_sel = st.selectbox(
-            "Seleccioná proyecto", ["Todos", "ATI", "Postventas"], key="vel_proyecto"
-        )
-
     # ------------------ HORAS (CSV histórico) ------------------
-    df_horas = pd.read_csv("data/horas_historicas.csv")
+    df_horas = pd.read_csv(_data_path("horas_historicas.csv"))
     df_horas["Usuario"] = df_horas["Usuario"].astype(str)
     df_horas["Usuario_nombre"] = (
         df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"])
@@ -2020,7 +2268,6 @@ if opcion == "Velocidad de devs":
         df_horas["Mes_dt"] = pd.NaT
     df_horas["Mes"] = df_horas["Mes_dt"].dt.strftime("%B %Y")
 
-    # Sumas de horas (globales) + por proyecto cuando existan
     df_horas_sum_total = (
         df_horas.dropna(subset=["Mes_dt"])
         .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
@@ -2056,6 +2303,7 @@ if opcion == "Velocidad de devs":
         histories = sorted(histories, key=lambda h: pd.to_datetime(h.get("created"), errors="coerce"))
         for hist in histories:
             h_created = pd.to_datetime(hist.get("created"), errors="coerce")
+            # Cambios de asignado
             for it in hist.get("items", []) or []:
                 if _norm(it.get("field")).lower() == "assignee":
                     new_id = it.get("to")
@@ -2068,13 +2316,14 @@ if opcion == "Velocidad de devs":
                         if infer_id:
                             current_id = infer_id
                         current_name = new_name or current_name
+            # Primera vez que pasa a testing (acepta varios nombres)
             for it in hist.get("items", []) or []:
-                if _norm(it.get("field")).lower() == "status" and _norm(it.get("toString")).lower() == "en testing":
+                if _norm(it.get("field")).lower() == "status" and _norm(it.get("toString")).lower() in STATUS_TESTING:
                     if pd.notna(h_created):
                         return current_name, current_id, h_created
         return None, None, None
 
-    # Issues (puntos) filtrando por proyecto
+    # ------------------ Issues (puntos) filtrando por proyecto ------------------
     rows_issues = []
     for iss in issues:
         f = iss.get("fields", {}) or {}
@@ -2085,11 +2334,7 @@ if opcion == "Velocidad de devs":
         if not _proy_ok(proj_key, proyecto_sel):
             continue
         key = iss.get("key", "")
-        pts = f.get("customfield_10026", 0) or 0
-        try:
-            pts = float(pts)
-        except Exception:
-            pts = 0.0
+        pts = _get_points_from_fields(f)
         owner_name, owner_id, first_dt = _owner_al_momento_testing(iss)
         if pd.notna(first_dt) and pts > 0 and owner_name and owner_id:
             hu_owner_name[key] = owner_name
@@ -2172,12 +2417,12 @@ if opcion == "Velocidad de devs":
         df_bugs_mes = (
             df_bugs_mes.groupby(["Usuario_nombre", "Mes"], as_index=False)
             .agg(
-                Bug_cnt=("Bug_key", "nunique"),
+                Bugs=("Bug_key", "nunique"),
                 Bugs_claves=("Bug_key", lambda x: ", ".join(sorted(set(x)))),
             )
         )
     else:
-        df_bugs_mes = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Bug_cnt", "Bugs_claves"])
+        df_bugs_mes = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Bugs", "Bugs_claves"])
 
     if bugs_extra_rows:
         df_bugs_extra = pd.DataFrame(bugs_extra_rows, columns=["Usuario_nombre", "Mes", "Bug_key"])
@@ -2185,7 +2430,7 @@ if opcion == "Velocidad de devs":
             df_bugs_extra.groupby(["Usuario_nombre", "Mes"], as_index=False)
             .agg(
                 Bugs_resueltos_extra=("Bug_key", "nunique"),
-                Bugs_extra_claves=("Bug_key", lambda x: ", ".join(sorted(set(x)))),
+                Bugs_extra_claves=("Bug_key", "nunique"),
             )
         )
     else:
@@ -2216,11 +2461,7 @@ if opcion == "Velocidad de devs":
     df_merge = df_merge.merge(df_puntos[["Usuario_nombre","Mes","Puntos","Claves"]], on=["Usuario_nombre","Mes"], how="left")
 
     if not df_bugs_mes.empty:
-        df_merge = df_merge.merge(
-            df_bugs_mes.rename(columns={"Bug_cnt": "Bugs"}),
-            on=["Usuario_nombre", "Mes"],
-            how="left",
-        )
+        df_merge = df_merge.merge(df_bugs_mes, on=["Usuario_nombre", "Mes"], how="left")
     if not df_bugs_extra.empty:
         df_merge = df_merge.merge(df_bugs_extra, on=["Usuario_nombre", "Mes"], how="left")
 
@@ -2279,31 +2520,32 @@ if opcion == "Velocidad de devs":
     else:
         df_merge["Nota_final"] = pd.Series(dtype=float)
 
+    # >>>>>> CAMBIO CLAVE: ventana = meses del slider (ranking e historial)
     df_merge["Mes_dt"] = pd.to_datetime(df_merge["Mes_dt"], errors="coerce")
-    fecha_limite6 = pd.Timestamp.today().normalize() - pd.DateOffset(months=6)
-    df_ult6 = df_merge[df_merge["Mes_dt"] >= _mes_start(fecha_limite6)].copy()
+    fecha_limite = pd.Timestamp.today().normalize() - pd.DateOffset(months=int(meses))
+    df_win = df_merge[df_merge["Mes_dt"] >= _mes_start(fecha_limite)].copy()
 
     # ==========================
     #   Selector de usuario
     # ==========================
-    df_ult6["Usuario_nombre"] = df_ult6["Usuario_nombre"].apply(_norm)
+    col_user = st.columns(1)[0]
+    df_win["Usuario_nombre"] = df_win["Usuario_nombre"].apply(_norm)
     users_with_points = set(
-        df_ult6.loc[df_ult6["Puntos"] > 0, "Usuario_nombre"].dropna().astype(str)
+        df_win.loc[df_win["Puntos"] > 0, "Usuario_nombre"].dropna().astype(str)
     )
     usuarios_validos = sorted(list(allowed_names & users_with_points))
-
     with col_user:
         usuario_sel = st.selectbox(
             "Seleccioná usuario", ["Todos"] + usuarios_validos, key="vel_usuario"
         )
 
     # ==========================
-    #   Ranking (últimos 6 meses)
+    #   Ranking (VENTANA = slider)
     # ==========================
-    df_rank_src = df_ult6[df_ult6["Usuario_nombre"].isin(usuarios_validos)].copy()
-    st.subheader("Ranking de devs (últimos 6 meses)")
+    st.subheader(f"Ranking de devs (últimos {meses} mes(es))")
+    df_rank_src = df_win[df_win["Usuario_nombre"].isin(usuarios_validos)].copy()
     if df_rank_src.empty:
-        st.info("No hay usuarios con puntos en los últimos 6 meses.")
+        st.info("No hay usuarios con puntos en la ventana seleccionada.")
         df_ranking = pd.DataFrame(
             columns=[
                 "Usuario_nombre",
@@ -2354,8 +2596,8 @@ if opcion == "Velocidad de devs":
             )
             st.altair_chart(ch, use_container_width=True)
     else:
-        # Historial del usuario (UN registro por mes) + gráfico de **Velocidad** con línea objetivo roja
-        df_user = df_ult6[df_ult6["Usuario_nombre"] == usuario_sel].copy()
+        # Historial del usuario (VENTANA = slider) + gráfico de Velocidad
+        df_user = df_win[df_win["Usuario_nombre"] == usuario_sel].copy()
         if not df_user.empty:
             def _combinar_claves(series):
                 vals = [str(v) for v in series.dropna() if str(v).strip()]
@@ -2375,13 +2617,13 @@ if opcion == "Velocidad de devs":
                     Bugs=("Bugs", "sum"),
                     Bugs_claves=("Bugs_claves", _combinar_claves),
                     Bugs_resueltos_extra=("Bugs_resueltos_extra", "sum"),
-                    Bugs_extra_claves=("Bugs_extra_claves", _combinar_claves),
+                    Bugs_extra_claves=("Bugs_extra_claves", "sum"),
                     Nota_final=("Nota_final", "mean"),
                 )
                 .sort_values("Mes_dt")
             )
 
-            st.subheader(f"Historial de {usuario_sel}")
+            st.subheader(f"Historial de {usuario_sel} (últimos {meses} mes(es))")
             st.dataframe(
                 df_user[
                     [
@@ -2434,7 +2676,8 @@ if opcion == "Velocidad de devs":
             ch_u = (linea_usuario + linea_objetivo).properties(height=260)
             st.altair_chart(ch_u, use_container_width=True)
         else:
-            st.info("No hay datos del usuario en los últimos 6 meses.")
+            st.info("No hay datos del usuario en la ventana seleccionada.")
+
 
 
 #GANTT
@@ -2561,3 +2804,4 @@ if opcion == "Gantt":
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("No hay datos para los filtros seleccionados.")
+      

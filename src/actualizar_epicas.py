@@ -23,7 +23,8 @@ def actualizar_epicas():
         {"rn": "REP-5159", "nombre": "Autorización de Anulaciones", "mes_entrega": "Septiembre"},
         {"rn": "REP-5158", "nombre": "Gestor de OV (Gestor de operaciones)", "mes_entrega": "Septiembre"},
         {"rn": "TAL-3856", "nombre": "AGENDA FORD", "mes_entrega": "Octubre"},
-        {"rn": "TAL-3979", "nombre": "[ENTREGA]", "mes_entrega":"Septiembre"}
+        {"rn": "TAL-3979", "nombre": "[ENTREGA]", "mes_entrega":"Septiembre"},
+        {"rn": "REP-5473", "nombre": "TRANSFERENCIAS INTERNAS Y EXTERNAS V2", "mes_entrega":"Septiembre"}
 
     ]
 
