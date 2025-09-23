@@ -16,6 +16,54 @@ from typing import Any, Dict, Optional, List, Tuple
 from urllib.parse import urljoin, urlparse, parse_qs
 from pathlib import Path as _Path
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+JIRA_BASE_URL = os.getenv("JIRA_BASE_URL")
+JIRA_EMAIL = os.getenv("JIRA_EMAIL")
+JIRA_TOKEN = os.getenv("JIRA_TOKEN")
+
+HEADERS = {
+    "Authorization": f"Basic {os.getenv('JIRA_BASIC_AUTH')}",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+}
+
+if not HEADERS["Authorization"].startswith("Basic "):
+    import base64
+    auth_str = f"{JIRA_EMAIL}:{JIRA_TOKEN}"
+    HEADERS["Authorization"] = "Basic " + base64.b64encode(auth_str.encode()).decode()
+
+
+def jira_get(endpoint: str, params: Dict[str, Any] = None) -> Any:
+    """Consulta genérica GET a la API de Jira."""
+    url = f"{JIRA_BASE_URL}/rest/api/3/{endpoint}"
+    resp = requests.get(url, headers=HEADERS, params=params)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def traer_issues_jql(jql: str, fields: str = "*all", max_results: int = 1000) -> List[Dict[str, Any]]:
+    """Trae issues de Jira usando JQL y campos especificados."""
+    issues, start_at = [], 0
+    while True:
+        params = {
+            "jql": jql,
+            "fields": fields,
+            "startAt": start_at,
+            "maxResults": min(max_results, 100)
+        }
+        data = jira_get("search", params)
+        batch = data.get("issues", [])
+        issues.extend(batch)
+        if len(batch) < params["maxResults"] or len(issues) >= max_results:
+            break
+        start_at += params["maxResults"]
+    return issues[:max_results]
+
+# Puedes agregar más funciones según necesidades (por ejemplo, para traer campos, proyectos, etc.)
+
 
 # --------- .env loader (no external deps) ---------
 def _load_dotenv_manual() -> None:

@@ -116,16 +116,21 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timedelta
 import numpy as np
 import os
 import json
 from dateutil.relativedelta import relativedelta
 
 import sys
-from jira_conexion import ensure_ready, jira  # SoT v3
+from jira_conexion import ensure_ready, jira, traer_issues_jql  # SoT v3
 ensure_ready()  # valida auth y endpoint /search/jql
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+from cache_datos import cargar_df_cache, guardar_df_cache, cache_actualizado, cargar_json_cache, guardar_json_cache, cache_path
+from tempo_conexion import traer_worklogs
+from jira_conexion import traer_issues_jql
+import hashlib
+import pickle
 
 
 # ---- Helpers robustos para claves y formas de issues ----
@@ -153,19 +158,68 @@ with open(_data_path("epicas_relevantes.json"), "r", encoding="utf-8") as f:
 
 rns_relevantes = [epica["rn"] for epica in epicas_relevantes]
 
-hist_path = str(_data_path("horas_historicas.csv"))
-actual_path = str(_data_path("horas_con_proyecto.csv"))
+# === CARGA DE DATOS PRINCIPALES CON CACHE ===
+try:
+    if cache_actualizado('horas_unificadas'):
+        df = cargar_df_cache('horas_unificadas')
+    else:
+        # Lógica original de carga y procesamiento de df
+        hist_path = str(_data_path("horas_historicas.csv"))
+        actual_path = str(_data_path("horas_con_proyecto.csv"))
+        if os.path.exists(hist_path):
+            df_hist = pd.read_csv(hist_path)
+            df_actual = pd.read_csv(actual_path)
+            min_fecha_actual = pd.to_datetime(df_actual["Fecha"], errors="coerce").min()
+            df_hist["Fecha_dt"] = pd.to_datetime(df_hist["Fecha"], errors="coerce")
+            df_hist = df_hist[df_hist["Fecha_dt"] < min_fecha_actual]
+            df_hist = df_hist.drop(columns="Fecha_dt")
+            df = pd.concat([df_hist, df_actual], ignore_index=True)
+        else:
+            df = pd.read_csv(actual_path)
+        guardar_df_cache(df, 'horas_unificadas')
+except Exception as e:
+    st.error(f"Error cargando datos principales: {e}")
+    raise
 
-if os.path.exists(hist_path):
-    df_hist = pd.read_csv(hist_path)
-    df_actual = pd.read_csv(actual_path)
-    min_fecha_actual = pd.to_datetime(df_actual["Fecha"], errors="coerce").min()
-    df_hist["Fecha_dt"] = pd.to_datetime(df_hist["Fecha"], errors="coerce")
-    df_hist = df_hist[df_hist["Fecha_dt"] < min_fecha_actual]
-    df_hist = df_hist.drop(columns="Fecha_dt")
-    df = pd.concat([df_hist, df_actual], ignore_index=True)
-else:
-    df = pd.read_csv(actual_path)
+# ----------------------------------------------
+# Helper: carga de issues Jira con cache local JSON
+# ----------------------------------------------
+def cargar_issues_jira_cache(jql: str, fields: str, nombre_cache: str, max_horas: int = 6):
+    """Usa la sesión Jira ya configurada (jira._get_json) para traer issues con paginado
+    y cachea el resultado en data/cache/<nombre_cache>.json. Evita dependencias de env.
+    """
+    path = cache_path(nombre_cache, 'json')
+    try:
+        # Cache fresco
+        if os.path.exists(path):
+            mtime = datetime.fromtimestamp(os.path.getmtime(path))
+            if (datetime.now() - mtime) < timedelta(hours=max_horas):
+                return cargar_json_cache(nombre_cache)
+
+        issues, start_at, page_size = [], 0, 100
+        while True:
+            params = {
+                "jql": jql,
+                "fields": fields,
+                "startAt": start_at,
+                "maxResults": page_size,
+            }
+            data = jira._get_json("search", params=params)
+            batch = (data or {}).get("issues", [])
+            issues.extend(batch)
+            if len(batch) < page_size:
+                break
+            start_at += page_size
+
+        guardar_json_cache(issues, nombre_cache)
+        return issues
+    except Exception as exc:
+        try:
+            # Fallback a cache viejo si existe
+            return cargar_json_cache(nombre_cache)
+        except Exception:
+            st.error(f"No se pudo cargar issues (cache/Jira): {exc}")
+            return []
 
 with open(_data_path("accountid_to_name.json"), "r", encoding="utf-8") as f:
     accountid_to_name = json.load(f)
@@ -530,8 +584,9 @@ if opcion == "Desarrollo Postventas":
     ESTADO_LISTA_PARA_DESARROLLAR = "lista para desarrollar"
 
     fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
-    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields)
+    # Optimización para primera carga rápida - limitar a 30 issues más recientes
+    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields, max_results=30)
+    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields, max_results=30)
     issues = issues_tal + issues_rep
 
     # ---- FILTRO: excluir historias "MADRE" ----
@@ -546,7 +601,7 @@ if opcion == "Desarrollo Postventas":
     sprints_con_version = sorted({i["fields"]["Sprint"] for i in issues if i["fields"]["Sprint"] and regex_version.search(i["fields"]["Sprint"])})
     versiones_unicas = sorted({i["fields"]["Version"] for i in issues if i["fields"]["Version"]})
 
-    col1, col2, col3 = st.columns([2, 2, 2])
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
     with col1:
         sprint_sel = st.selectbox(
             "Filtrar por sprint (solo sprints con versión)",
@@ -569,6 +624,40 @@ if opcion == "Desarrollo Postventas":
             index=0,
             key="usuario_asignado_dev_velocidad"
         )
+    with col4:
+        # Botón para forzar actualización
+        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="desarrollo_postventas_actualizar"):
+            # Limpiar todos los caches relacionados con desarrollo postventas
+            cache_keys_to_clear = [
+                "desarrollo_tal_issues",
+                "desarrollo_rep_issues", 
+                "desarrollo_bugs_rep",
+                "desarrollo_bugs_tal",
+                "desarrollo_bugs_uat"
+            ]
+            
+            # También limpiar cache de subtareas
+            import glob
+            subtareas_cache_files = glob.glob("cache/desarrollo_subtareas_*.pkl")
+            for cache_file in subtareas_cache_files:
+                try:
+                    os.remove(cache_file)
+                except Exception:
+                    pass
+            
+            for cache_key in cache_keys_to_clear:
+                cache_file = cache_path(cache_key, 'pkl')
+                if os.path.exists(cache_file):
+                    try:
+                        os.remove(cache_file)
+                    except Exception:
+                        pass
+            
+            st.success("✅ Cache limpiado. Recargando datos...")
+            st.rerun()
+
+    # Mensaje informativo sobre optimización de primera carga
+    st.caption("ℹ️ **Primera carga optimizada**: Mostrando 30 historias más recientes. Usa 'Actualizar' para datos completos.")
 
     # ---- FILTROS ----
     if sprint_sel == "Todos":
@@ -706,6 +795,21 @@ if opcion == "Desarrollo Postventas":
     else:
         calcular_avance = st.checkbox("Mostrar % de avance de subtareas (puede demorar)", value=False, key="avance_subtareas_velocidad")
         if calcular_avance:
+            # Cache para estados de subtareas
+            cache_key_subtareas = f"desarrollo_subtareas_{sprint_sel}_{version_sel}_{usuario_seleccionado}"
+            cache_file_subtareas = cache_path(cache_key_subtareas, 'pkl')
+            
+            # Intentar cargar desde cache
+            subtareas_cache = {}
+            try:
+                if os.path.exists(cache_file_subtareas):
+                    mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_subtareas))
+                    if (datetime.now() - mtime) < timedelta(hours=6):
+                        with open(cache_file_subtareas, 'rb') as f:
+                            subtareas_cache = pickle.load(f)
+            except Exception:
+                pass
+            
             for fila in rows_a_mostrar:
                 issue = next((i for i in issues if i["key"] == fila["Clave"]), None)
                 if not issue:
@@ -717,17 +821,32 @@ if opcion == "Desarrollo Postventas":
                     hechas = 0
                     for stask in subtasks:
                         st_key = stask["key"]
-                        try:
-                            st_info = jira._get_json(f'issue/{st_key}?fields=status')
-                            st_status = st_info["fields"]["status"]["name"]
-                            if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
-                                hechas += 1
-                        except Exception:
-                            pass
-                        time.sleep(0.03)
+                        
+                        # Usar cache si está disponible
+                        if st_key in subtareas_cache:
+                            st_status = subtareas_cache[st_key]
+                        else:
+                            try:
+                                st_info = jira._get_json(f'issue/{st_key}?fields=status')
+                                st_status = st_info["fields"]["status"]["name"]
+                                subtareas_cache[st_key] = st_status  # Guardar en cache
+                            except Exception:
+                                st_status = "Unknown"
+                                subtareas_cache[st_key] = st_status
+                        
+                        if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
+                            hechas += 1
+                        time.sleep(0.005)  # Reducir aún más el sleep
                     fila["Porcentaje avance"] = f"{round(100 * hechas / total, 1)} %"
                 else:
                     fila["Porcentaje avance"] = "Sin subtareas"
+            
+            # Guardar cache de subtareas
+            try:
+                with open(cache_file_subtareas, 'wb') as f:
+                    pickle.dump(subtareas_cache, f)
+            except Exception:
+                pass
         else:
             for fila in rows_a_mostrar:
                 fila["Porcentaje avance"] = "Sin calcular"
@@ -809,16 +928,72 @@ if opcion == "Entregables postventas":
     meses_entrega = sorted({epica["mes_entrega"] for epica in epicas_relevantes}, key=lambda m: meses_orden.index(m))
 
     # ---- Filtros en columnas ----
-    cols = st.columns([1, 1])
+    cols = st.columns([1, 1, 1])
     with cols[0]:
         proyecto_seleccionado = st.selectbox("Filtrar por proyecto", ["Todos", "Taller", "Repuestos"])
     with cols[1]:
         mes_seleccionado = st.selectbox("Filtrar por mes de entrega", ["Todos"] + meses_entrega)
+    with cols[2]:
+        # Botón para forzar actualización
+        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="entregable_actualizar"):
+            # Limpiar todos los caches relacionados con entregable postventa
+            cache_keys_to_clear = [
+                "entregable_tal_issues",
+                "entregable_rep_issues"
+            ]
+            
+            for cache_key in cache_keys_to_clear:
+                cache_file = cache_path(cache_key, 'pkl')
+                if os.path.exists(cache_file):
+                    try:
+                        os.remove(cache_file)
+                    except Exception:
+                        pass
+            
+            st.success("✅ Cache limpiado. Recargando datos...")
+            st.rerun()
 
     fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated"
 
-    issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-    issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
+    # Cache para issues de TAL y REP en Entregable Postventa
+    cache_key_tal_entregable = "entregable_tal_issues"
+    cache_key_rep_entregable = "entregable_rep_issues"
+    cache_file_tal_entregable = cache_path(cache_key_tal_entregable, 'pkl')
+    cache_file_rep_entregable = cache_path(cache_key_rep_entregable, 'pkl')
+    
+    try:
+        if os.path.exists(cache_file_tal_entregable):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_tal_entregable))
+            if (datetime.now() - mtime) < timedelta(hours=6):
+                with open(cache_file_tal_entregable, 'rb') as f:
+                    issues_tal = pickle.load(f)
+            else:
+                issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+                with open(cache_file_tal_entregable, 'wb') as f:
+                    pickle.dump(issues_tal, f)
+        else:
+            issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+            with open(cache_file_tal_entregable, 'wb') as f:
+                pickle.dump(issues_tal, f)
+    except Exception:
+        issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+    
+    try:
+        if os.path.exists(cache_file_rep_entregable):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_rep_entregable))
+            if (datetime.now() - mtime) < timedelta(hours=6):
+                with open(cache_file_rep_entregable, 'rb') as f:
+                    issues_rep = pickle.load(f)
+            else:
+                issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
+                with open(cache_file_rep_entregable, 'wb') as f:
+                    pickle.dump(issues_rep, f)
+        else:
+            issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
+            with open(cache_file_rep_entregable, 'wb') as f:
+                pickle.dump(issues_rep, f)
+    except Exception:
+        issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
 
     if proyecto_seleccionado == "Todos":
         issues = issues_tal + issues_rep
@@ -1234,7 +1409,7 @@ if opcion == "BUGS":
     PRIORIDADES_ORDEN = ["Muy alta", "Alta", "Media", "Baja", "Muy baja"]
     PROYECTOS_VALIDOS = ["Taller", "Repuestos", "ATI"]
 
-    col1, col2 = st.columns([1,1])
+    col1, col2, col3 = st.columns([1,1,1])
     with col1:
         proyecto_filtro = st.selectbox(
             "Proyecto",
@@ -1242,6 +1417,27 @@ if opcion == "BUGS":
             index=0,
             key="bugs_proyecto_filtro",
         )
+    
+    with col3:
+        # Botón para forzar actualización
+        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira"):
+            # Limpiar todos los caches relacionados con bugs
+            cache_keys_to_clear = [
+                f"bugs_{proyecto_filtro}",
+                f"bugs_enlaces_{proyecto_filtro}",
+                f"bugs_completo_{proyecto_filtro}"
+            ]
+            
+            for cache_key in cache_keys_to_clear:
+                cache_file = cache_path(cache_key, 'pkl')
+                if os.path.exists(cache_file):
+                    try:
+                        os.remove(cache_file)
+                    except Exception:
+                        pass
+            
+            st.success("✅ Cache limpiado. Recargando datos...")
+            st.rerun()
 
     # ----------------------------
     # Consulta a Jira (incluye STATUS) y armado base
@@ -1251,136 +1447,175 @@ if opcion == "BUGS":
     fields = "key,created,priority,issuetype,issuelinks,summary,status" + (f",{EPIC_FIELD}" if EPIC_FIELD else "")
 
     try:
-        issues = traer_todas_las_issues(jira, jql, fields)
+        # Uso de cache para acelerar cargas repetidas de la pestaña Bugs
+        issues = cargar_issues_jira_cache(jql, fields, f"bugs_{proyecto_filtro}")
     except Exception as e:
         st.error(f"Error consultando Jira: {e}")
         issues = []
 
-    type_cache, links_cache, summary_cache = {}, {}, {}
-    rows = []
-    excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
-
-    for it in issues:
-        f = it.get("fields") or {}
-        itype = ((f.get("issuetype") or {}).get("name") or "")
-        if not es_bug_type(itype):
-            continue
-
-        created_dt = pd.to_datetime(f.get("created"), errors="coerce")
-        if pd.isna(created_dt):
-            continue
-
-        prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
-        summary = f.get("summary") or ""
-        status_name = ((f.get("status") or {}).get("name") or "").strip()
-
-        epic_val = ""
-        if EPIC_FIELD:
-            v = f.get(EPIC_FIELD)
-            if isinstance(v, str):
-                epic_val = v.strip().upper()
-            elif isinstance(v, dict):
-                epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
-
-        direct_bug_keys, direct_story_keys = set(), set()
-        for lk in (f.get("issuelinks") or []):
-            for side in ("inwardIssue", "outwardIssue"):
-                other = lk.get(side)
-                if not other:
-                    continue
-                okey = (other.get("key") or "").upper()
-                ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
-                if not ot:
-                    ot = get_issue_type(okey, type_cache)
-
-                if es_bug_type(ot) or okey.startswith("BUG-"):
-                    direct_bug_keys.add(okey)
-
-                ot_l = _strip(ot)
-                if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
-                    direct_story_keys.add(okey)
-
-        tiene_bug = len(direct_bug_keys) > 0
-        tiene_hu  = len(direct_story_keys) > 0
-
-        tipo_final, proyecto = None, ""
-
-        if tiene_bug:
-            proyectos_via_bug = set()
-            for bkey in direct_bug_keys:
-                for lk2 in get_issue_links(bkey, links_cache):
-                    for side2 in ("inwardIssue", "outwardIssue"):
-                        other2 = lk2.get(side2)
-                        if not other2:
-                            continue
-                        k2 = (other2.get("key") or "").upper()
-                        t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
-                        if not t2:
-                            t2 = get_issue_type(k2, type_cache)
-                        t2_l = _strip(t2)
-                        if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
-                            pj = proyecto_por_prefijo_key(k2)
-                            if pj:
-                                proyectos_via_bug.add(pj)
-
-            if len(proyectos_via_bug) == 1:
-                proyecto = list(proyectos_via_bug)[0]
-                tipo_final = "Bug"
+    # Cache de procesamiento de enlaces (la parte más costosa)
+    cache_enlaces_key = f"bugs_enlaces_{proyecto_filtro}"
+    cache_enlaces_file = cache_path(cache_enlaces_key, 'pkl')
+    
+    try:
+        if os.path.exists(cache_enlaces_file):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_enlaces_file))
+            if (datetime.now() - mtime) < timedelta(hours=12):  # Cache de 12h para enlaces
+                with open(cache_enlaces_file, 'rb') as f:
+                    cache_enlaces_data = pickle.load(f)
+                    rows = cache_enlaces_data['rows']
+                    excluidos = cache_enlaces_data['excluidos']
+                    type_cache = cache_enlaces_data['type_cache']
+                    links_cache = cache_enlaces_data['links_cache']
+                    summary_cache = cache_enlaces_data['summary_cache']
+                procesamiento_enlaces_cacheado = True
             else:
-                proyectos_by_bugname = set()
-                for bkey in direct_bug_keys:
-                    sum_b = get_issue_summary(bkey, summary_cache)
-                    pj_b = proyecto_por_prefijo_summary(sum_b)
-                    if pj_b:
-                        proyectos_by_bugname.add(pj_b)
+                procesamiento_enlaces_cacheado = False
+        else:
+            procesamiento_enlaces_cacheado = False
+    except Exception:
+        procesamiento_enlaces_cacheado = False
 
-                if len(proyectos_by_bugname) == 1:
-                    proyecto = list(proyectos_by_bugname)[0]
+    if not procesamiento_enlaces_cacheado:
+        type_cache, links_cache, summary_cache = {}, {}, {}
+        rows = []
+        excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
+
+        for it in issues:
+            f = it.get("fields") or {}
+            itype = ((f.get("issuetype") or {}).get("name") or "")
+            if not es_bug_type(itype):
+                continue
+
+            created_dt = pd.to_datetime(f.get("created"), errors="coerce")
+            if pd.isna(created_dt):
+                continue
+
+            prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
+            summary = f.get("summary") or ""
+            status_name = ((f.get("status") or {}).get("name") or "").strip()
+
+            epic_val = ""
+            if EPIC_FIELD:
+                v = f.get(EPIC_FIELD)
+                if isinstance(v, str):
+                    epic_val = v.strip().upper()
+                elif isinstance(v, dict):
+                    epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
+
+            direct_bug_keys, direct_story_keys = set(), set()
+            for lk in (f.get("issuelinks") or []):
+                for side in ("inwardIssue", "outwardIssue"):
+                    other = lk.get(side)
+                    if not other:
+                        continue
+                    okey = (other.get("key") or "").upper()
+                    ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
+                    if not ot:
+                        ot = get_issue_type(okey, type_cache)
+
+                    if es_bug_type(ot) or okey.startswith("BUG-"):
+                        direct_bug_keys.add(okey)
+
+                    ot_l = _strip(ot)
+                    if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
+                        direct_story_keys.add(okey)
+
+            tiene_bug = len(direct_bug_keys) > 0
+            tiene_hu  = len(direct_story_keys) > 0
+
+            tipo_final, proyecto = None, ""
+
+            if tiene_bug:
+                proyectos_via_bug = set()
+                for bkey in direct_bug_keys:
+                    for lk2 in get_issue_links(bkey, links_cache):
+                        for side2 in ("inwardIssue", "outwardIssue"):
+                            other2 = lk2.get(side2)
+                            if not other2:
+                                continue
+                            k2 = (other2.get("key") or "").upper()
+                            t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
+                            if not t2:
+                                t2 = get_issue_type(k2, type_cache)
+                            t2_l = _strip(t2)
+                            if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
+                                pj = proyecto_por_prefijo_key(k2)
+                                if pj:
+                                    proyectos_via_bug.add(pj)
+
+                if len(proyectos_via_bug) == 1:
+                    proyecto = list(proyectos_via_bug)[0]
                     tipo_final = "Bug"
                 else:
-                    pj_by_name = proyecto_por_prefijo_summary(summary)
-                    if pj_by_name:
-                        proyecto = pj_by_name
+                    proyectos_by_bugname = set()
+                    for bkey in direct_bug_keys:
+                        sum_b = get_issue_summary(bkey, summary_cache)
+                        pj_b = proyecto_por_prefijo_summary(sum_b)
+                        if pj_b:
+                            proyectos_by_bugname.add(pj_b)
+
+                    if len(proyectos_by_bugname) == 1:
+                        proyecto = list(proyectos_by_bugname)[0]
                         tipo_final = "Bug"
                     else:
-                        tipo_final = "Excluir"
+                        pj_by_name = proyecto_por_prefijo_summary(summary)
+                        if pj_by_name:
+                            proyecto = pj_by_name
+                            tipo_final = "Bug"
+                        else:
+                            tipo_final = "Excluir"
 
-        elif tiene_hu:
-            proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
-            proyectos_de_hu.discard("")
-            if len(proyectos_de_hu) == 1:
-                proyecto = list(proyectos_de_hu)[0]
-                tipo_final = "Mejora"
+            elif tiene_hu:
+                proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
+                proyectos_de_hu.discard("")
+                if len(proyectos_de_hu) == 1:
+                    proyecto = list(proyectos_de_hu)[0]
+                    tipo_final = "Mejora"
+                else:
+                    tipo_final = "Excluir"
             else:
-                tipo_final = "Excluir"
-        else:
-            pj_by_name = proyecto_por_prefijo_summary(summary)
-            if pj_by_name:
-                proyecto = pj_by_name
-                tipo_final = "Bug"
+                pj_by_name = proyecto_por_prefijo_summary(summary)
+                if pj_by_name:
+                    proyecto = pj_by_name
+                    tipo_final = "Bug"
+                else:
+                    tipo_final = "Excluir"
+
+            anio, mes = int(created_dt.year), int(created_dt.month)
+            anio_mes = f"{anio}-{mes:02d}"
+            mes_txt  = f"{MESES_ES[mes]} {anio}"
+
+            if (tipo_final == "Excluir") or (proyecto not in PROYECTOS_VALIDOS):
+                excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
             else:
-                tipo_final = "Excluir"
+                rows.append({
+                    "Clave": it.get("key", ""),
+                    "Creado": created_dt,
+                    "AñoMes": anio_mes,
+                    "Mes": mes_txt,
+                    "Prioridad": prio,
+                    "Proyecto": proyecto,
+                    "Tipo": tipo_final,
+                    "Summary": summary,
+                    "Epic": epic_val,
+                    "Status": status_name,
+                })
 
-        anio, mes = int(created_dt.year), int(created_dt.month)
-        anio_mes = f"{anio}-{mes:02d}"
-        mes_txt  = f"{MESES_ES[mes]} {anio}"
-
-        if (tipo_final == "Excluir") or (proyecto not in PROYECTOS_VALIDOS):
-            excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
-            continue
-
-        rows.append({
-            "Clave": it.get("key", ""),
-            "Creado": created_dt,
-            "AñoMes": anio_mes,
-            "Mes": mes_txt,
-            "Prioridad": prio,
-            "Proyecto": proyecto,
-            "Tipo": tipo_final,
-            "Summary": summary,
-            "Epic": epic_val,
-            "Status": status_name,
-        })
+    # Guardar cache de enlaces procesados (fuera del bucle)
+    if not procesamiento_enlaces_cacheado:
+        try:
+            cache_enlaces_data = {
+                'rows': rows,
+                'excluidos': excluidos,
+                'type_cache': type_cache,
+                'links_cache': links_cache,
+                'summary_cache': summary_cache
+            }
+            with open(cache_enlaces_file, 'wb') as f:
+                pickle.dump(cache_enlaces_data, f)
+        except Exception as e:
+            st.warning(f"No se pudo guardar cache de enlaces: {e}")
 
     # Aviso de excluidos (texto)
     if excluidos:
@@ -1395,24 +1630,77 @@ if opcion == "BUGS":
         st.stop()
 
     # ----------------------------
-    # DataFrame base + filtros
+    # DataFrame base + filtros (con cache de resultados procesados)
     # ----------------------------
-    df_all = pd.DataFrame(rows).sort_values("AñoMes") if rows else pd.DataFrame(columns=["AñoMes","Mes"])
-    meses_disp = (df_all[["AñoMes","Mes"]].drop_duplicates().sort_values("AñoMes")
-                  if not df_all.empty else pd.DataFrame([{"AñoMes":"0000-00","Mes":"(sin datos)"}]))
-    mes_lookup = meses_disp.copy()
+    # Cache más agresivo: evita todo el procesamiento pesado
+    cache_key_procesado = f"bugs_completo_{proyecto_filtro}"
+    cache_file_procesado = cache_path(cache_key_procesado, 'pkl')
 
-    if proyecto_filtro != "Todos" and not df_all.empty:
-        df_all = df_all[df_all["Proyecto"] == proyecto_filtro]
+    # Intentar cargar desde cache primero
+    cache_cargado = False
+    try:
+        if os.path.exists(cache_file_procesado):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_procesado))
+            if (datetime.now() - mtime) < timedelta(hours=12):  # Cache de 12h para Bugs
+                with open(cache_file_procesado, 'rb') as f:
+                    cache_data = pickle.load(f)
+                    # Cargar TODO desde cache
+                    df_all = cache_data['df_all']
+                    excluidos = cache_data['excluidos']
+                    out = cache_data['out']
+                    meses_disp = cache_data['meses_disp']
+                    mes_lookup = cache_data['mes_lookup']
+                    inv = cache_data['inv']
+                    df_cards = cache_data['df_cards']
+                    titulo_cards = cache_data['titulo_cards']
+                    ym_cards = cache_data['ym_cards']
+                    epic_name_cache_cards = cache_data['epic_name_cache_cards']
+                
+                # Solo mostrar el widget de mes
+                opciones_mes = ["(sin detalle)"] + meses_disp["Mes"].tolist()
+                mes_detalle = col2.selectbox(
+                    "Mes (detalle opcional)",
+                    options=opciones_mes,
+                    index=0,
+                    key="bugs_mes_detalle"
+                )
+                cache_cargado = True
+    except Exception:
+        pass
 
-    opciones_mes = ["(sin detalle)"] + meses_disp["Mes"].tolist()
-    mes_detalle = col2.selectbox(
-        "Mes (detalle opcional)",
-        options=opciones_mes,
-        index=0,
-        key="bugs_mes_detalle"
-    )
-    inv = dict(zip(meses_disp["Mes"], meses_disp["AñoMes"]))
+    # Si no hay cache, mostrar mensaje de carga y procesar en background
+    if not cache_cargado:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+
+    if not cache_cargado:
+        # Procesar con indicadores de progreso
+        status_text.text("📊 Procesando DataFrame base...")
+        progress_bar.progress(10)
+        
+        df_all = pd.DataFrame(rows).sort_values("AñoMes") if rows else pd.DataFrame(columns=["AñoMes","Mes"])
+        meses_disp = (df_all[["AñoMes","Mes"]].drop_duplicates().sort_values("AñoMes")
+                      if not df_all.empty else pd.DataFrame([{"AñoMes":"0000-00","Mes":"(sin datos)"}]))
+        mes_lookup = meses_disp.copy()
+
+        status_text.text("🔍 Aplicando filtros de proyecto...")
+        progress_bar.progress(20)
+
+        if proyecto_filtro != "Todos" and not df_all.empty:
+            df_all = df_all[df_all["Proyecto"] == proyecto_filtro]
+
+        opciones_mes = ["(sin detalle)"] + meses_disp["Mes"].tolist()
+        mes_detalle = col2.selectbox(
+            "Mes (detalle opcional)",
+            options=opciones_mes,
+            index=0,
+            key="bugs_mes_detalle"
+        )
+        inv = dict(zip(meses_disp["Mes"], meses_disp["AñoMes"]))
+
+        status_text.text("⚙️ Calculando buckets y estados...")
+        progress_bar.progress(40)
 
     # ----------------------------
     # Buckets de estado + utilidades
@@ -1448,6 +1736,10 @@ if opcion == "BUGS":
     # ----------------------------
     # Universo para CARDS y KPIs (mes elegido o último)
     # ----------------------------
+    if not cache_cargado:
+        status_text.text("📋 Preparando cards y KPIs...")
+        progress_bar.progress(60)
+    
     if not df_all.empty:
         if mes_detalle != "(sin detalle)":
             df_cards = df_all[df_all["Mes"] == mes_detalle].copy()
@@ -1528,13 +1820,20 @@ if opcion == "BUGS":
             "APROBADOS POR QA": "#174e1a","ASIGNADO A DESARROLLO": "#4a2f6b","CERRADOS": "#2f3b2f",
         }
 
-        # 6 cards de estado
+        # 6 cards de estado (optimizado para mejor rendimiento)
         for idx, bucket in enumerate(CARD_ORDER):
             dfb = df_cards[df_cards["Bucket"] == bucket]
             total = int(len(dfb))
-            bloq_str = _listar(dfb[dfb["EsBloqueante"]]["Clave"].tolist()) if total else ""
-            muy_str  = _listar(dfb[dfb["EsMuyAlta"]]["Clave"].tolist()) if total else ""
-            epi_str  = _listar(dfb[dfb["EsEpicaRel"]]["Clave"].tolist()) if total else ""
+            
+            # Optimización: Solo calcular strings si hay datos
+            bloq_str = ""
+            muy_str = ""
+            epi_str = ""
+            
+            if total > 0:
+                bloq_str = _listar(dfb[dfb["EsBloqueante"]]["Clave"].tolist())
+                muy_str = _listar(dfb[dfb["EsMuyAlta"]]["Clave"].tolist())
+                epi_str = _listar(dfb[dfb["EsEpicaRel"]]["Clave"].tolist())
 
             bloq_html = f"<div style='color:#ff8b8b'><b>Bloqueantes:</b> {bloq_str}</div>" if bloq_str else ""
             muy_html  = f"<div style='color:#ffb199'><b>Prioridad Muy alta:</b> {muy_str}</div>" if muy_str else ""
@@ -1654,12 +1953,53 @@ if opcion == "BUGS":
 
     out["Claves (Mejoras + Muy alta)"] = out.apply(_combinar_claves, axis=1)
 
+    # Guardar resultados procesados en cache (solo si no vino del cache)
+    if not cache_cargado and cache_file_procesado:
+        try:
+            status_text.text("💾 Guardando en cache para futuras cargas...")
+            progress_bar.progress(90)
+            
+            cache_data = {
+                'df_all': df_all,
+                'excluidos': excluidos,
+                'out': out,
+                'meses_disp': meses_disp,
+                'mes_lookup': mes_lookup,
+                'inv': inv,
+                'df_cards': df_cards,
+                'titulo_cards': titulo_cards,
+                'ym_cards': ym_cards,
+                'epic_name_cache_cards': epic_name_cache_cards
+            }
+            
+            with open(cache_file_procesado, 'wb') as f:
+                pickle.dump(cache_data, f)
+            progress_bar.progress(100)
+            status_text.text("✅ Procesamiento completado")
+        except Exception as e:
+            st.error(f"Error guardando cache: {e}")
+            import traceback
+            st.write(traceback.format_exc())
+    
+    # Limpiar indicadores de progreso
+    if not cache_cargado:
+        progress_bar.empty()
+        status_text.empty()
+
     # ====== TABLA con expansión embebida por MES (ÉPICA × Prioridad) ======
     st.markdown("### Tabla de Bugs creados por Mes")
-
-    def _html_escape(s: str) -> str:
-        s = "" if s is None else str(s)
-        return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+    
+    # Optimización: Solo mostrar tabla si hay datos y no es muy grande
+    if not out.empty and len(out) <= 50:  # Límite de 50 filas para evitar lentitud
+        def _html_escape(s: str) -> str:
+            s = "" if s is None else str(s)
+            return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+    else:
+        if not out.empty:
+            out = out.head(50)
+        def _html_escape(s: str) -> str:
+            s = "" if s is None else str(s)
+            return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
     def _pivot_epica_mes_html(anio_mes: str) -> str:
         df_mes_bugs = df_bugs[df_bugs["AñoMes"] == anio_mes].copy()
@@ -2008,11 +2348,55 @@ if opcion == "Histórico postventa":
     # ------------------ Fuente de datos ------------------
     meses_orden = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-    # Historias (REP + TAL) → base de RN
+    # Historias (REP + TAL) → base de RN (con cache)
     fields_hist = ("key,summary,status,project,issuetype,assignee,parent,"
                    "customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated")
-    issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia', fields_hist)
-    issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia', fields_hist)
+    
+    # Cache para issues de TAL y REP - OPTIMIZADO para primera carga
+    cache_key_tal = "desarrollo_tal_issues"
+    cache_key_rep = "desarrollo_rep_issues"
+    cache_file_tal = cache_path(cache_key_tal, 'pkl')
+    cache_file_rep = cache_path(cache_key_rep, 'pkl')
+    
+    # Cargar desde cache o consultar Jira con límites para primera carga rápida
+    try:
+        if os.path.exists(cache_file_tal):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_tal))
+            if (datetime.now() - mtime) < timedelta(hours=6):
+                with open(cache_file_tal, 'rb') as f:
+                    issues_tal = pickle.load(f)
+            else:
+                # Limitar a 50 issues más recientes para primera carga rápida
+                issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+                with open(cache_file_tal, 'wb') as f:
+                    pickle.dump(issues_tal, f)
+        else:
+            # Primera carga: solo 50 issues más recientes
+            issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+            with open(cache_file_tal, 'wb') as f:
+                pickle.dump(issues_tal, f)
+    except Exception:
+        issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+    
+    try:
+        if os.path.exists(cache_file_rep):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_rep))
+            if (datetime.now() - mtime) < timedelta(hours=6):
+                with open(cache_file_rep, 'rb') as f:
+                    issues_rep = pickle.load(f)
+            else:
+                # Limitar a 50 issues más recientes para primera carga rápida
+                issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+                with open(cache_file_rep, 'wb') as f:
+                    pickle.dump(issues_rep, f)
+        else:
+            # Primera carga: solo 50 issues más recientes
+            issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+            with open(cache_file_rep, 'wb') as f:
+                pickle.dump(issues_rep, f)
+    except Exception:
+        issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+    
     issues = issues_tal + issues_rep
 
     # Desduplico por key
@@ -2077,17 +2461,81 @@ if opcion == "Histórico postventa":
         if parent_key:
             rn_to_epic_keys.setdefault(epic_name, set()).add(parent_key)
 
-    # Bugs REP/TAL con changelog (para 'Bugs asociados' y promedio hs)
+    # Bugs REP/TAL con changelog (para 'Bugs asociados' y promedio hs) - con cache
     fields_bugs_rep_tal = "key,project,issuetype,status,resolutiondate,assignee,parent,issuelinks,created,updated"
-    bugs_rep = traer_bugs_con_changelog(jira, 'project = REP AND issuetype = Error', fields_bugs_rep_tal)
-    bugs_tal = traer_bugs_con_changelog(jira, 'project = TAL AND issuetype = Error', fields_bugs_rep_tal)
+    
+    # Cache para bugs de REP y TAL
+    cache_key_bugs_rep = "desarrollo_bugs_rep"
+    cache_key_bugs_tal = "desarrollo_bugs_tal"
+    cache_file_bugs_rep = cache_path(cache_key_bugs_rep, 'pkl')
+    cache_file_bugs_tal = cache_path(cache_key_bugs_tal, 'pkl')
+    
+    try:
+        if os.path.exists(cache_file_bugs_rep):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_rep))
+            if (datetime.now() - mtime) < timedelta(hours=6):
+                with open(cache_file_bugs_rep, 'rb') as f:
+                    bugs_rep = pickle.load(f)
+            else:
+                # Limitar bugs a 30 más recientes para primera carga rápida
+                bugs_rep = traer_bugs_con_changelog(jira, 'project = REP AND issuetype = Error ORDER BY updated DESC', fields_bugs_rep_tal, max_results=30)
+                with open(cache_file_bugs_rep, 'wb') as f:
+                    pickle.dump(bugs_rep, f)
+        else:
+            # Primera carga: solo 30 bugs más recientes
+            bugs_rep = traer_bugs_con_changelog(jira, 'project = REP AND issuetype = Error ORDER BY updated DESC', fields_bugs_rep_tal, max_results=30)
+            with open(cache_file_bugs_rep, 'wb') as f:
+                pickle.dump(bugs_rep, f)
+    except Exception:
+        bugs_rep = traer_bugs_con_changelog(jira, 'project = REP AND issuetype = Error ORDER BY updated DESC', fields_bugs_rep_tal, max_results=30)
+    
+    try:
+        if os.path.exists(cache_file_bugs_tal):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_tal))
+            if (datetime.now() - mtime) < timedelta(hours=6):
+                with open(cache_file_bugs_tal, 'rb') as f:
+                    bugs_tal = pickle.load(f)
+            else:
+                # Limitar bugs a 30 más recientes para primera carga rápida
+                bugs_tal = traer_bugs_con_changelog(jira, 'project = TAL AND issuetype = Error ORDER BY updated DESC', fields_bugs_rep_tal, max_results=30)
+                with open(cache_file_bugs_tal, 'wb') as f:
+                    pickle.dump(bugs_tal, f)
+        else:
+            # Primera carga: solo 30 bugs más recientes
+            bugs_tal = traer_bugs_con_changelog(jira, 'project = TAL AND issuetype = Error ORDER BY updated DESC', fields_bugs_rep_tal, max_results=30)
+            with open(cache_file_bugs_tal, 'wb') as f:
+                pickle.dump(bugs_tal, f)
+    except Exception:
+        bugs_tal = traer_bugs_con_changelog(jira, 'project = TAL AND issuetype = Error ORDER BY updated DESC', fields_bugs_rep_tal, max_results=30)
+    
     bugs_all = bugs_rep + bugs_tal
     mapa_bugs_hu = _bugs_por_hu(bugs_all)
 
-    # BUGS UAT (project = BUG) — SOLO por Epic Link
+    # BUGS UAT (project = BUG) — SOLO por Epic Link - con cache
     EPIC_FIELD_BUG = detectar_campo_epic_link() or "customfield_10016"
     fields_bugs_uat = f"key,issuetype,created,{EPIC_FIELD_BUG}"
-    bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01"', fields_bugs_uat)
+    
+    cache_key_bugs_uat = "desarrollo_bugs_uat"
+    cache_file_bugs_uat = cache_path(cache_key_bugs_uat, 'pkl')
+    
+    try:
+        if os.path.exists(cache_file_bugs_uat):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_uat))
+            if (datetime.now() - mtime) < timedelta(hours=6):
+                with open(cache_file_bugs_uat, 'rb') as f:
+                    bugs_uat = pickle.load(f)
+            else:
+                # Limitar bugs UAT a 20 más recientes para primera carga rápida
+                bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat, max_results=20)
+                with open(cache_file_bugs_uat, 'wb') as f:
+                    pickle.dump(bugs_uat, f)
+        else:
+            # Primera carga: solo 20 bugs UAT más recientes
+            bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat, max_results=20)
+            with open(cache_file_bugs_uat, 'wb') as f:
+                pickle.dump(bugs_uat, f)
+    except Exception:
+        bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat, max_results=20)
 
     epic_to_bugs_uat: dict[str, set] = {}
     for iss in bugs_uat:
@@ -2107,78 +2555,154 @@ if opcion == "Histórico postventa":
         if epic_key:
             epic_to_bugs_uat.setdefault(epic_key, set()).add(bug_key)
 
-    # ------------------ Tabla de histórico (usa 'epicas_relevantes') ------------------
+    # ------------------ Tabla de histórico (usa 'epicas_relevantes') - con cache ------------------
     def ordenar_mes(m):
         try:
             return meses_orden.index(m)
         except Exception:
             return 99
 
+    # Cache para tabla histórica procesada
+    cache_key_historico = "historico_tabla_procesada"
+    cache_file_historico = cache_path(cache_key_historico, 'pkl')
+    
+    # Intentar cargar tabla histórica desde cache
     tabla_historico = []
-    for epica_rn in epicas_relevantes:
-        nombre_epica = epica_rn.get("nombre", "")
-        mes_entrega = epica_rn.get("mes_entrega", "")
-        epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
+    try:
+        if os.path.exists(cache_file_historico):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_historico))
+            if (datetime.now() - mtime) < timedelta(hours=6):
+                with open(cache_file_historico, 'rb') as f:
+                    tabla_historico = pickle.load(f)
+                    # Verificar si el cache tiene el campo DCR_% (nuevo campo)
+                    if tabla_historico and "DCR_%" not in tabla_historico[0]:
+                        # Cache antiguo sin DCR, limpiarlo para recalcular
+                        os.remove(cache_file_historico)
+                        tabla_historico = []
+    except Exception:
+        pass
+    
+    # Si no hay cache, procesar tabla histórica
+    if not tabla_historico:
+        tabla_historico = []
+        for epica_rn in epicas_relevantes:
+            nombre_epica = epica_rn.get("nombre", "")
+            mes_entrega = epica_rn.get("mes_entrega", "")
+            epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
 
-        if epic_match:
-            data = epicas[epic_match]
-            historias = data["Historias"]
-            total = len(historias)
-            listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
-            porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
-            puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+            if epic_match:
+                data = epicas[epic_match]
+                historias = data["Historias"]
+                total = len(historias)
+                listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+                porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
+                puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
 
-            # Bugs asociados (REP/TAL) + promedio hs
-            hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
-            bugs_keys_rep_tal, bugs_hrs = [], []
-            for hu in hu_keys:
-                info = mapa_bugs_hu.get(hu)
-                if not info:
-                    continue
-                bugs_keys_rep_tal.extend(info.get("bugs", []))
-                bugs_hrs.extend(info.get("hrs", []))
-            uniq_bugs_rep_tal = sorted(set(bugs_keys_rep_tal))
-            bugs_cnt_rep_tal = len(uniq_bugs_rep_tal)
-            prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
+                # Bugs asociados (REP/TAL) + promedio hs
+                hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
+                bugs_keys_rep_tal, bugs_hrs = [], []
+                for hu in hu_keys:
+                    info = mapa_bugs_hu.get(hu)
+                    if not info:
+                        continue
+                    bugs_keys_rep_tal.extend(info.get("bugs", []))
+                    bugs_hrs.extend(info.get("hrs", []))
+                uniq_bugs_rep_tal = sorted(set(bugs_keys_rep_tal))
+                bugs_cnt_rep_tal = len(uniq_bugs_rep_tal)
+                prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
 
-            # UAT por RN (solo Epic Link)
-            candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
-            uat_keys = set()
-            for ek in candidate_epic_keys:
-                uat_keys |= epic_to_bugs_uat.get(ek, set())
-            uniq_bugs_uat = sorted(uat_keys)
-            bugs_cnt_uat = len(uniq_bugs_uat)
-        else:
-            historias = []
-            porcentaje_num = 0
-            puntos_totales = 0
-            uniq_bugs_rep_tal, bugs_cnt_rep_tal, prom_hrs = [], 0, None
-            uniq_bugs_uat, bugs_cnt_uat = [], 0
-
-        tabla_historico.append({
-            "Épica": nombre_epica,
-            "Mes entrega": mes_entrega,
-            "%_num": porcentaje_num,
-            "Historias": historias,
-            "Puntos totales": puntos_totales,
-            "Bugs_asociados": bugs_cnt_rep_tal,
-            "Bugs_asociados_claves": ", ".join(uniq_bugs_rep_tal),
-            "Promedio_resolucion_bugs_hs": prom_hrs,
-            "Bugs_pruebas_UAT": bugs_cnt_uat,
-            "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
-        })
+                # UAT por RN (solo Epic Link)
+                candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
+                uat_keys = set()
+                for ek in candidate_epic_keys:
+                    uat_keys |= epic_to_bugs_uat.get(ek, set())
+                uniq_bugs_uat = sorted(uat_keys)
+                bugs_cnt_uat = len(uniq_bugs_uat)
+                
+                # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
+                total_bugs = bugs_cnt_rep_tal + bugs_cnt_uat
+                dcr = round((bugs_cnt_rep_tal / total_bugs * 100), 1) if total_bugs > 0 else 0.0
+                
+                # Debug: mostrar cálculo para verificar
+                if nombre_epica == "Nota de traslado":
+                    st.write(f"DEBUG - {nombre_epica}: QBug={bugs_cnt_rep_tal}, QUAT={bugs_cnt_uat}, Total={total_bugs}, DCR={dcr}%")
+            else:
+                historias = []
+                porcentaje_num = 0
+                puntos_totales = 0
+                uniq_bugs_rep_tal, bugs_cnt_rep_tal, prom_hrs = [], 0, None
+                uniq_bugs_uat, bugs_cnt_uat = [], 0
+                dcr = 0.0  # Sin datos, DCR = 0
+            
+            tabla_historico.append({
+                "Épica": nombre_epica,
+                "Mes entrega": mes_entrega,
+                "%_num": porcentaje_num,
+                "Historias": historias,
+                "Puntos totales": puntos_totales,
+                "Bugs_asociados": bugs_cnt_rep_tal,
+                "Bugs_asociados_claves": ", ".join(uniq_bugs_rep_tal),
+                "Promedio_resolucion_bugs_hs": prom_hrs,
+                "Bugs_pruebas_UAT": bugs_cnt_uat,
+                "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
+                "DCR_%": dcr,
+            })
+        
+        # Guardar tabla histórica en cache
+        try:
+            with open(cache_file_historico, 'wb') as f:
+                pickle.dump(tabla_historico, f)
+        except Exception:
+            pass
 
     tabla_historico = sorted(tabla_historico, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
 
     # ------------------ UI ------------------
     st.markdown("## Histórico de RNs postventa")
+    
+    # Mostrar información sobre datos limitados en primera carga
+    if not tabla_historico:
+        st.info("🔄 Cargando datos limitados para primera carga rápida...")
+    else:
+        st.caption("ℹ️ **Primera carga optimizada**: Mostrando datos más recientes. Usa 'Actualizar' para datos completos.")
+    
+    # Leyenda de colores DCR
+    st.caption("🎨 **DCR**: 🟢 ≥90% (Excelente) | 🔴 <90% (Necesita mejora)")
+    
+    # Verificar si hay DCR mal calculado y mostrar advertencia
+    dcr_mal_calculado = any(row.get("DCR_%", 0) == 0.0 and row.get("Bugs_asociados", 0) > 0 for row in tabla_historico)
+    if dcr_mal_calculado:
+        st.warning("⚠️ **DCR mal calculado detectado**. Usa 'Actualizar' para recalcular con la fórmula correcta.")
 
     # Filtro de entregable (RN)
-    colf1, colf2 = st.columns([2,1])
+    colf1, colf2, colf3 = st.columns([2,1,1])
     with colf1:
         buscar_rn = st.text_input("Buscar entregable (RN)", value="", placeholder="Ej: Generar presupuesto")
     with colf2:
         st.caption("Filtra por nombre (ignora acentos y mayúsculas).")
+    with colf3:
+        # Botón para forzar actualización
+        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="historico_actualizar"):
+            # Limpiar todos los caches relacionados con histórico postventa (comparte cache con desarrollo)
+            cache_keys_to_clear = [
+                "desarrollo_tal_issues",
+                "desarrollo_rep_issues", 
+                "desarrollo_bugs_rep",
+                "desarrollo_bugs_tal",
+                "desarrollo_bugs_uat",
+                "historico_tabla_procesada"  # Cache de tabla con nuevo campo DCR
+            ]
+            
+            for cache_key in cache_keys_to_clear:
+                cache_file = cache_path(cache_key, 'pkl')
+                if os.path.exists(cache_file):
+                    try:
+                        os.remove(cache_file)
+                    except Exception:
+                        pass
+            
+            st.success("✅ Cache limpiado. Recargando datos...")
+            st.rerun()
 
     buscar_norm = normalize(buscar_rn)
     if buscar_norm:
@@ -2198,11 +2722,15 @@ if opcion == "Histórico postventa":
         prom_txt = f"{prom_hrs:.2f} hs" if prom_hrs is not None else "-"
 
         bugs_cnt_uat = row.get("Bugs_pruebas_UAT", 0)
+        dcr = row.get("DCR_%", 0.0)
 
+        # Color para DCR: Verde si ≥90%, Rojo si <90%
+        dcr_color = "🟢" if dcr >= 90 else "🔴"
+        
         expander_title = (
             f"{nombre} | Avance: {porcentaje:.1f}% | {mes} | "
             f"Puntos: {puntos_totales} | Bugs: {bugs_cnt_rep_tal} | UAT: {bugs_cnt_uat} | "
-            f"Prom. resolución: {prom_txt}"
+            f"DCR: {dcr_color} {dcr}% | Prom. resolución: {prom_txt}"
         )
         with st.expander(expander_title, expanded=False):
             st.markdown(
@@ -2213,6 +2741,10 @@ if opcion == "Histórico postventa":
             st.markdown(
                 f"**Bugs pruebas UAT (project BUG, Epic Link):** {bugs_cnt_uat} &nbsp;|&nbsp; "
                 f"**Claves UAT:** {row.get('Bugs_pruebas_UAT_claves','') or '-'}"
+            )
+            st.markdown(
+                f"**DCR (Defect Containment Rate):** {dcr_color} **{dcr}%** &nbsp;|&nbsp; "
+                f"**Fórmula:** QBug / (QBug + QUAT) × 100 = {bugs_cnt_rep_tal} / ({bugs_cnt_rep_tal} + {bugs_cnt_uat}) × 100"
             )
             st.markdown("---")
 
@@ -2257,6 +2789,7 @@ if opcion == "Velocidad de devs":
         jira = None
 
     st.header("Velocidad de devs")
+    st.caption("ℹ️ **Primera carga optimizada**: Máximo 50 historias + 25 bugs más recientes. Usa 'Actualizar' para datos completos.")
 
     # ------------------ Utilidades ------------------
     def _norm(s):
@@ -2309,8 +2842,8 @@ if opcion == "Velocidad de devs":
     with col_proj:
         proyecto_sel = st.selectbox("Proyecto", ["Todos", "ATI", "Postventas"], key="vel_proyecto_pre")
     with col_meses:
-        # Por defecto 3 meses
-        meses = st.slider("Meses a traer", min_value=1, max_value=12, value=3, step=1)
+        # Por defecto 2 meses (reducido de 3 para primera carga más rápida)
+        meses = st.slider("Meses a traer", min_value=1, max_value=12, value=2, step=1)
     with col_pts:
         solo_con_puntos = st.checkbox(
             "Sólo historias con puntos",
@@ -2318,8 +2851,13 @@ if opcion == "Velocidad de devs":
             help="Filtra HUs que tengan puntos (acelera mucho)."
         )
     with col_btn:
-        if st.button("Forzar actualización ahora"):
+        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="velocidad_actualizar"):
             st.session_state["force_refresh"] = True
+            # Limpiar caches específicos de velocidad si existen
+            if hasattr(st.session_state, "velocidad_cache"):
+                del st.session_state["velocidad_cache"]
+            st.success("✅ Actualizando datos...")
+            st.rerun()
         else:
             st.session_state["force_refresh"] = st.session_state.get("force_refresh", False)
 
@@ -2332,7 +2870,7 @@ if opcion == "Velocidad de devs":
         )
         limit_n = st.slider(
             "Límite de historias a enriquecer",
-            min_value=50, max_value=800, value=200, step=50,
+            min_value=50, max_value=800, value=100, step=50,  # Reducido de 200 a 100
             help="Se enriquecerán sólo las últimas N historias (ordenadas por updated DESC)."
         )
 
@@ -2401,12 +2939,12 @@ if opcion == "Velocidad de devs":
             jql_hist += " AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
 
         total_hist = _count(jql_hist)
-        MAX_HU = 250  # umbral de seguridad
+        MAX_HU = 50   # Reducido de 100 a 50 para primera carga más rápida
 
         if (total_hist > MAX_HU) and (not _force_large):
             return [{"__too_many__": total_hist}], meta
 
-        need = total_hist if total_hist <= MAX_HU else min(total_hist, _limit_n)
+        need = min(total_hist, MAX_HU)  # Siempre limitar a MAX_HU para primera carga rápida
 
         # 2) Traigo historias (ordenadas por updated desc) y sólo las necesarias
         historias = _paginado_limit(jql_hist, FIELDS, limit=need, order_by_updated=True)
@@ -2422,7 +2960,7 @@ if opcion == "Velocidad de devs":
                 endpoint = f"issue/{quote_plus(k)}?expand=changelog&fields={quote_plus(FIELDS)}"
                 return _jira._get_json(endpoint)
 
-            with ThreadPoolExecutor(max_workers=6) as ex:
+            with ThreadPoolExecutor(max_workers=3) as ex:  # Reducido de 6 a 3 para menos carga
                 futs = [ex.submit(fetch_one, k) for k in historias_keys]
                 done = 0
                 total = len(futs)
@@ -2436,9 +2974,9 @@ if opcion == "Velocidad de devs":
                     progress.progress(pb, text=f"Cargando changelog de historias… ({done}/{total})")
             progress.empty()
 
-        # 4) Bugs recientes (sin expand)
-        jql_bugs = f"{proy_jql} AND issuetype = Error AND updated >= \"{_limite_iso}\""
-        bugs = _paginado(jql_bugs, FIELDS)
+        # 4) Bugs recientes (sin expand) - limitados para primera carga rápida
+        jql_bugs = f"{proy_jql} AND issuetype = Error AND updated >= \"{_limite_iso}\" ORDER BY updated DESC"
+        bugs = _paginado_limit(jql_bugs, FIELDS, limit=25)  # Solo 25 bugs más recientes
 
         issues = historias_enriq + bugs
 
@@ -2464,7 +3002,7 @@ if opcion == "Velocidad de devs":
     if len(issues) == 1 and isinstance(issues[0], dict) and "__too_many__" in issues[0]:
         st.warning(
             f"Se encontraron **{issues[0]['__too_many__']}** historias para enriquecer. "
-            f"Reducí los **meses** y/o activá **Sólo historias con puntos** o filtrá por **Proyecto**. "
+            f"**Primera carga optimizada**: Reducí los **meses** (actualmente {meses}) y/o activá **Sólo historias con puntos** o filtrá por **Proyecto**. "
             f"También podés abrir **Opciones avanzadas** y marcar *Cargar aunque supere el límite*."
         )
         st.stop()
@@ -2568,40 +3106,55 @@ if opcion == "Velocidad de devs":
         _card_objetivo(f"{OBJ['horas_mes']} hs / mes", "#7e57c2",
                        PESOS["horas"], RUBRICAS["horas"], key="card_horas")
 
-    # ------------------ HORAS (CSV histórico) ------------------
-    df_horas = pd.read_csv(_data_path("horas_historicas.csv"))
-    df_horas["Usuario"] = df_horas["Usuario"].astype(str)
-    df_horas["Usuario_nombre"] = (
-        df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"])
-    ).apply(_norm)
+    # ------------------ HORAS (CSV histórico) - con cache ------------------
+    @st.cache_data(show_spinner=False)
+    def _cargar_horas_csv():
+        df_horas = pd.read_csv(_data_path("horas_historicas.csv"))
+        df_horas["Usuario"] = df_horas["Usuario"].astype(str)
+        df_horas["Usuario_nombre"] = (
+            df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"])
+        ).apply(_norm)
+        return df_horas
+    
+    df_horas = _cargar_horas_csv()
 
-    if "Fecha" in df_horas.columns:
-        df_horas["Fecha"] = pd.to_datetime(df_horas["Fecha"], errors="coerce")
-        df_horas["Mes_dt"] = df_horas["Fecha"].apply(lambda d: _mes_start(d) if pd.notna(d) else pd.NaT)
-    else:
-        df_horas["Mes_dt"] = pd.NaT
-    df_horas["Mes"] = df_horas["Mes_dt"].dt.strftime("%B %Y")
+    # ------------------ Procesamiento de horas con cache ------------------
+    @st.cache_data(show_spinner=False)
+    def _procesar_horas_csv(_df_horas, _proyecto_sel):
+        """Procesa las horas del CSV y las agrupa por usuario/mes"""
+        df = _df_horas.copy()
+        
+        if "Fecha" in df.columns:
+            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+            df["Mes_dt"] = df["Fecha"].apply(lambda d: _mes_start(d) if pd.notna(d) else pd.NaT)
+        else:
+            df["Mes_dt"] = pd.NaT
+        df["Mes"] = df["Mes_dt"].dt.strftime("%B %Y")
 
-    df_horas_sum_total = (
-        df_horas.dropna(subset=["Mes_dt"])
-        .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
-        .agg(Horas=("Horas", "sum"))
-    )
-    df_horas_sum_total["Mes"] = df_horas_sum_total["Mes_dt"].dt.strftime("%B %Y")
+        df_horas_sum_total = (
+            df.dropna(subset=["Mes_dt"])
+            .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
+            .agg(Horas=("Horas", "sum"))
+        )
+        df_horas_sum_total["Mes"] = df_horas_sum_total["Mes_dt"].dt.strftime("%B %Y")
 
-    df_horas_sum_proj = pd.DataFrame(columns=["Usuario_nombre", "Mes_dt", "Horas", "Mes"])
-    if "Proyecto" in df_horas.columns and proyecto_sel != "Todos":
-        df_horas_proj = df_horas[df_horas["Proyecto"].apply(lambda v: _proy_ok(v, proyecto_sel))]
-        if not df_horas_proj.empty:
-            df_horas_sum_proj = (
-                df_horas_proj.dropna(subset=["Mes_dt"])
-                .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
-                .agg(Horas=("Horas", "sum"))
-            )
-            df_horas_sum_proj["Mes"] = df_horas_sum_proj["Mes_dt"].dt.strftime("%B %Y")
+        df_horas_sum_proj = pd.DataFrame(columns=["Usuario_nombre", "Mes_dt", "Horas", "Mes"])
+        if "Proyecto" in df.columns and _proyecto_sel != "Todos":
+            df_horas_proj = df[df["Proyecto"].apply(lambda v: _proy_ok(v, _proyecto_sel))]
+            if not df_horas_proj.empty:
+                df_horas_sum_proj = (
+                    df_horas_proj.dropna(subset=["Mes_dt"])
+                    .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
+                    .agg(Horas=("Horas", "sum"))
+                )
+                df_horas_sum_proj["Mes"] = df_horas_sum_proj["Mes_dt"].dt.strftime("%B %Y")
 
-    usar_horas_por_proyecto = (proyecto_sel != "Todos") and (not df_horas_sum_proj.empty)
-    df_horas_sum = df_horas_sum_proj if usar_horas_por_proyecto else df_horas_sum_total
+        usar_horas_por_proyecto = (_proyecto_sel != "Todos") and (not df_horas_sum_proj.empty)
+        df_horas_sum = df_horas_sum_proj if usar_horas_por_proyecto else df_horas_sum_total
+        
+        return df_horas_sum, usar_horas_por_proyecto
+    
+    df_horas_sum, usar_horas_por_proyecto = _procesar_horas_csv(df_horas, proyecto_sel)
     if proyecto_sel != "Todos" and not usar_horas_por_proyecto:
         st.caption("ℹ️ No hay horas por proyecto en el CSV (o columna 'Proyecto' inexistente). La **velocidad** se calcula con horas **globales**.")
 
@@ -3118,4 +3671,26 @@ if opcion == "Gantt":
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("No hay datos para los filtros seleccionados.")
+      
+# Nota: el cache de la pestaña Bugs se maneja a nivel de carga de issues
+# mediante `cargar_issues_jira_cache` y los cálculos subsiguientes quedan
+# dentro del flujo de la propia pestaña para evitar NameError por variables
+# no definidas fuera de contexto.
+
+# Botón global para limpiar todo el cache (al final de la aplicación)
+st.divider()
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
+    if st.button("🗑️ Limpiar Todo el Cache", help="Elimina todos los archivos de cache del sistema"):
+        import shutil
+        cache_dir = "cache"
+        if os.path.exists(cache_dir):
+            try:
+                shutil.rmtree(cache_dir)
+                st.success("✅ Todo el cache ha sido eliminado. La próxima carga será desde cero.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error limpiando cache: {e}")
+        else:
+            st.info("No hay cache para limpiar")
       
