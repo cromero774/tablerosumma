@@ -24,7 +24,20 @@ def actualizar_epicas():
         {"rn": "REP-5158", "nombre": "Gestor de OV (Gestor de operaciones)", "mes_entrega": "Septiembre"},
         {"rn": "TAL-3856", "nombre": "AGENDA FORD", "mes_entrega": "Octubre"},
         {"rn": "TAL-3979", "nombre": "[ENTREGA]", "mes_entrega":"Septiembre"},
-        {"rn": "REP-5473", "nombre": "TRANSFERENCIAS INTERNAS Y EXTERNAS V2", "mes_entrega":"Septiembre"}
+        {"rn": "REP-5473", "nombre": "TRANSFERENCIAS INTERNAS Y EXTERNAS V2", "mes_entrega":"Septiembre"},
+        {"rn": "ATI-6", "nombre": "[COBRO A CLIENTES]", "mes_entrega":"Septiembre"},
+        {"rn": "ATI-4", "nombre": "[OPERACIONES Y ÓRDENES DE VENTA]", "mes_entrega":"Septiembre"},
+        {"rn": "ATI-2612", "nombre": "[NOTA DE DEBITO]", "mes_entrega":"Septiembre"},
+        {"rn": "ATI-2537", "nombre": "[ASIENTOS PLANOS]", "mes_entrega":"Agosto"},
+        {"rn": "ATI-3437", "nombre": "[ORDENES DE PAGO]", "mes_entrega":"Octubre"},
+        {"rn": "ATI-629", "nombre": "[NOTA DE CREDITO]", "mes_entrega":"Octubre"},
+        {"rn": "ATI-3", "nombre": "[FACTURA DE VENTA]", "mes_entrega":"Octubre"},
+        {"rn": "ATI-2537", "nombre": "[ASIENTOS PLANOS]", "mes_entrega":"Agosto"},
+        {"rn": "ATI-2537", "nombre": "[CONTACTOS]", "mes_entrega":"Agosto"},
+        {"rn": "ATI-109", "nombre": "[REMITO]", "mes_entrega":"Julio"},
+        {"rn": "ATI-1787", "nombre": "[FACTURA DE PROVEEDOR - IDA]", "mes_entrega":"Junio"},
+        {"rn": "ATI-10", "nombre": "[ORDEN DE COMPRA]", "mes_entrega":"Junio"},
+        {"rn": "ATI-236", "nombre": "[PRODUCTOS]", "mes_entrega":"Mayo"}
 
     ]
 
