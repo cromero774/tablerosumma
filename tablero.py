@@ -299,10 +299,162 @@ PROYECTOS_ATI = [
 
 
 
-opciones_menu = ["Horas Postventas", "Horas ATI", "Desarrollo Postventas", "Entregables postventas","BUGS","Histórico postventa","Velocidad de devs","Gantt"]
-opcion = st.sidebar.radio("Seleccioná opción", opciones_menu)
+# Menú principal con expandibles
+st.sidebar.markdown("## 📊 Dashboard")
 
-if opcion == "Horas Postventas":
+# Botón para volver al menú
+if st.sidebar.button("🏠 Menú", key="btn_menu", use_container_width=True):
+    st.session_state.opcion_actual = "Menú"
+    st.rerun()
+
+st.sidebar.markdown("---")
+
+# Inicializar session state para la opción seleccionada
+if 'opcion_actual' not in st.session_state:
+    st.session_state.opcion_actual = "Menú"
+
+# Postventas
+with st.sidebar.expander("🏢 Postventas", expanded=False):
+    if st.button("📊 Horas Postventas", key="btn_horas_postventas", use_container_width=True):
+        st.session_state.opcion_actual = "Horas Postventas"
+        st.rerun()
+    if st.button("💻 Desarrollo Postventas", key="btn_desarrollo_postventas", use_container_width=True):
+        st.session_state.opcion_actual = "Desarrollo Postventas"
+        st.rerun()
+    if st.button("📦 Entregables Postventas", key="btn_entregables_postventas", use_container_width=True):
+        st.session_state.opcion_actual = "Entregables Postventas"
+        st.rerun()
+    if st.button("📈 Histórico Postventa", key="btn_historico_postventas", use_container_width=True):
+        st.session_state.opcion_actual = "Histórico Postventa"
+        st.rerun()
+
+# ATI
+with st.sidebar.expander("🏢 ATI", expanded=False):
+    if st.button("📊 Horas ATI", key="btn_horas_ati", use_container_width=True):
+        st.session_state.opcion_actual = "Horas ATI"
+        st.rerun()
+    if st.button("💻 Desarrollo ATI", key="btn_desarrollo_ati", use_container_width=True):
+        st.session_state.opcion_actual = "Desarrollo ATI"
+        st.rerun()
+    if st.button("📦 Entregables ATI", key="btn_entregables_ati", use_container_width=True):
+        st.session_state.opcion_actual = "Entregables ATI"
+        st.rerun()
+    if st.button("📈 Histórico ATI", key="btn_historico_ati", use_container_width=True):
+        st.session_state.opcion_actual = "Histórico ATI"
+        st.rerun()
+
+# BUGS
+with st.sidebar.expander("🐛 BUGS", expanded=False):
+    if st.button("🐛 BUGS", key="btn_bugs", use_container_width=True):
+        st.session_state.opcion_actual = "BUGS"
+        st.rerun()
+
+# Velocidad
+with st.sidebar.expander("⚡ Velocidad", expanded=False):
+    if st.button("⚡ Velocidad de devs", key="btn_velocidad", use_container_width=True):
+        st.session_state.opcion_actual = "Velocidad de devs"
+        st.rerun()
+
+# Gantt
+with st.sidebar.expander("📊 Gantt", expanded=False):
+    if st.button("📊 Gantt", key="btn_gantt", use_container_width=True):
+        st.session_state.opcion_actual = "Gantt"
+        st.rerun()
+
+# Usar la opción del session state
+opcion = st.session_state.opcion_actual
+
+# Mostrar la opción seleccionada actualmente
+st.sidebar.markdown(f"**Seleccionado:** {opcion}")
+
+# === PÁGINA DE MENÚ ===
+if opcion == "Menú":
+    # Centrar el contenido
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        
+        # Logo EVOLTIS - Centrado explícitamente
+        logo_col_left, logo_col_center, logo_col_right = st.columns([1, 2, 1])
+        with logo_col_center:
+            try:
+                st.image("data/logo-evoltis.png", width=400)
+            except:
+                # Si no encuentra la imagen, mostrar un logo simple con texto
+                st.markdown("""
+                <div style="text-align: center; margin: 20px 0;">
+                    <h1 style="color: white; font-size: 48px; font-weight: bold; font-family: Arial, sans-serif; margin: 0; letter-spacing: 3px;">EVOLTIS</h1>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # Título principal
+        st.markdown("""
+        <div style="text-align: center;">
+            <h1 style="color: #ffffff; font-size: 3rem; margin-bottom: 1rem; font-weight: 300;">
+                Proyecto SUMMA
+            </h1>
+            <h2 style="color: #cccccc; font-size: 1.5rem; margin-bottom: 2rem; font-weight: 300;">
+                Dashboard de Gestión y Seguimiento
+            </h2>
+            <p style="color: #aaaaaa; font-size: 1.1rem; line-height: 1.6;">
+                Sistema integral para el monitoreo de proyectos, desarrollo, entregables<br>
+                y métricas de rendimiento del equipo de desarrollo.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        
+        # Botones de acceso rápido
+        st.markdown("### 🚀 Acceso Rápido")
+        
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        
+        with col_btn1:
+            if st.button("📊 Horas", key="caratula_horas", use_container_width=True):
+                st.session_state.opcion_actual = "Horas Postventas"
+                st.rerun()
+        
+        with col_btn2:
+            if st.button("💻 Desarrollo", key="caratula_desarrollo", use_container_width=True):
+                st.session_state.opcion_actual = "Desarrollo Postventas"
+                st.rerun()
+        
+        with col_btn3:
+            if st.button("📦 Entregables", key="caratula_entregables", use_container_width=True):
+                st.session_state.opcion_actual = "Entregables Postventas"
+                st.rerun()
+        
+        col_btn4, col_btn5, col_btn6 = st.columns(3)
+        
+        with col_btn4:
+            if st.button("🐛 BUGS", key="caratula_bugs", use_container_width=True):
+                st.session_state.opcion_actual = "BUGS"
+                st.rerun()
+        
+        with col_btn5:
+            if st.button("⚡ Velocidad", key="caratula_velocidad", use_container_width=True):
+                st.session_state.opcion_actual = "Velocidad de devs"
+                st.rerun()
+        
+        with col_btn6:
+            if st.button("📊 Gantt", key="caratula_gantt", use_container_width=True):
+                st.session_state.opcion_actual = "Gantt"
+                st.rerun()
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # Información adicional
+        st.markdown("""
+        <div style="text-align: center; color: #666666; font-size: 0.9rem;">
+            <p>Utiliza el menú lateral para navegar entre las diferentes secciones del dashboard</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+elif opcion == "Horas Postventas":
     proyectos_mostrar = PROYECTOS_POSTVENTA
     titulo = "Horas - Postventas"
 elif opcion == "Horas ATI":
@@ -310,14 +462,20 @@ elif opcion == "Horas ATI":
     titulo = "Horas - ATI"
 elif opcion == "Desarrollo Postventas":
     titulo = "Desarrollo Postventas - Estados de Historias de Usuario en Sprints Activos"
-elif opcion == "Entregables postventas":
+elif opcion == "Entregables Postventas":
     titulo = "Entregables Postventas"
 elif opcion == "BUGS":
     titulo = "BUGS"
-elif opcion == "Histórico postventas":
+elif opcion == "Histórico Postventa":
     titulo = "Histórico postventas"
 elif opcion == "Velocidad de devs":
     titulo = "Velocidad de devs"
+elif opcion == "Desarrollo ATI":
+    titulo = "Desarrollo ATI - Estados de Historias de Usuario en Sprints Activos"
+elif opcion == "Entregables ATI":
+    titulo = "Entregables ATI"
+elif opcion == "Histórico ATI":
+    titulo = "Histórico ATI"
 
 # === PESTAÑA HORAS (Postventas / ATI) ===
 if opcion in ["Horas Postventas", "Horas ATI"]:
@@ -584,9 +742,9 @@ if opcion == "Desarrollo Postventas":
     ESTADO_LISTA_PARA_DESARROLLAR = "lista para desarrollar"
 
     fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
-    # Optimización para primera carga rápida - limitar a 30 issues más recientes
-    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields, max_results=30)
-    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields, max_results=30)
+    # Optimización: cargar TODAS las historias pero de forma más eficiente
+    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields)
     issues = issues_tal + issues_rep
 
     # ---- FILTRO: excluir historias "MADRE" ----
@@ -795,6 +953,7 @@ if opcion == "Desarrollo Postventas":
     else:
         calcular_avance = st.checkbox("Mostrar % de avance de subtareas (puede demorar)", value=False, key="avance_subtareas_velocidad")
         if calcular_avance:
+            st.info("⏳ Calculando avance de subtareas... Esto puede tomar unos momentos.")
             # Cache para estados de subtareas
             cache_key_subtareas = f"desarrollo_subtareas_{sprint_sel}_{version_sel}_{usuario_seleccionado}"
             cache_file_subtareas = cache_path(cache_key_subtareas, 'pkl')
@@ -804,7 +963,7 @@ if opcion == "Desarrollo Postventas":
             try:
                 if os.path.exists(cache_file_subtareas):
                     mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_subtareas))
-                    if (datetime.now() - mtime) < timedelta(hours=6):
+                    if (datetime.now() - mtime) < timedelta(hours=24):
                         with open(cache_file_subtareas, 'rb') as f:
                             subtareas_cache = pickle.load(f)
             except Exception:
@@ -834,9 +993,8 @@ if opcion == "Desarrollo Postventas":
                                 st_status = "Unknown"
                                 subtareas_cache[st_key] = st_status
                         
-                        if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
-                            hechas += 1
-                        time.sleep(0.005)  # Reducir aún más el sleep
+                            if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
+                                hechas += 1
                     fila["Porcentaje avance"] = f"{round(100 * hechas / total, 1)} %"
                 else:
                     fila["Porcentaje avance"] = "Sin subtareas"
@@ -896,7 +1054,7 @@ if opcion == "Desarrollo Postventas":
 
 
 # === ENTREGABLES POSTVENTAS ===
-if opcion == "Entregables postventas":
+if opcion == "Entregables Postventas":
     from src.jira_conexion import jira
     import pandas as pd
     import unicodedata
@@ -964,7 +1122,7 @@ if opcion == "Entregables postventas":
     try:
         if os.path.exists(cache_file_tal_entregable):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_tal_entregable))
-            if (datetime.now() - mtime) < timedelta(hours=6):
+            if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_tal_entregable, 'rb') as f:
                     issues_tal = pickle.load(f)
             else:
@@ -981,7 +1139,7 @@ if opcion == "Entregables postventas":
     try:
         if os.path.exists(cache_file_rep_entregable):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_rep_entregable))
-            if (datetime.now() - mtime) < timedelta(hours=6):
+            if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_rep_entregable, 'rb') as f:
                     issues_rep = pickle.load(f)
             else:
@@ -1013,11 +1171,13 @@ if opcion == "Entregables postventas":
             issues_unicos[k] = iss
     issues = list(issues_unicos.values())
 
-    # Filtrar épicas relevantes
+    # Filtrar épicas relevantes (solo postventas: REP y TAL, excluir ATI)
+    epicas_postventas = [e for e in epicas_relevantes if e["rn"].startswith(("REP-", "TAL-"))]
+    
     if mes_seleccionado != "Todos":
-        epicas_relevantes_filtradas = [e for e in epicas_relevantes if e["mes_entrega"] == mes_seleccionado]
+        epicas_relevantes_filtradas = [e for e in epicas_postventas if e["mes_entrega"] == mes_seleccionado]
     else:
-        epicas_relevantes_filtradas = epicas_relevantes
+        epicas_relevantes_filtradas = epicas_postventas
 
     nombres_relevantes = [normalize(epica["nombre"]) for epica in epicas_relevantes_filtradas]
     rns_relevantes = [normalize(epica["rn"]) for epica in epicas_relevantes_filtradas]
@@ -1096,7 +1256,7 @@ if opcion == "Entregables postventas":
                 if h["Estado"] in [
                     "en desarrollo", "en testing", "en corrección", "por corregir",
                     "requiere validación", "en análisis", "sin refinar", "pausada"
-                ] or (h["Estado"] == "lista para desarrollar" and h["Asignado"])
+                ]
             )
             porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
             porcentaje_avance = f"{porcentaje_num:.1f}%"
@@ -1152,8 +1312,49 @@ if opcion == "Entregables postventas":
             else:
                 return ""
         df_tabla["Alerta"] = df_tabla.apply(gen_alerta, axis=1)
+        
+        # Calcular %Faltante = 100% - %En proceso - %Avance
+        # Extraer números de las columnas que contienen strings con emojis
+        def extraer_porcentaje_avance(avance_str):
+            """Extrae el número del string de avance que contiene emojis"""
+            if pd.isna(avance_str) or not isinstance(avance_str, str):
+                return 0.0
+            # Buscar el primer número en el string (antes del espacio y emoji)
+            import re
+            match = re.search(r'(\d+\.?\d*)', str(avance_str))
+            return float(match.group(1)) if match else 0.0
+        
+        def extraer_porcentaje_proceso(proceso_str):
+            """Extrae el número del string de proceso que puede contener emojis"""
+            if pd.isna(proceso_str):
+                return 0.0
+            if isinstance(proceso_str, (int, float)):
+                return float(proceso_str)
+            # Buscar el primer número en el string
+            import re
+            match = re.search(r'(\d+\.?\d*)', str(proceso_str))
+            return float(match.group(1)) if match else 0.0
+        
+        # Aplicar las funciones de extracción
+        avance_numerico = df_tabla["Avance"].apply(extraer_porcentaje_avance)
+        proceso_numerico = df_tabla["% En proceso"].apply(extraer_porcentaje_proceso)
+        
+        # Calcular %Faltante con formato y colores semáforo
+        faltante_numerico = (100 - proceso_numerico - avance_numerico).round(1)
+        
+        # Aplicar colores semáforo: 🔴 >=70%, 🟡 20-70%, 🟢 <20%
+        def aplicar_color_semaforo(valor):
+            if valor >= 70:
+                return f"{valor}% 🔴"
+            elif valor >= 20:
+                return f"{valor}% 🟡"
+            else:
+                return f"{valor}% 🟢"
+        
+        df_tabla["%Faltante"] = faltante_numerico.apply(aplicar_color_semaforo)
+        
         st.dataframe(
-            df_tabla[["Épica", "Mes entrega", "Avance", "% En proceso", "Pendientes", "Puntos totales", "Alerta"]],
+            df_tabla[["Épica", "Mes entrega", "Avance", "% En proceso", "%Faltante", "Pendientes", "Puntos totales", "Alerta"]],
             hide_index=True,
             use_container_width=True
         )
@@ -1478,129 +1679,129 @@ if opcion == "BUGS":
 
     if not procesamiento_enlaces_cacheado:
         type_cache, links_cache, summary_cache = {}, {}, {}
-        rows = []
-        excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
+    rows = []
+    excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
 
-        for it in issues:
-            f = it.get("fields") or {}
-            itype = ((f.get("issuetype") or {}).get("name") or "")
-            if not es_bug_type(itype):
-                continue
+    for it in issues:
+        f = it.get("fields") or {}
+        itype = ((f.get("issuetype") or {}).get("name") or "")
+        if not es_bug_type(itype):
+            continue
 
-            created_dt = pd.to_datetime(f.get("created"), errors="coerce")
-            if pd.isna(created_dt):
-                continue
+        created_dt = pd.to_datetime(f.get("created"), errors="coerce")
+        if pd.isna(created_dt):
+            continue
 
-            prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
-            summary = f.get("summary") or ""
-            status_name = ((f.get("status") or {}).get("name") or "").strip()
+        prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
+        summary = f.get("summary") or ""
+        status_name = ((f.get("status") or {}).get("name") or "").strip()
 
-            epic_val = ""
-            if EPIC_FIELD:
-                v = f.get(EPIC_FIELD)
-                if isinstance(v, str):
-                    epic_val = v.strip().upper()
-                elif isinstance(v, dict):
-                    epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
+        epic_val = ""
+        if EPIC_FIELD:
+            v = f.get(EPIC_FIELD)
+            if isinstance(v, str):
+                epic_val = v.strip().upper()
+            elif isinstance(v, dict):
+                epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
 
-            direct_bug_keys, direct_story_keys = set(), set()
-            for lk in (f.get("issuelinks") or []):
-                for side in ("inwardIssue", "outwardIssue"):
-                    other = lk.get(side)
-                    if not other:
-                        continue
-                    okey = (other.get("key") or "").upper()
-                    ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
-                    if not ot:
-                        ot = get_issue_type(okey, type_cache)
+        direct_bug_keys, direct_story_keys = set(), set()
+        for lk in (f.get("issuelinks") or []):
+            for side in ("inwardIssue", "outwardIssue"):
+                other = lk.get(side)
+                if not other:
+                    continue
+                okey = (other.get("key") or "").upper()
+                ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
+                if not ot:
+                    ot = get_issue_type(okey, type_cache)
 
-                    if es_bug_type(ot) or okey.startswith("BUG-"):
-                        direct_bug_keys.add(okey)
+                if es_bug_type(ot) or okey.startswith("BUG-"):
+                    direct_bug_keys.add(okey)
 
-                    ot_l = _strip(ot)
-                    if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
-                        direct_story_keys.add(okey)
+                ot_l = _strip(ot)
+                if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
+                    direct_story_keys.add(okey)
 
-            tiene_bug = len(direct_bug_keys) > 0
-            tiene_hu  = len(direct_story_keys) > 0
+        tiene_bug = len(direct_bug_keys) > 0
+        tiene_hu  = len(direct_story_keys) > 0
 
-            tipo_final, proyecto = None, ""
+        tipo_final, proyecto = None, ""
 
-            if tiene_bug:
-                proyectos_via_bug = set()
+        if tiene_bug:
+            proyectos_via_bug = set()
+            for bkey in direct_bug_keys:
+                for lk2 in get_issue_links(bkey, links_cache):
+                    for side2 in ("inwardIssue", "outwardIssue"):
+                        other2 = lk2.get(side2)
+                        if not other2:
+                            continue
+                        k2 = (other2.get("key") or "").upper()
+                        t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
+                        if not t2:
+                            t2 = get_issue_type(k2, type_cache)
+                        t2_l = _strip(t2)
+                        if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
+                            pj = proyecto_por_prefijo_key(k2)
+                            if pj:
+                                proyectos_via_bug.add(pj)
+
+            if len(proyectos_via_bug) == 1:
+                proyecto = list(proyectos_via_bug)[0]
+                tipo_final = "Bug"
+            else:
+                proyectos_by_bugname = set()
                 for bkey in direct_bug_keys:
-                    for lk2 in get_issue_links(bkey, links_cache):
-                        for side2 in ("inwardIssue", "outwardIssue"):
-                            other2 = lk2.get(side2)
-                            if not other2:
-                                continue
-                            k2 = (other2.get("key") or "").upper()
-                            t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
-                            if not t2:
-                                t2 = get_issue_type(k2, type_cache)
-                            t2_l = _strip(t2)
-                            if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
-                                pj = proyecto_por_prefijo_key(k2)
-                                if pj:
-                                    proyectos_via_bug.add(pj)
+                    sum_b = get_issue_summary(bkey, summary_cache)
+                    pj_b = proyecto_por_prefijo_summary(sum_b)
+                    if pj_b:
+                        proyectos_by_bugname.add(pj_b)
 
-                if len(proyectos_via_bug) == 1:
-                    proyecto = list(proyectos_via_bug)[0]
+                if len(proyectos_by_bugname) == 1:
+                    proyecto = list(proyectos_by_bugname)[0]
                     tipo_final = "Bug"
                 else:
-                    proyectos_by_bugname = set()
-                    for bkey in direct_bug_keys:
-                        sum_b = get_issue_summary(bkey, summary_cache)
-                        pj_b = proyecto_por_prefijo_summary(sum_b)
-                        if pj_b:
-                            proyectos_by_bugname.add(pj_b)
-
-                    if len(proyectos_by_bugname) == 1:
-                        proyecto = list(proyectos_by_bugname)[0]
+                    pj_by_name = proyecto_por_prefijo_summary(summary)
+                    if pj_by_name:
+                        proyecto = pj_by_name
                         tipo_final = "Bug"
                     else:
-                        pj_by_name = proyecto_por_prefijo_summary(summary)
-                        if pj_by_name:
-                            proyecto = pj_by_name
-                            tipo_final = "Bug"
-                        else:
-                            tipo_final = "Excluir"
+                        tipo_final = "Excluir"
 
-            elif tiene_hu:
-                proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
-                proyectos_de_hu.discard("")
-                if len(proyectos_de_hu) == 1:
-                    proyecto = list(proyectos_de_hu)[0]
-                    tipo_final = "Mejora"
-                else:
-                    tipo_final = "Excluir"
+        elif tiene_hu:
+            proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
+            proyectos_de_hu.discard("")
+            if len(proyectos_de_hu) == 1:
+                proyecto = list(proyectos_de_hu)[0]
+                tipo_final = "Mejora"
             else:
-                pj_by_name = proyecto_por_prefijo_summary(summary)
-                if pj_by_name:
-                    proyecto = pj_by_name
-                    tipo_final = "Bug"
-                else:
-                    tipo_final = "Excluir"
-
-            anio, mes = int(created_dt.year), int(created_dt.month)
-            anio_mes = f"{anio}-{mes:02d}"
-            mes_txt  = f"{MESES_ES[mes]} {anio}"
-
-            if (tipo_final == "Excluir") or (proyecto not in PROYECTOS_VALIDOS):
-                excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
+                tipo_final = "Excluir"
+        else:
+            pj_by_name = proyecto_por_prefijo_summary(summary)
+            if pj_by_name:
+                proyecto = pj_by_name
+                tipo_final = "Bug"
             else:
-                rows.append({
-                    "Clave": it.get("key", ""),
-                    "Creado": created_dt,
-                    "AñoMes": anio_mes,
-                    "Mes": mes_txt,
-                    "Prioridad": prio,
-                    "Proyecto": proyecto,
-                    "Tipo": tipo_final,
-                    "Summary": summary,
-                    "Epic": epic_val,
-                    "Status": status_name,
-                })
+                tipo_final = "Excluir"
+
+        anio, mes = int(created_dt.year), int(created_dt.month)
+        anio_mes = f"{anio}-{mes:02d}"
+        mes_txt  = f"{MESES_ES[mes]} {anio}"
+
+        if (tipo_final == "Excluir") or (proyecto not in PROYECTOS_VALIDOS):
+            excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
+        else:
+            rows.append({
+            "Clave": it.get("key", ""),
+            "Creado": created_dt,
+            "AñoMes": anio_mes,
+            "Mes": mes_txt,
+            "Prioridad": prio,
+            "Proyecto": proyecto,
+            "Tipo": tipo_final,
+            "Summary": summary,
+            "Epic": epic_val,
+            "Status": status_name,
+        })
 
     # Guardar cache de enlaces procesados (fuera del bucle)
     if not procesamiento_enlaces_cacheado:
@@ -1656,14 +1857,7 @@ if opcion == "BUGS":
                     ym_cards = cache_data['ym_cards']
                     epic_name_cache_cards = cache_data['epic_name_cache_cards']
                 
-                # Solo mostrar el widget de mes
-                opciones_mes = ["(sin detalle)"] + meses_disp["Mes"].tolist()
-                mes_detalle = col2.selectbox(
-                    "Mes (detalle opcional)",
-                    options=opciones_mes,
-                    index=0,
-                    key="bugs_mes_detalle"
-                )
+                # Cache cargado exitosamente
                 cache_cargado = True
     except Exception:
         pass
@@ -1672,33 +1866,37 @@ if opcion == "BUGS":
     if not cache_cargado:
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
+    else:
+        progress_bar = None
+        status_text = None
 
     if not cache_cargado:
         # Procesar con indicadores de progreso
         status_text.text("📊 Procesando DataFrame base...")
         progress_bar.progress(10)
         
-        df_all = pd.DataFrame(rows).sort_values("AñoMes") if rows else pd.DataFrame(columns=["AñoMes","Mes"])
-        meses_disp = (df_all[["AñoMes","Mes"]].drop_duplicates().sort_values("AñoMes")
-                      if not df_all.empty else pd.DataFrame([{"AñoMes":"0000-00","Mes":"(sin datos)"}]))
-        mes_lookup = meses_disp.copy()
+    df_all = pd.DataFrame(rows).drop_duplicates(subset=["Clave"]).sort_values("AñoMes") if rows else pd.DataFrame(columns=["AñoMes","Mes"])
+    meses_disp = (df_all[["AñoMes","Mes"]].drop_duplicates().sort_values("AñoMes")
+                  if not df_all.empty else pd.DataFrame([{"AñoMes":"0000-00","Mes":"(sin datos)"}]))
+    mes_lookup = meses_disp.copy()
 
+    if not cache_cargado:
         status_text.text("🔍 Aplicando filtros de proyecto...")
         progress_bar.progress(20)
 
-        if proyecto_filtro != "Todos" and not df_all.empty:
-            df_all = df_all[df_all["Proyecto"] == proyecto_filtro]
+    if proyecto_filtro != "Todos" and not df_all.empty:
+        df_all = df_all[df_all["Proyecto"] == proyecto_filtro]
 
-        opciones_mes = ["(sin detalle)"] + meses_disp["Mes"].tolist()
-        mes_detalle = col2.selectbox(
-            "Mes (detalle opcional)",
-            options=opciones_mes,
-            index=0,
-            key="bugs_mes_detalle"
-        )
-        inv = dict(zip(meses_disp["Mes"], meses_disp["AñoMes"]))
+    opciones_mes = ["(sin detalle)"] + meses_disp["Mes"].tolist()
+    mes_detalle = col2.selectbox(
+        "Mes (detalle opcional)",
+        options=opciones_mes,
+        index=0,
+        key="bugs_mes_detalle_main"
+    )
+    inv = dict(zip(meses_disp["Mes"], meses_disp["AñoMes"]))
 
+    if not cache_cargado:
         status_text.text("⚙️ Calculando buckets y estados...")
         progress_bar.progress(40)
 
@@ -1956,8 +2154,10 @@ if opcion == "BUGS":
     # Guardar resultados procesados en cache (solo si no vino del cache)
     if not cache_cargado and cache_file_procesado:
         try:
-            status_text.text("💾 Guardando en cache para futuras cargas...")
-            progress_bar.progress(90)
+            if status_text:
+                status_text.text("💾 Guardando en cache para futuras cargas...")
+            if progress_bar:
+                progress_bar.progress(90)
             
             cache_data = {
                 'df_all': df_all,
@@ -1974,21 +2174,23 @@ if opcion == "BUGS":
             
             with open(cache_file_procesado, 'wb') as f:
                 pickle.dump(cache_data, f)
-            progress_bar.progress(100)
-            status_text.text("✅ Procesamiento completado")
+            if progress_bar:
+                progress_bar.progress(100)
+            if status_text:
+                status_text.text("✅ Procesamiento completado")
         except Exception as e:
             st.error(f"Error guardando cache: {e}")
             import traceback
             st.write(traceback.format_exc())
     
     # Limpiar indicadores de progreso
-    if not cache_cargado:
+    if not cache_cargado and progress_bar and status_text:
         progress_bar.empty()
         status_text.empty()
 
     # ====== TABLA con expansión embebida por MES (ÉPICA × Prioridad) ======
     st.markdown("### Tabla de Bugs creados por Mes")
-    
+
     # Optimización: Solo mostrar tabla si hay datos y no es muy grande
     if not out.empty and len(out) <= 50:  # Límite de 50 filas para evitar lentitud
         def _html_escape(s: str) -> str:
@@ -1997,9 +2199,9 @@ if opcion == "BUGS":
     else:
         if not out.empty:
             out = out.head(50)
-        def _html_escape(s: str) -> str:
-            s = "" if s is None else str(s)
-            return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+    def _html_escape(s: str) -> str:
+        s = "" if s is None else str(s)
+        return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
     def _pivot_epica_mes_html(anio_mes: str) -> str:
         df_mes_bugs = df_bugs[df_bugs["AñoMes"] == anio_mes].copy()
@@ -2053,7 +2255,7 @@ if opcion == "BUGS":
     .tbl-bugs th, .tbl-bugs td { padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); font-size:0.9rem; }
     .tbl-bugs th { text-align:left; color:#cfd3d7; }
     .tbl-bugs td { color:#e6e8eb; vertical-align:top; }
-    .tbl-bugs .wrap { white-space:normal; word-break:break-word; }
+# # #     .tbl-bugs .wrap { white-space:normal; word-break:break-word; }
     .tbl-bugs details summary { cursor:pointer; list-style:none; }
     .tbl-bugs details summary::marker { display:none; }
     .tbl-bugs details summary .chev { display:inline-block; transition:transform .15s ease; margin-right:6px; }
@@ -2192,11 +2394,12 @@ if opcion == "BUGS":
 
 #Historico postventas
 # === PESTAÑA HISTÓRICO POSTVENTA (CON FILTRO RN + UAT POR EPIC LINK + FIX PROMEDIO HS) ===
-if opcion == "Histórico postventa":
+if opcion == "Histórico Postventa":
     import re
     import unicodedata
     import pandas as pd
     import streamlit as st
+    import time
     from src.jira_conexion import jira
 
     # ------------------ Helpers ------------------
@@ -2211,8 +2414,7 @@ if opcion == "Histórico postventa":
     def _safe_issue_key(iss) -> str:
         return (iss.get("key") or iss.get("id") or "") if isinstance(iss, dict) else ""
 
-    def _unwrap_issue(iss):
-        return iss
+    # Función _unwrap_issue duplicada eliminada
 
     def traer_todos_las_issues(jira, jql, fields, max_results=100):
         issues, start_at = [], 0
@@ -2332,14 +2534,14 @@ if opcion == "Histórico postventa":
             for f in fields:
                 name = (f.get("name") or "").strip().lower()
                 key  = (f.get("key") or f.get("id") or "").strip()
-                if any(x in name for x in ["epic link", "enlace épico", "enlace epico"]):
+                if any(x in name for x in ["epic link", "enlace épico", "enlace epico", "epik link"]):
                     candidatos.append(key)
             for c in candidatos:
                 if c.startswith("customfield_"):
                     return c
-            return candidatos[0] if candidatos else ""
+            return candidatos[0] if candidatos else None
         except Exception:
-            return ""
+            return None
 
     def _es_tipo_bug_uat(issuetype_name: str) -> bool:
         n = (issuetype_name or "").lower()
@@ -2362,7 +2564,7 @@ if opcion == "Histórico postventa":
     try:
         if os.path.exists(cache_file_tal):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_tal))
-            if (datetime.now() - mtime) < timedelta(hours=6):
+            if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_tal, 'rb') as f:
                     issues_tal = pickle.load(f)
             else:
@@ -2381,7 +2583,7 @@ if opcion == "Histórico postventa":
     try:
         if os.path.exists(cache_file_rep):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_rep))
-            if (datetime.now() - mtime) < timedelta(hours=6):
+            if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_rep, 'rb') as f:
                     issues_rep = pickle.load(f)
             else:
@@ -2413,7 +2615,10 @@ if opcion == "Histórico postventa":
     epicas = {}              # { RN_name: {"Historias": [...] } }
     rn_to_epic_keys = {}     # { RN_name: set([EPIC-123,...]) }
 
-    for issue in issues:
+    # Filtrar solo issues de postventas (REP y TAL)
+    issues_postventas = [i for i in issues if i["fields"]["project"]["key"] in ["REP", "TAL"]]
+
+    for issue in issues_postventas:
         f = issue.get("fields", {}) or {}
 
         # RN/Épica (nombre) desde parent.summary (o custom)
@@ -2473,7 +2678,7 @@ if opcion == "Histórico postventa":
     try:
         if os.path.exists(cache_file_bugs_rep):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_rep))
-            if (datetime.now() - mtime) < timedelta(hours=6):
+            if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_bugs_rep, 'rb') as f:
                     bugs_rep = pickle.load(f)
             else:
@@ -2492,7 +2697,7 @@ if opcion == "Histórico postventa":
     try:
         if os.path.exists(cache_file_bugs_tal):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_tal))
-            if (datetime.now() - mtime) < timedelta(hours=6):
+            if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_bugs_tal, 'rb') as f:
                     bugs_tal = pickle.load(f)
             else:
@@ -2521,7 +2726,7 @@ if opcion == "Histórico postventa":
     try:
         if os.path.exists(cache_file_bugs_uat):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_uat))
-            if (datetime.now() - mtime) < timedelta(hours=6):
+            if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_bugs_uat, 'rb') as f:
                     bugs_uat = pickle.load(f)
             else:
@@ -2571,7 +2776,7 @@ if opcion == "Histórico postventa":
     try:
         if os.path.exists(cache_file_historico):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_historico))
-            if (datetime.now() - mtime) < timedelta(hours=6):
+            if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_historico, 'rb') as f:
                     tabla_historico = pickle.load(f)
                     # Verificar si el cache tiene el campo DCR_% (nuevo campo)
@@ -2582,69 +2787,77 @@ if opcion == "Histórico postventa":
     except Exception:
         pass
     
+    # Botón para limpiar cache del histórico
+    if st.button("🗑️ Limpiar Cache Histórico", help="Limpia el cache del histórico para regenerar datos"):
+        cache_file_historico = cache_path("historico_postventa", 'pkl')
+        if os.path.exists(cache_file_historico):
+            os.remove(cache_file_historico)
+        st.success("✅ Cache del histórico limpiado. Recargando datos...")
+        st.rerun()
+
     # Si no hay cache, procesar tabla histórica
     if not tabla_historico:
+        st.info("⏳ **Procesando datos históricos de POSTVENTAS**... Esto puede tomar unos minutos la primera vez.")
         tabla_historico = []
-        for epica_rn in epicas_relevantes:
+        # Filtrar solo épicas de postventas (REP y TAL), excluir ATI
+        epicas_postventas = [e for e in epicas_relevantes if e["rn"].startswith(("REP-", "TAL-"))]
+        for epica_rn in epicas_postventas:
             nombre_epica = epica_rn.get("nombre", "")
             mes_entrega = epica_rn.get("mes_entrega", "")
             epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
 
-            if epic_match:
-                data = epicas[epic_match]
-                historias = data["Historias"]
-                total = len(historias)
-                listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
-                porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
-                puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+        if epic_match:
+            data = epicas[epic_match]
+            historias = data["Historias"]
+            total = len(historias)
+            listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+            porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
+            puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
 
-                # Bugs asociados (REP/TAL) + promedio hs
-                hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
-                bugs_keys_rep_tal, bugs_hrs = [], []
-                for hu in hu_keys:
-                    info = mapa_bugs_hu.get(hu)
-                    if not info:
-                        continue
-                    bugs_keys_rep_tal.extend(info.get("bugs", []))
-                    bugs_hrs.extend(info.get("hrs", []))
-                uniq_bugs_rep_tal = sorted(set(bugs_keys_rep_tal))
-                bugs_cnt_rep_tal = len(uniq_bugs_rep_tal)
-                prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
+            # Bugs asociados (REP/TAL) + promedio hs
+            hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
+            bugs_keys_rep_tal, bugs_hrs = [], []
+            for hu in hu_keys:
+                info = mapa_bugs_hu.get(hu)
+                if not info:
+                    continue
+                bugs_keys_rep_tal.extend(info.get("bugs", []))
+                bugs_hrs.extend(info.get("hrs", []))
+            uniq_bugs_rep_tal = sorted(set(bugs_keys_rep_tal))
+            bugs_cnt_rep_tal = len(uniq_bugs_rep_tal)
+            prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
 
-                # UAT por RN (solo Epic Link)
-                candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
-                uat_keys = set()
-                for ek in candidate_epic_keys:
-                    uat_keys |= epic_to_bugs_uat.get(ek, set())
-                uniq_bugs_uat = sorted(uat_keys)
-                bugs_cnt_uat = len(uniq_bugs_uat)
-                
-                # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
-                total_bugs = bugs_cnt_rep_tal + bugs_cnt_uat
-                dcr = round((bugs_cnt_rep_tal / total_bugs * 100), 1) if total_bugs > 0 else 0.0
-                
-                # Debug: mostrar cálculo para verificar
-                if nombre_epica == "Nota de traslado":
-                    st.write(f"DEBUG - {nombre_epica}: QBug={bugs_cnt_rep_tal}, QUAT={bugs_cnt_uat}, Total={total_bugs}, DCR={dcr}%")
-            else:
-                historias = []
-                porcentaje_num = 0
-                puntos_totales = 0
-                uniq_bugs_rep_tal, bugs_cnt_rep_tal, prom_hrs = [], 0, None
-                uniq_bugs_uat, bugs_cnt_uat = [], 0
-                dcr = 0.0  # Sin datos, DCR = 0
+            # UAT por RN (solo Epic Link)
+            candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
+            uat_keys = set()
+            for ek in candidate_epic_keys:
+                uat_keys |= epic_to_bugs_uat.get(ek, set())
+            uniq_bugs_uat = sorted(uat_keys)
+            bugs_cnt_uat = len(uniq_bugs_uat)
             
-            tabla_historico.append({
-                "Épica": nombre_epica,
-                "Mes entrega": mes_entrega,
-                "%_num": porcentaje_num,
-                "Historias": historias,
-                "Puntos totales": puntos_totales,
-                "Bugs_asociados": bugs_cnt_rep_tal,
-                "Bugs_asociados_claves": ", ".join(uniq_bugs_rep_tal),
-                "Promedio_resolucion_bugs_hs": prom_hrs,
-                "Bugs_pruebas_UAT": bugs_cnt_uat,
-                "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
+            # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
+            total_bugs = bugs_cnt_rep_tal + bugs_cnt_uat
+            dcr = round((bugs_cnt_rep_tal / total_bugs * 100), 1) if total_bugs > 0 else 0.0
+                
+        else:
+            historias = []
+            porcentaje_num = 0
+            puntos_totales = 0
+            uniq_bugs_rep_tal, bugs_cnt_rep_tal, prom_hrs = [], 0, None
+            uniq_bugs_uat, bugs_cnt_uat = [], 0
+            dcr = 0.0  # Sin datos, DCR = 0
+
+        tabla_historico.append({
+            "Épica": nombre_epica,
+            "Mes entrega": mes_entrega,
+            "%_num": porcentaje_num,
+            "Historias": historias,
+            "Puntos totales": puntos_totales,
+            "Bugs_asociados": bugs_cnt_rep_tal,
+            "Bugs_asociados_claves": ", ".join(uniq_bugs_rep_tal),
+            "Promedio_resolucion_bugs_hs": prom_hrs,
+            "Bugs_pruebas_UAT": bugs_cnt_uat,
+            "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
                 "DCR_%": dcr,
             })
         
@@ -2726,7 +2939,7 @@ if opcion == "Histórico postventa":
 
         # Color para DCR: Verde si ≥90%, Rojo si <90%
         dcr_color = "🟢" if dcr >= 90 else "🔴"
-        
+
         expander_title = (
             f"{nombre} | Avance: {porcentaje:.1f}% | {mes} | "
             f"Puntos: {puntos_totales} | Bugs: {bugs_cnt_rep_tal} | UAT: {bugs_cnt_uat} | "
@@ -2770,28 +2983,29 @@ if opcion == "Histórico postventa":
 
 
 
-#velocidad devs
-# === PESTAÑA VELOCIDAD DE DEVS (completa; ranking/historial = ventana del slider) ===
+# === PESTAÑA VELOCIDAD DE DEVS (NUEVA IMPLEMENTACIÓN) ===
 if opcion == "Velocidad de devs":
     import json
     from datetime import datetime
     from urllib.parse import quote_plus
     from concurrent.futures import ThreadPoolExecutor, as_completed
-
     import altair as alt
     import pandas as pd
     import streamlit as st
 
-    # ---------- Conexión JIRA (si no existe, no rompe) ----------
+    # Conexión JIRA
     try:
-        from src.jira_conexion import jira  # objeto ya autenticado (usa tus variables de entorno)
+        from src.jira_conexion import jira
     except Exception:
         jira = None
 
     st.header("Velocidad de devs")
-    st.caption("ℹ️ **Primera carga optimizada**: Máximo 50 historias + 25 bugs más recientes. Usa 'Actualizar' para datos completos.")
+    st.caption("📊 **Métricas de productividad de desarrolladores**")
 
-    # ------------------ Utilidades ------------------
+    # ==========================
+    #   FUNCIONES MODULARES
+    # ==========================
+    
     def _norm(s):
         return str(s or "").strip()
 
@@ -2811,365 +3025,229 @@ if opcion == "Velocidad de devs":
             return v == "ATI"
         if sel == "Postventas":
             return v in ("REP", "TAL")
-        return True  # 'Todos'
+        return True
 
     STATUS_TESTING = {
         "en testing", "testing", "qa", "en test", "pruebas", "ready for qa", "ready for testing"
     }
 
     def _get_points_from_fields(fields: dict) -> float:
-        # Soporta múltiples claves posibles
-        for k in ("customfield_10026", "customfield_10016", "storyPoints"):
-            v = (fields or {}).get(k)
-            if v in (None, ""):
-                continue
-            try:
-                return float(v)
-            except Exception:
-                pass
+        for key in ["customfield_10026", "customfield_10016", "storyPoints"]:
+            val = fields.get(key)
+            if val is not None:
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    continue
         return 0.0
 
-    # ------------------ Mapeo accountId->nombre ------------------
-    with open(_data_path("accountid_to_name.json"), "r", encoding="utf-8") as f:
+    # ==========================
+    #   CARGA DE DATOS BASE
+    # ==========================
+    
+    # Cargar mapeo de usuarios primero
+    with open("data/accountid_to_name.json", "r", encoding="utf-8") as f:
         accountid_to_name = json.load(f)
+    
+    # Crear diccionario inverso name_to_acc
     name_to_acc = {v: k for k, v in accountid_to_name.items()}
-    allowed_names = {_norm(v) for v in accountid_to_name.values()}
+
+    allowed_names = set(accountid_to_name.values()) | set(name_to_acc.keys())
+    
+    # Cargar datos de horas (usar el mismo df que las pestañas de horas)
+    df_horas = df.copy()  # Usar el df principal que ya tiene Proyecto_logico
+    df_horas["Fecha"] = pd.to_datetime(df_horas["Fecha"], errors="coerce")
+    df_horas["Mes_dt"] = df_horas["Fecha"].apply(lambda d: _mes_start(d) if pd.notna(d) else pd.NaT)
+    
+    # Mapear account IDs a nombres legibles
+    df_horas["Usuario_nombre"] = df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"]).apply(_norm)
+    
+    # Filtrar solo usuarios que están en el mapeo (desarrolladores válidos)
+    df_horas = df_horas[df_horas["Usuario_nombre"].isin(accountid_to_name.values())]
+    
+    # Agrupar por usuario y mes (sin filtro de proyecto por ahora)
+    df_horas_sum = df_horas.groupby(["Usuario_nombre", "Mes_dt"], as_index=False)["Horas"].sum()
+    
 
     # ==========================
-    #   Filtros de UI (ANTES de pedir a Jira)
+    #   UI: SELECTOR DE FECHAS
     # ==========================
-    col_proj, col_meses, col_pts, col_btn = st.columns([1, 1, 1, 1])
-    with col_proj:
-        proyecto_sel = st.selectbox("Proyecto", ["Todos", "ATI", "Postventas"], key="vel_proyecto_pre")
-    with col_meses:
-        # Por defecto 2 meses (reducido de 3 para primera carga más rápida)
-        meses = st.slider("Meses a traer", min_value=1, max_value=12, value=2, step=1)
-    with col_pts:
-        solo_con_puntos = st.checkbox(
-            "Sólo historias con puntos",
-            True,
-            help="Filtra HUs que tengan puntos (acelera mucho)."
+    
+    st.info("💡 **Cómo usar**: Selecciona las fechas del período que quieres evaluar")
+    
+    # Inicializar session_state para filtros (julio, agosto, septiembre 2025)
+    if "vel_fecha_inicio" not in st.session_state:
+        # Primer día de julio 2025
+        st.session_state["vel_fecha_inicio"] = pd.Timestamp("2025-07-01").date()
+    if "vel_fecha_fin" not in st.session_state:
+        # Último día de septiembre 2025
+        st.session_state["vel_fecha_fin"] = pd.Timestamp("2025-09-30").date()
+    if "vel_proyecto_sel" not in st.session_state:
+        st.session_state["vel_proyecto_sel"] = "Todos"
+    
+    col_fecha1, col_fecha2, col_proj, col_btn = st.columns([1, 1, 1, 1])
+    with col_fecha1:
+        fecha_inicio = st.date_input(
+            "Fecha inicio",
+            value=st.session_state["vel_fecha_inicio"],
+            help="Fecha de inicio del período a evaluar",
+            key="vel_fecha_inicio_input"
         )
+        st.session_state["vel_fecha_inicio"] = fecha_inicio
+    with col_fecha2:
+        fecha_fin = st.date_input(
+            "Fecha fin",
+            value=st.session_state["vel_fecha_fin"],
+            help="Fecha de fin del período a evaluar",
+            key="vel_fecha_fin_input"
+        )
+        st.session_state["vel_fecha_fin"] = fecha_fin
+    with col_proj:
+        proyecto_sel = st.selectbox(
+            "Proyecto", 
+            ["Todos", "ATI", "Postventas"], 
+            index=["Todos", "ATI", "Postventas"].index(st.session_state["vel_proyecto_sel"]),
+            key="vel_proyecto_input"
+        )
+        st.session_state["vel_proyecto_sel"] = proyecto_sel
     with col_btn:
-        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="velocidad_actualizar"):
+        if st.button("🔄 Actualizar datos", help="Fuerza la recarga de datos desde Jira", key="velocidad_actualizar"):
             st.session_state["force_refresh"] = True
-            # Limpiar caches específicos de velocidad si existen
-            if hasattr(st.session_state, "velocidad_cache"):
-                del st.session_state["velocidad_cache"]
+            # Limpiar cache de velocidad
+            keys_to_clear = [k for k in st.session_state.keys() if k.startswith("velocidad_cache")]
+            for key in keys_to_clear:
+                del st.session_state[key]
             st.success("✅ Actualizando datos...")
             st.rerun()
-        else:
-            st.session_state["force_refresh"] = st.session_state.get("force_refresh", False)
+    
+    # Botón adicional para limpiar cache específico
+    if st.button("🗑️ Limpiar Cache Velocidad", help="Limpia completamente el cache de velocidad", key="velocidad_limpiar_cache"):
+        # Limpiar todos los caches relacionados con velocidad
+        import os
+        import glob
+        
+        # Buscar archivos de cache de velocidad
+        cache_files = glob.glob("data/cache_velocidad_*")
+        for cache_file in cache_files:
+            try:
+                os.remove(cache_file)
+            except Exception:
+                pass
+        
+        # Limpiar session state
+        keys_to_clear = [k for k in st.session_state.keys() if k.startswith("velocidad_cache")]
+        for key in keys_to_clear:
+            del st.session_state[key]
+        
+        st.success("✅ Cache de velocidad limpiado completamente. Recargando...")
+        st.rerun()
 
-    # Opciones avanzadas para manejar volúmenes grandes
-    with st.expander("Opciones avanzadas", expanded=False):
-        force_large = st.checkbox(
-            "Cargar aunque supere el límite",
-            value=False,
-            help="Si hay muchas HUs, permite seguir y enriquecer sólo las N más recientes (por updated DESC)."
-        )
-        limit_n = st.slider(
-            "Límite de historias a enriquecer",
-            min_value=50, max_value=800, value=100, step=50,  # Reducido de 200 a 100
-            help="Se enriquecerán sólo las últimas N historias (ordenadas por updated DESC)."
-        )
-
-    limite_iso = (pd.Timestamp.today().normalize() - pd.DateOffset(months=meses)).strftime("%Y-%m-%d")
-
-    FIELDS = (
-        "key,summary,status,project,issuetype,assignee,"
-        "customfield_10026,customfield_10016,storyPoints,"
-        "statuscategorychangedate,parent,issuelinks,created,updated"
-    )
-
-    # ------------------ Carga OPTIMIZADA desde Jira ------------------
+    # ==========================
+    #   FUNCIÓN: CARGAR DATOS DE JIRA
+    # ==========================
+    
     @st.cache_data(show_spinner=True)
-    def _traer_issues_fast(
-        _jira, _limite_iso, _meses, _proy_sel, _solo_pts, _force_flag,
-        _force_large, _limit_n
-    ):
-        meta = {"last_update": datetime.now().strftime("%d/%m/%Y %H:%M")}
+    def cargar_datos_velocidad(_jira, _fecha_inicio, _fecha_fin, _proyecto_sel, _force_refresh):
         if _jira is None:
-            return [], meta
+            return [], []
 
-        # Proyectos para JQL
-        if _proy_sel == "ATI":
+        # Construir JQL para historias
+        if _proyecto_sel == "ATI":
             proy_jql = "project = ATI"
-        elif _proy_sel == "Postventas":
+        elif _proyecto_sel == "Postventas":
             proy_jql = "project in (REP, TAL)"
         else:
             proy_jql = "project in (REP, TAL, ATI)"
 
-        # Helpers de búsqueda
-        def _count(jql):
-            resp = _jira._get_json("search", params={"jql": jql, "fields": "none", "maxResults": 0})
-            return int(resp.get("total", 0))
-
-        def _paginado_limit(jql, fields, max_results=100, limit=None, order_by_updated=True):
-            if order_by_updated and "order by" not in jql.lower():
-                jql = f"{jql} ORDER BY updated DESC"
-            issues, start_at = [], 0
-            while True:
-                params = {"jql": jql, "fields": fields, "startAt": start_at, "maxResults": max_results}
-                data = _jira._get_json("search", params=params)
-                batch = data.get("issues", [])
-                issues.extend(batch)
-                if limit and len(issues) >= limit:
-                    return issues[:limit]
-                if len(batch) < max_results:
-                    break
-                start_at += max_results
-            return issues
-
-        def _paginado(jql, fields, max_results=100):
-            issues, start_at = [], 0
-            while True:
-                params = {"jql": jql, "fields": fields, "startAt": start_at, "maxResults": max_results}
-                data = _jira._get_json("search", params=params)
-                batch = data.get("issues", [])
-                issues.extend(batch)
-                if len(batch) < max_results:
-                    break
-                start_at += max_results
-            return issues
-
-        # 1) Historias recientes (sin expand)
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND updated >= \"{_limite_iso}\""
-        if _solo_pts:
-            jql_hist += " AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
-
-        total_hist = _count(jql_hist)
-        MAX_HU = 50   # Reducido de 100 a 50 para primera carga más rápida
-
-        if (total_hist > MAX_HU) and (not _force_large):
-            return [{"__too_many__": total_hist}], meta
-
-        need = min(total_hist, MAX_HU)  # Siempre limitar a MAX_HU para primera carga rápida
-
-        # 2) Traigo historias (ordenadas por updated desc) y sólo las necesarias
-        historias = _paginado_limit(jql_hist, FIELDS, limit=need, order_by_updated=True)
-
-        # 3) Enriquecemos SOLO esas historias con changelog (paralelo)
-        historias_keys = [h.get("key") for h in historias if h.get("key")]
-        historias_enriq = []
-        if historias_keys:
-            pb = 0
-            progress = st.progress(pb, text="Cargando changelog de historias…")
-
-            def fetch_one(k):
-                endpoint = f"issue/{quote_plus(k)}?expand=changelog&fields={quote_plus(FIELDS)}"
-                return _jira._get_json(endpoint)
-
-            with ThreadPoolExecutor(max_workers=3) as ex:  # Reducido de 6 a 3 para menos carga
-                futs = [ex.submit(fetch_one, k) for k in historias_keys]
-                done = 0
-                total = len(futs)
-                for fut in as_completed(futs):
-                    try:
-                        historias_enriq.append(fut.result())
-                    except Exception:
-                        pass
-                    done += 1
-                    pb = int(done * 100 / max(total, 1))
-                    progress.progress(pb, text=f"Cargando changelog de historias… ({done}/{total})")
-            progress.empty()
-
-        # 4) Bugs recientes (sin expand) - limitados para primera carga rápida
-        jql_bugs = f"{proy_jql} AND issuetype = Error AND updated >= \"{_limite_iso}\" ORDER BY updated DESC"
-        bugs = _paginado_limit(jql_bugs, FIELDS, limit=25)  # Solo 25 bugs más recientes
-
-        issues = historias_enriq + bugs
-
-        # Meta informativa si forzamos
-        if total_hist > MAX_HU and _force_large:
-            meta["forced"] = True
-            meta["total_hist"] = total_hist
-            meta["enriched"] = len(historias_keys)
-
-        return issues, meta
-
-    # ---------- Ejecutar carga ----------
-    try:
-        issues, meta = _traer_issues_fast(
-            jira, limite_iso, meses, proyecto_sel, solo_con_puntos,
-            st.session_state["force_refresh"], force_large, limit_n
-        )
-    except Exception:
-        issues, meta = [], {"last_update": datetime.now().strftime("%d/%m/%Y %H:%M")}
-    st.session_state["force_refresh"] = False
-
-    # Demasiadas historias -> que el usuario ajuste filtros o fuerce
-    if len(issues) == 1 and isinstance(issues[0], dict) and "__too_many__" in issues[0]:
-        st.warning(
-            f"Se encontraron **{issues[0]['__too_many__']}** historias para enriquecer. "
-            f"**Primera carga optimizada**: Reducí los **meses** (actualmente {meses}) y/o activá **Sólo historias con puntos** o filtrá por **Proyecto**. "
-            f"También podés abrir **Opciones avanzadas** y marcar *Cargar aunque supere el límite*."
-        )
-        st.stop()
-
-    # Mensaje informativo
-    st.info(
-        f"📅 Última actualización: {meta.get('last_update', 'desconocida')} · "
-        f"Ventana activa: **{meses} mes(es)** (desde {limite_iso})"
-    )
-    if meta.get("forced"):
-        st.caption(
-            f"⚠️ Se encontraron {meta['total_hist']} HUs; se enriquecieron las **{meta['enriched']}** más recientes "
-            f"(ordenadas por *updated DESC*)."
-        )
-
-    # ------------------ Cards de OBJETIVOS con explicación ------------------
-    OBJ = {
-        "puntos_mes": 16,
-        "hs_por_punto": 8,
-        "bugs_max": 0,
-        "bugs_extra_min": 10,
-        "horas_mes": 128,
-    }
-    PESOS = {"puntos": 0.40, "horas": 0.25, "velocidad": 0.25, "bugs": 0.10}
-    BONUS_MAX = 0.05
-
-    RUBRICAS = {
-        "puntos": """**Regla de puntos (mensual):**
-- ≥ 20 → **105%**
-- 17–19 → **102%**
-- **16** → **100%**
-- 13–15 → **90%**
-- 10–12 → **80%**
-- < 10 → **70%**""",
-        "horas": """**Horas (mensual):**
-- ≥ **128 hs** → **100%**
-- 100–127 hs → **95%**
-- < 100 hs → **70%**""",
-        "velocidad": """**Velocidad (hs por punto, menor es mejor):**
-- ≤ **5** → **110%**
-- 6–7 → **105%**
-- **8** → **100%**
-- 8–10 → **95%**
-- 10–12 → **90%**
-- >12 → **80%**""",
-        "bugs": """**Bugs (por mes):**
-- **0** → **100%**
-- 1–3 → **95%**
-- 4–5 → **90%**
-- ≥6 → **80%**""",
-        "bonus": """**Bono por bugs extra resueltos:**
-- 1–5 → **+2%**
-- 6–10 → **+3%**
-- >10 → **+5%**""",
-    }
-
-    def _popover(title: str):
-        try:
-            return st.popover(title, use_container_width=True)
-        except Exception:
-            return st.expander(title, expanded=False)
-
-    def _card_objetivo(texto: str, color_hex: str, peso: float | None, rubrica_md: str, key: str):
-        st.markdown(
-            f"""
-            <div style="
-                background:{color_hex};
-                padding:14px 18px;
-                border-radius:12px;
-                text-align:center;
-                font-weight:700;
-                color:#fff;
-                box-shadow:0 2px 8px rgba(0,0,0,0.12);
-            ">
-                {texto}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        with _popover("¿Cómo se calcula?"):
-            if peso is not None:
-                st.markdown(f"**Pesa {int(peso*100)}% de la nota final.**")
-            else:
-                st.markdown(f"**Bono adicional hasta +{int(BONUS_MAX*100)}%** sobre la nota.")
-            st.markdown(rubrica_md)
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1:
-        _card_objetivo(f"{OBJ['puntos_mes']} puntos / mes", "#1976d2",
-                       PESOS["puntos"], RUBRICAS["puntos"], key="card_puntos")
-    with c2:
-        _card_objetivo(f"{OBJ['hs_por_punto']} hs por punto", "#fb8c00",
-                       PESOS["velocidad"], RUBRICAS["velocidad"], key="card_vel")
-    with c3:
-        _card_objetivo(f"{OBJ['bugs_max']} bugs", "#2e7d32",
-                       PESOS["bugs"], RUBRICAS["bugs"], key="card_bugs")
-    with c4:
-        _card_objetivo(f"Mínimo {OBJ['bugs_extra_min']} bugs extra", "#c62828",
-                       None, RUBRICAS["bonus"], key="card_bonus")
-    with c5:
-        _card_objetivo(f"{OBJ['horas_mes']} hs / mes", "#7e57c2",
-                       PESOS["horas"], RUBRICAS["horas"], key="card_horas")
-
-    # ------------------ HORAS (CSV histórico) - con cache ------------------
-    @st.cache_data(show_spinner=False)
-    def _cargar_horas_csv():
-        df_horas = pd.read_csv(_data_path("horas_historicas.csv"))
-        df_horas["Usuario"] = df_horas["Usuario"].astype(str)
-        df_horas["Usuario_nombre"] = (
-            df_horas["Usuario"].map(accountid_to_name).fillna(df_horas["Usuario"])
-        ).apply(_norm)
-        return df_horas
-    
-    df_horas = _cargar_horas_csv()
-
-    # ------------------ Procesamiento de horas con cache ------------------
-    @st.cache_data(show_spinner=False)
-    def _procesar_horas_csv(_df_horas, _proyecto_sel):
-        """Procesa las horas del CSV y las agrupa por usuario/mes"""
-        df = _df_horas.copy()
+        # Siempre filtrar solo historias con puntos para el cálculo de velocidad
+        # Usar 'updated' en lugar de 'created' para capturar historias que fueron actualizadas en el período
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND updated >= \"{_fecha_inicio}\" AND updated <= \"{_fecha_fin}\" AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
         
-        if "Fecha" in df.columns:
-            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
-            df["Mes_dt"] = df["Fecha"].apply(lambda d: _mes_start(d) if pd.notna(d) else pd.NaT)
-        else:
-            df["Mes_dt"] = pd.NaT
-        df["Mes"] = df["Mes_dt"].dt.strftime("%B %Y")
-
-        df_horas_sum_total = (
-            df.dropna(subset=["Mes_dt"])
-            .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
-            .agg(Horas=("Horas", "sum"))
-        )
-        df_horas_sum_total["Mes"] = df_horas_sum_total["Mes_dt"].dt.strftime("%B %Y")
-
-        df_horas_sum_proj = pd.DataFrame(columns=["Usuario_nombre", "Mes_dt", "Horas", "Mes"])
-        if "Proyecto" in df.columns and _proyecto_sel != "Todos":
-            df_horas_proj = df[df["Proyecto"].apply(lambda v: _proy_ok(v, _proyecto_sel))]
-            if not df_horas_proj.empty:
-                df_horas_sum_proj = (
-                    df_horas_proj.dropna(subset=["Mes_dt"])
-                    .groupby(["Usuario_nombre", "Mes_dt"], as_index=False)
-                    .agg(Horas=("Horas", "sum"))
-                )
-                df_horas_sum_proj["Mes"] = df_horas_sum_proj["Mes_dt"].dt.strftime("%B %Y")
-
-        usar_horas_por_proyecto = (_proyecto_sel != "Todos") and (not df_horas_sum_proj.empty)
-        df_horas_sum = df_horas_sum_proj if usar_horas_por_proyecto else df_horas_sum_total
+        jql_bugs = f"{proy_jql} AND issuetype = Error AND resolved >= \"{_fecha_inicio}\" AND resolved <= \"{_fecha_fin}\""
         
-        return df_horas_sum, usar_horas_por_proyecto
+        FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
+        
+        # Cargar historias con changelog
+        historias = []
+        start_at = 0
+        while True:
+            params = {"jql": jql_hist, "fields": FIELDS, "startAt": start_at, "maxResults": 100}
+            data = _jira._get_json("search", params=params)
+            batch = data.get("issues", [])
+            
+            # Enriquecer cada historia con changelog
+            for issue in batch:
+                try:
+                    endpoint = f"issue/{quote_plus(issue['key'])}?expand=changelog&fields={quote_plus(FIELDS)}"
+                    enriched_issue = _jira._get_json(endpoint)
+                    historias.append(enriched_issue)
+                except Exception as e:
+                    # Si falla el changelog, usar la issue sin enriquecer
+                    historias.append(issue)
+            
+            if len(batch) < 100:
+                    break
+            start_at += 100
+
+        # Cargar bugs
+        bugs = []
+        start_at = 0
+        while True:
+            params = {"jql": jql_bugs, "fields": FIELDS, "startAt": start_at, "maxResults": 100}
+            data = _jira._get_json("search", params=params)
+            batch = data.get("issues", [])
+            bugs.extend(batch)
+            if len(batch) < 100:
+                break
+            start_at += 100
+        
+        return historias, bugs
+
+    # ==========================
+    #   FUNCIÓN: PROCESAR HISTORIAS
+    # ==========================
     
-    df_horas_sum, usar_horas_por_proyecto = _procesar_horas_csv(df_horas, proyecto_sel)
-    if proyecto_sel != "Todos" and not usar_horas_por_proyecto:
-        st.caption("ℹ️ No hay horas por proyecto en el CSV (o columna 'Proyecto' inexistente). La **velocidad** se calcula con horas **globales**.")
+    def procesar_historias(historias, accountid_to_name, name_to_acc):
+        rows_issues = []
+        
+        for iss in historias:
+            f = iss.get("fields", {}) or {}
+            itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
+            if itype != "historia":
+                continue
+            
+            proj_key = _norm((f.get("project") or {}).get("key"))
+            if not _proy_ok(proj_key, proyecto_sel):
+                continue
+            
+            key = iss.get("key", "")
+            pts = _get_points_from_fields(f)
+            
+            # Buscar owner al momento de testing
+            owner_name, owner_id, first_dt = _owner_al_momento_testing(iss, accountid_to_name, name_to_acc)
+            
+            if pd.notna(first_dt) and pts > 0 and owner_name and owner_id:
+                rows_issues.append({
+                    "Issue": key,
+                    "Puntos": pts,
+                    "Usuario_nombre": owner_name,
+                    "Mes": _mes_label(_mes_start(first_dt)),
+                    "Proyecto": proj_key,
+                })
+        
+        return pd.DataFrame(rows_issues, columns=["Issue", "Puntos", "Usuario_nombre", "Mes", "Proyecto"])
 
-    # ------------------ Dueño de HU en 1ª vez "En testing" ------------------
-    hu_owner_name = {}
-    hu_owner_id   = {}
-
-    def _owner_al_momento_testing(iss):
+    def _owner_al_momento_testing(iss, accountid_to_name, name_to_acc):
         f = iss.get("fields", {}) or {}
         current_id = (f.get("assignee") or {}).get("accountId")
         current_name = _norm(accountid_to_name.get(current_id) or (f.get("assignee") or {}).get("displayName"))
+        
         histories = (iss.get("changelog", {}) or {}).get("histories", []) or []
         histories = sorted(histories, key=lambda h: pd.to_datetime(h.get("created"), errors="coerce"))
+        
         for hist in histories:
             h_created = pd.to_datetime(hist.get("created"), errors="coerce")
+            
             # Cambios de asignado
             for it in hist.get("items", []) or []:
                 if _norm(it.get("field")).lower() == "assignee":
@@ -3183,372 +3261,1867 @@ if opcion == "Velocidad de devs":
                         if infer_id:
                             current_id = infer_id
                         current_name = new_name or current_name
-            # Primera vez que pasa a testing (acepta varios nombres)
+            
+            # Primera vez que pasa a testing
             for it in hist.get("items", []) or []:
                 if _norm(it.get("field")).lower() == "status" and _norm(it.get("toString")).lower() in STATUS_TESTING:
                     if pd.notna(h_created):
                         return current_name, current_id, h_created
+        
         return None, None, None
 
-    # ------------------ Issues (puntos) filtrando por proyecto ------------------
-    rows_issues = []
-    for iss in issues:
-        f = iss.get("fields", {}) or {}
-        itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
-        if itype != "historia":
-            continue
-        proj_key = _norm((f.get("project") or {}).get("key"))
-        if not _proy_ok(proj_key, proyecto_sel):
-            continue
-        key = iss.get("key", "")
-        pts = _get_points_from_fields(f)
-        owner_name, owner_id, first_dt = _owner_al_momento_testing(iss)
-        if pd.notna(first_dt) and pts > 0 and owner_name and owner_id:
-            hu_owner_name[key] = owner_name
-            hu_owner_id[key]   = owner_id
-            rows_issues.append(
-                {
-                    "Issue": key,
-                    "Puntos": pts,
-                    "Usuario_nombre": owner_name,
-                    "Mes": _mes_label(_mes_start(first_dt)),
-                    "Proyecto": proj_key,
-                }
-            )
+    # ==========================
+    #   FUNCIÓN: PROCESAR BUGS
+    # ==========================
+    
+    def procesar_bugs(bugs, historias_por_dev):
+        bug_rows = []
+        bugs_extra_rows = []
 
-    df_issues = pd.DataFrame(
-        rows_issues, columns=["Issue", "Puntos", "Usuario_nombre", "Mes", "Proyecto"]
-    )
+        bugs_filtrados_por_tipo = 0
+        bugs_filtrados_por_proyecto = 0
+        bugs_filtrados_por_estado = 0
+        bugs_filtrados_por_fecha = 0
+        bugs_filtrados_por_asignado = 0
+        
+        # Debug: recopilar todos los estados únicos de bugs
+        estados_bugs_unicos = set()
+        
+        for iss in bugs:
+            f = iss.get("fields", {}) or {}
+            itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
+            if itype != "error":
+                bugs_filtrados_por_tipo += 1
+                continue
 
-    # ------------------ BUGS (regla + filtro proyecto) ------------------
-    bug_rows = []
-    bugs_extra_rows = []
+            bug_key = iss.get("key", "")
+            bug_proj = _norm((f.get("project") or {}).get("key"))
 
-    hus_validas = set(df_issues["Issue"].unique())
+            if not _proy_ok(bug_proj, proyecto_sel):
+                bugs_filtrados_por_proyecto += 1
+                continue
 
-    for iss in issues:
-        f = iss.get("fields", {}) or {}
-        itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
-        if itype != "error":
-            continue
+            estado_bug = _norm((f.get("status", {}) or {}).get("name")).lower()
+            estados_bugs_unicos.add(estado_bug)
+            
+            # Estados válidos más amplios para bugs (incluyendo estados en español)
+            estados_validos = ("resolved", "closed", "done", "cerrado", "resuelto", "hecho", "completado", "finalizado", "terminado", "aprobado", "hecha")
+            if estado_bug not in estados_validos:
+                bugs_filtrados_por_estado += 1
+                continue
+            
+            fecha_cierre = pd.to_datetime(f.get("statuscategorychangedate", ""), errors="coerce")
+            if pd.isna(fecha_cierre):
+                bugs_filtrados_por_fecha += 1
+                continue
 
-        bug_key = iss.get("key", "")
-        bug_proj = _norm((f.get("project") or {}).get("key"))
+            bug_mes_cierre = _mes_label(_mes_start(fecha_cierre))
+            assg = f.get("assignee") or {}
+            bug_assignee_id = assg.get("accountId")
+            bug_assignee_nm = _norm(accountid_to_name.get(bug_assignee_id) or assg.get("displayName"))
 
-        bug_created = pd.to_datetime(f.get("created"), errors="coerce")
-        bug_mes_creacion = _mes_label(_mes_start(bug_created)) if pd.notna(bug_created) else None
+            if not bug_assignee_nm:
+                bugs_filtrados_por_asignado += 1
+                continue
+            
+            # Buscar si es bug extra (vinculado a HU del dev)
+            candidate_hus = set()
+            parent_key = (f.get("parent") or {}).get("key", "")
+            if parent_key:
+                candidate_hus.add(parent_key)
+            for link in (f.get("issuelinks") or []):
+                for side in ("inwardIssue", "outwardIssue"):
+                    lk = link.get(side) or {}
+                    k = lk.get("key")
+                    if k:
+                        candidate_hus.add(k)
 
-        estado_bug = _norm((f.get("status", {}) or {}).get("name")).lower()
-        fecha_cierre = pd.to_datetime(f.get("statuscategorychangedate", ""), errors="coerce")
-        bug_mes_cierre = _mes_label(_mes_start(fecha_cierre)) if pd.notna(fecha_cierre) else None
+            # Determinar si es bug extra o bug normal
+            # Bug extra: NO vinculado a ninguna historia del MISMO desarrollador
+            # Bug normal: SÍ vinculado a alguna historia del MISMO desarrollador
+            historias_del_dev = historias_por_dev.get(bug_assignee_nm, set())
+            
+            # Verificar si está vinculado a historias del dev
+            is_bug_extra = not bool(candidate_hus & historias_del_dev)
+            
+            if is_bug_extra:
+                # Bug extra: vinculado a historia del mismo dev
+                bugs_extra_rows.append({
+                    "Issue": bug_key,
+                    "Usuario_nombre": bug_assignee_nm,
+                    "Mes": bug_mes_cierre,
+                    "Proyecto": bug_proj,
+                })
+            else:
+                # Bug normal: no vinculado a historia del dev
+                bug_rows.append({
+                    "Issue": bug_key,
+                    "Usuario_nombre": bug_assignee_nm,
+                    "Mes": bug_mes_cierre,
+                    "Proyecto": bug_proj,
+                })
+        
+        return bug_rows, bugs_extra_rows
 
-        assg = f.get("assignee") or {}
-        bug_assignee_id = assg.get("accountId")
-        bug_assignee_nm = _norm(accountid_to_name.get(bug_assignee_id) or assg.get("displayName"))
-
-        candidate_hus = set()
-        parent_key = (f.get("parent") or {}).get("key", "")
-        if parent_key:
-            candidate_hus.add(parent_key)
-        for link in (f.get("issuelinks") or []):
-            for side in ("inwardIssue", "outwardIssue"):
-                lk = link.get(side) or {}
-                k = lk.get("key")
-                if k:
-                    candidate_hus.add(k)
-
-        hu_duenio_acc = None
-        hu_duenio_vis = None
-        hu_link_valida = None
-        for hu in candidate_hus:
-            if hu in hus_validas:
-                hu_duenio_acc = hu_owner_id.get(hu)
-                hu_duenio_vis = hu_owner_name.get(hu)
-                hu_link_valida = hu
-                break
-
-        if bug_mes_creacion and hu_duenio_vis and (hu_link_valida in hus_validas):
-            bug_rows.append((hu_duenio_vis, bug_mes_creacion, bug_key))
-
-        if (
-            bug_assignee_nm
-            and bug_mes_cierre
-            and estado_bug in ("hecha", "resuelto", "resuelta", "done")
-            and (hu_duenio_acc is None or hu_duenio_acc != bug_assignee_id)
-            and _proy_ok(bug_proj, proyecto_sel)
-        ):
-            bugs_extra_rows.append((bug_assignee_nm, bug_mes_cierre, bug_key))
-
-    if bug_rows:
-        df_bugs_mes = pd.DataFrame(bug_rows, columns=["Usuario_nombre", "Mes", "Bug_key"])
-        df_bugs_mes = (
-            df_bugs_mes.groupby(["Usuario_nombre", "Mes"], as_index=False)
-            .agg(
-                Bugs=("Bug_key", "nunique"),
-                Bugs_claves=("Bug_key", lambda x: ", ".join(sorted(set(x)))),
-            )
-        )
-    else:
-        df_bugs_mes = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Bugs", "Bugs_claves"])
-
-    if bugs_extra_rows:
-        df_bugs_extra = pd.DataFrame(bugs_extra_rows, columns=["Usuario_nombre", "Mes", "Bug_key"])
-        df_bugs_extra = (
-            df_bugs_extra.groupby(["Usuario_nombre", "Mes"], as_index=False)
-            .agg(
-                Bugs_resueltos_extra=("Bug_key", "nunique"),
-                Bugs_extra_claves=("Bug_key", "nunique"),
-            )
-        )
-    else:
-        df_bugs_extra = pd.DataFrame(
-            columns=["Usuario_nombre", "Mes", "Bugs_resueltos_extra", "Bugs_extra_claves"]
-        )
-
-    # ------------------ Puntos por usuario/mes ------------------
-    if not df_issues.empty:
-        df_puntos = (
-            df_issues.groupby(["Usuario_nombre", "Mes"], as_index=False)
-            .agg(
+    # ==========================
+    #   FUNCIÓN: AGREGAR POR USUARIO/MES
+    # ==========================
+    
+    def agregar_por_usuario_mes(df_issues, bug_rows, bugs_extra_rows, df_horas_sum):
+        # Puntos por usuario/mes
+        if not df_issues.empty:
+            df_puntos = df_issues.groupby(["Usuario_nombre", "Mes"], as_index=False).agg(
                 Puntos=("Puntos", "sum"),
                 Claves=("Issue", lambda x: ", ".join(sorted(set(k for k in x if k)))),
             )
+        else:
+            df_puntos = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Puntos", "Claves"])
+
+        # Bugs por usuario/mes
+        if bug_rows:
+            df_bugs = pd.DataFrame(bug_rows)
+            df_bugs = df_bugs.groupby(["Usuario_nombre", "Mes"], as_index=False).agg(
+                Bugs=("Issue", "count"),
+                Bugs_claves=("Issue", lambda x: ", ".join(sorted(set(k for k in x if k)))),
+            )
+        else:
+            df_bugs = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Bugs", "Bugs_claves"])
+        
+        # Bugs extra por usuario/mes
+        if bugs_extra_rows:
+            df_bugs_extra = pd.DataFrame(bugs_extra_rows)
+            df_bugs_extra = df_bugs_extra.groupby(["Usuario_nombre", "Mes"], as_index=False).agg(
+                Bugs_resueltos_extra=("Issue", "count"),
+                Bugs_extra_claves=("Issue", lambda x: ", ".join(sorted(set(k for k in x if k)))),
+            )
+        else:
+            df_bugs_extra = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Bugs_resueltos_extra", "Bugs_extra_claves"])
+        
+        # Crear base unificada
+        df_puntos["_Mes_dt_aux"] = pd.to_datetime(df_puntos["Mes"], format="%B %Y", errors="coerce")
+        
+        # Convertir accountids a nombres legibles en df_horas_sum para el merge
+        df_horas_sum_legible = df_horas_sum.copy()
+        df_horas_sum_legible["Usuario_nombre"] = df_horas_sum_legible["Usuario_nombre"].map(
+            lambda x: accountid_to_name.get(x, x) if x in accountid_to_name else x
         )
-    else:
-        df_puntos = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Puntos", "Claves"])
+        
+        base_horas = df_horas_sum_legible[["Usuario_nombre", "Mes_dt"]].drop_duplicates() if "Mes_dt" in df_horas_sum_legible.columns else pd.DataFrame(columns=["Usuario_nombre","Mes_dt"])
+        base_puntos = df_puntos[["Usuario_nombre", "_Mes_dt_aux"]].rename(columns={"_Mes_dt_aux":"Mes_dt"}).drop_duplicates()
+        df_base = pd.concat([base_horas, base_puntos], ignore_index=True).dropna(subset=["Mes_dt"]).drop_duplicates()
+        df_base["Mes"] = df_base["Mes_dt"].dt.strftime("%B %Y")
 
-    # ------------------ BASE unificada y merges ------------------
-    df_puntos["_Mes_dt_aux"] = pd.to_datetime(df_puntos["Mes"], format="%B %Y", errors="coerce")
-    base_horas = df_horas_sum[["Usuario_nombre", "Mes_dt"]].drop_duplicates() if "Mes_dt" in df_horas_sum.columns else pd.DataFrame(columns=["Usuario_nombre","Mes_dt"])
-    base_puntos = df_puntos[["Usuario_nombre", "_Mes_dt_aux"]].rename(columns={"_Mes_dt_aux":"Mes_dt"}).drop_duplicates()
-    df_base = pd.concat([base_horas, base_puntos], ignore_index=True).dropna(subset=["Mes_dt"]).drop_duplicates()
-    df_base["Mes"] = df_base["Mes_dt"].dt.strftime("%B %Y")
+        # Merge todos los datos
+        df_merge = df_base.merge(df_horas_sum_legible[["Usuario_nombre","Mes_dt","Horas"]], on=["Usuario_nombre","Mes_dt"], how="left")
+        
+        # Merge con puntos
+        df_merge = df_merge.merge(df_puntos[["Usuario_nombre","Mes","Puntos","Claves"]], on=["Usuario_nombre","Mes"], how="left")
 
-    df_merge = df_base.merge(df_horas_sum[["Usuario_nombre","Mes_dt","Horas"]], on=["Usuario_nombre","Mes_dt"], how="left")
-    df_merge = df_merge.merge(df_puntos[["Usuario_nombre","Mes","Puntos","Claves"]], on=["Usuario_nombre","Mes"], how="left")
-
-    if not df_bugs_mes.empty:
-        df_merge = df_merge.merge(df_bugs_mes, on=["Usuario_nombre", "Mes"], how="left")
-    if not df_bugs_extra.empty:
+        # Merge con bugs
+        df_merge = df_merge.merge(df_bugs, on=["Usuario_nombre", "Mes"], how="left")
         df_merge = df_merge.merge(df_bugs_extra, on=["Usuario_nombre", "Mes"], how="left")
 
-    for col, fill in [("Horas", 0.0), ("Puntos", 0.0), ("Bugs", 0), ("Bugs_resueltos_extra", 0)]:
-        if col in df_merge.columns:
-            df_merge[col] = df_merge[col].fillna(fill)
-    for col in ["Claves", "Bugs_claves", "Bugs_extra_claves"]:
-        if col in df_merge.columns:
-            df_merge[col] = df_merge[col].fillna("").astype(str)
+        # Llenar valores faltantes
+        for col, fill in [("Horas", 0.0), ("Puntos", 0.0), ("Bugs", 0), ("Bugs_resueltos_extra", 0)]:
+            if col in df_merge.columns:
+                df_merge[col] = df_merge[col].fillna(fill)
+        for col in ["Claves", "Bugs_claves", "Bugs_extra_claves"]:
+            if col in df_merge.columns:
+                df_merge[col] = df_merge[col].fillna("").astype(str)
 
-    df_merge["Velocidad"] = df_merge.apply(
-        lambda r: round(r["Horas"] / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
-    )
-
-    def calcular_nota_final(r):
-        p = float(r.get("Puntos", 0.0))
-        h = float(r.get("Horas", 0.0))
-        b = int(r.get("Bugs", 0))
-        v = float(r.get("Velocidad", 0.0))
-        bex = int(r.get("Bugs_resueltos_extra", 0))
-
-        if p >= 20: sp = 1.05
-        elif 17 <= p <= 19: sp = 1.02
-        elif p == 16: sp = 1.00
-        elif 13 <= p <= 15: sp = 0.90
-        elif 10 <= p <= 12: sp = 0.80
-        else: sp = 0.70
-
-        if h >= 128: sh = 1.00
-        elif 100 <= h <= 127: sh = 0.95
-        else: sh = 0.70
-
-        if b == 0: sb = 1.00
-        elif 1 <= b <= 3: sb = 0.95
-        elif 4 <= b <= 5: sb = 0.90
-        else: sb = 0.80
-
-        if v <= 5: sv = 1.10
-        elif 6 <= v <= 7: sv = 1.05
-        elif abs(v - 8.0) < 1e-9: sv = 1.00
-        elif 8 < v <= 10: sv = 0.95
-        elif 10 < v <= 12: sv = 0.90
-        else: sv = 0.80
-
-        base = (sp * 0.40) + (sh * 0.25) + (sv * 0.25) + (sb * 0.10)
-
-        if 1 <= bex <= 5: bonus = 0.02
-        elif 6 <= bex <= 10: bonus = 0.03
-        elif bex > 10: bonus = 0.05
-        else: bonus = 0.0
-
-        return round((base + bonus) * 100, 2)
-
-    if not df_merge.empty:
-        df_merge["Nota_final"] = df_merge.apply(calcular_nota_final, axis=1)
-    else:
-        df_merge["Nota_final"] = pd.Series(dtype=float)
-
-    # >>>>>> CAMBIO CLAVE: ventana = meses del slider (ranking e historial)
-    df_merge["Mes_dt"] = pd.to_datetime(df_merge["Mes_dt"], errors="coerce")
-    fecha_limite = pd.Timestamp.today().normalize() - pd.DateOffset(months=int(meses))
-    df_win = df_merge[df_merge["Mes_dt"] >= _mes_start(fecha_limite)].copy()
+        # Calcular velocidad (usando 80% de las horas)
+        df_merge["Velocidad"] = df_merge.apply(
+            lambda r: round((r["Horas"] * 0.8) / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
+        )
+        
+        return df_merge
 
     # ==========================
-    #   Selector de usuario
+    #   FUNCIÓN: APLICAR FILTROS
     # ==========================
-    col_user = st.columns(1)[0]
-    df_win["Usuario_nombre"] = df_win["Usuario_nombre"].apply(_norm)
-    users_with_points = set(
-        df_win.loc[df_win["Puntos"] > 0, "Usuario_nombre"].dropna().astype(str)
-    )
-    usuarios_validos = sorted(list(allowed_names & users_with_points))
-    with col_user:
+    
+    def aplicar_filtros(df_completo, fecha_inicio, fecha_fin, proyecto_sel):
+        # Filtrar por fechas
+        df_completo["Mes_dt"] = pd.to_datetime(df_completo["Mes_dt"], errors="coerce")
+        fecha_limite_inicio = pd.Timestamp(fecha_inicio)
+        fecha_limite_fin = pd.Timestamp(fecha_fin)
+        
+        df_filtrado = df_completo[
+            (df_completo["Mes_dt"] >= fecha_limite_inicio) & 
+            (df_completo["Mes_dt"] <= fecha_limite_fin)
+        ].copy()
+        
+        return df_filtrado
+
+    # ==========================
+    #   FUNCIÓN: CALCULAR MÉTRICAS FINALES
+    # ==========================
+    
+    def calcular_metricas_finales(df_filtrado):
+        def calcular_nota_final(r):
+            p = float(r.get("Puntos", 0.0))
+            h = float(r.get("Horas", 0.0))
+            b = int(r.get("Bugs", 0))
+            v = float(r.get("Velocidad", 0.0))
+            bex = int(r.get("Bugs_resueltos_extra", 0))
+
+            if p <= 0: 
+                return 0.0
+
+            # Calcular puntuación de puntos
+            if p < 8: sp = 0.70
+            elif 8 <= p < 10: sp = 0.80
+            elif 10 <= p < 13: sp = 0.85
+            elif 13 <= p < 16: sp = 0.90
+            elif 16 <= p <= 19: sp = 1.05
+            elif p >= 20: sp = 1.10
+            else: sp = 1.00  # p == 16
+
+            # Calcular puntuación de horas
+            if h >= 128: 
+                sh = 1.00
+            elif 100 <= h <= 127: 
+                sh = 0.95
+            else: 
+                sh = 0.70
+
+            # Calcular puntuación de bugs
+            if b == 0: 
+                sb = 1.00
+            elif 1 <= b <= 3: 
+                sb = 0.95
+            elif 4 <= b <= 5: 
+                sb = 0.90
+            else: 
+                sb = 0.80
+
+            # Calcular puntuación de velocidad
+            if v <= 5: sv = 1.10
+            elif 6 <= v <= 7: sv = 1.05
+            elif abs(v - 8.0) < 1e-9: sv = 1.00
+            elif 8 < v <= 10: sv = 0.95
+            elif 10 < v <= 12: sv = 0.90
+            else: sv = 0.80
+
+            # Calcular puntuación base
+            base = (sp * 0.40) + (sh * 0.25) + (sv * 0.25) + (sb * 0.10)
+
+            # Calcular bonus por bugs extra
+            if 1 <= bex <= 5: bonus = 0.02
+            elif 6 <= bex <= 10: bonus = 0.03
+            elif bex > 10: bonus = 0.05
+            else: bonus = 0.0
+
+            return round((base + bonus) * 100, 2)
+
+        if not df_filtrado.empty:
+            df_filtrado["Nota_final"] = df_filtrado.apply(calcular_nota_final, axis=1)
+            # Agregar columna Mes_label para el gráfico
+            df_filtrado["Mes_label"] = df_filtrado["Mes_dt"].apply(_mes_label)
+        else:
+            df_filtrado["Nota_final"] = pd.Series(dtype=float)
+            df_filtrado["Mes_label"] = pd.Series(dtype=str)
+
+        return df_filtrado
+
+    # ==========================
+    #   FUNCIONES AUXILIARES PARA RANKING
+    # ==========================
+    
+    def _calcular_usuarios_validos(df_final, allowed_names):
+        """Calcula los usuarios válidos que tienen puntos"""
+        df_final = df_final.copy()
+        df_final["Usuario_nombre"] = df_final["Usuario_nombre"].apply(_norm)
+        users_with_points = set(
+            df_final.loc[df_final["Puntos"] > 0, "Usuario_nombre"].dropna().astype(str)
+        )
+        return sorted(list(allowed_names & users_with_points))
+    
+    def _mostrar_selector_usuario(usuarios_validos):
+        """Muestra el selector de usuario y maneja la selección"""
+        # Mantener la selección de usuario si está disponible
+        usuario_actual = st.session_state.get("vel_usuario_actual", "Todos")
+        if usuario_actual not in ["Todos"] + usuarios_validos:
+            usuario_actual = "Todos"
+        
+        # Calcular el índice correcto
+        if usuario_actual in usuarios_validos:
+            index_usuario = usuarios_validos.index(usuario_actual) + 1  # +1 porque "Todos" está en posición 0
+        else:
+            index_usuario = 0  # "Todos"
+            
         usuario_sel = st.selectbox(
-            "Seleccioná usuario", ["Todos"] + usuarios_validos, key="vel_usuario"
+            "Seleccioná usuario", ["Todos"] + usuarios_validos, 
+            index=index_usuario,
+            key="vel_usuario"
         )
-
-    # ==========================
-    #   Ranking (VENTANA = slider)
-    # ==========================
-    st.subheader(f"Ranking de devs (últimos {meses} mes(es))")
-    df_rank_src = df_win[df_win["Usuario_nombre"].isin(usuarios_validos)].copy()
-    if df_rank_src.empty:
-        st.info("No hay usuarios con puntos en la ventana seleccionada.")
-        df_ranking = pd.DataFrame(
-            columns=[
-                "Usuario_nombre",
-                "Promedio_puntos",
-                "Promedio_velocidad",
-                "Promedio_bugs",
-                "Promedio_bugs_extra",
-                "Nota_final",
-            ]
-        )
-    else:
+        
+        # Guardar la selección actual
+        st.session_state["vel_usuario_actual"] = usuario_sel
+        return usuario_sel
+    
+    def _mostrar_cards_objetivos():
+        """Muestra las cards con objetivos y ponderaciones"""
+        st.subheader("🎯 Objetivos y Ponderaciones")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            with st.expander("📊 **Puntos** (40%)", expanded=False):
+                st.markdown("""
+                **Objetivo:** 16 puntos/mes = 100%
+                
+                **Escala:**
+                - ≥20 puntos: 110%
+                - 16-19 puntos: 105%
+                - 13-15 puntos: 90%
+                - 10-12 puntos: 85%
+                - 8-9 puntos: 80%
+                - <8 puntos: 70%
+                """)
+        
+        with col2:
+            with st.expander("⏰ **Horas** (25%)", expanded=False):
+                st.markdown("""
+                **Objetivo:** ≥128 horas/mes = 100%
+                
+                **Escala:**
+                - ≥128 horas: 100%
+                - 100-127 horas: 95%
+                - <100 horas: 70%
+                """)
+        
+        with col3:
+            with st.expander("🚀 **Velocidad** (25%)", expanded=False):
+                st.markdown("""
+                **Objetivo:** ≤8 horas/punto = 100%
+                
+                **Escala:**
+                - ≤5 h/punto: 110%
+                - 6-7 h/punto: 105%
+                - 8 h/punto: 100%
+                - 9-10 h/punto: 95%
+                - 11-12 h/punto: 90%
+                - >12 h/punto: 80%
+                """)
+        
+        with col4:
+            with st.expander("🐛 **Bugs** (10%)", expanded=False):
+                st.markdown("""
+                **Objetivo:** 0 bugs/mes = 100%
+                
+                **Escala:**
+                - 0 bugs: 100%
+                - 1-3 bugs: 95%
+                - 4-5 bugs: 90%
+                - >5 bugs: 80%
+                
+                **Bonus Bugs Extra:**
+                - 1-5 extra: +2%
+                - 6-10 extra: +3%
+                - >10 extra: +5%
+                """)
+    
+    def _calcular_ranking(df_final, usuarios_validos):
+        """Calcula el ranking de desarrolladores"""
+        df_rank_src = df_final[df_final["Usuario_nombre"].isin(usuarios_validos)].copy()
+        
+        if df_rank_src.empty:
+            return pd.DataFrame(columns=[
+                "Usuario_nombre", "Promedio_puntos", "Promedio_horas", "Promedio_velocidad", 
+                "Promedio_bugs", "Promedio_bugs_extra", "Nota_final", "Meses_con_nota_0", "Total_meses"
+            ])
+        
+        # Calcular promedios excluyendo meses con nota final 0
         df_ranking = (
             df_rank_src.groupby("Usuario_nombre", as_index=False)
             .agg(
                 Promedio_puntos=("Puntos", "mean"),
+                Promedio_horas=("Horas", "mean"),
                 Promedio_velocidad=("Velocidad", "mean"),
                 Promedio_bugs=("Bugs", "mean"),
                 Promedio_bugs_extra=("Bugs_resueltos_extra", "mean"),
                 Nota_final=("Nota_final", "mean"),
+                # Contar meses con nota 0 para alertas
+                Meses_con_nota_0=("Nota_final", lambda x: (x == 0).sum()),
+                Total_meses=("Nota_final", "count"),
             )
             .sort_values("Nota_final", ascending=False)
             .reset_index(drop=True)
         )
 
-    if usuario_sel != "Todos":
-        df_ranking = df_ranking[df_ranking["Usuario_nombre"] == usuario_sel]
-
-    st.dataframe(df_ranking, use_container_width=True, hide_index=True)
+        # Recalcular promedio de nota final excluyendo meses con nota 0
+        df_ranking["Promedio_nota_final"] = df_ranking.apply(
+            lambda row: df_rank_src[
+                (df_rank_src["Usuario_nombre"] == row["Usuario_nombre"]) & 
+                (df_rank_src["Nota_final"] > 0)
+            ]["Nota_final"].mean() if row["Meses_con_nota_0"] < row["Total_meses"] else 0, 
+            axis=1
+        )
+        
+        return df_ranking
+    
+    def _mostrar_tabla_ranking(df_ranking, usuario_sel):
+        """Muestra la tabla de ranking con formato"""
+        if df_ranking.empty:
+            return
+            
+        # Mostrar solo las columnas necesarias (ocultar las de control)
+        columnas_mostrar = [
+            "Usuario_nombre", "Promedio_puntos", "Promedio_horas", "Promedio_velocidad", 
+            "Promedio_bugs", "Promedio_bugs_extra", "Promedio_nota_final"
+        ]
+        
+        # Función para pintar filas con meses en nota 0
+        def highlight_zero_months(row):
+            # Obtener los valores del DataFrame original
+            original_row = df_ranking.loc[row.name]
+            if original_row['Meses_con_nota_0'] > 0:
+                return ['color: #ffc107'] * len(row)  # Texto amarillo
+            else:
+                return [''] * len(row)  # Sin color
+        
+        # Formatear números antes de mostrar
+        df_formatted = df_ranking[columnas_mostrar].copy()
+        
+        # Formatear columnas numéricas con 1 decimal
+        df_formatted['Promedio_puntos'] = df_formatted['Promedio_puntos'].apply(lambda x: f"{x:.1f}")
+        df_formatted['Promedio_horas'] = df_formatted['Promedio_horas'].apply(lambda x: f"{x:.1f}")
+        df_formatted['Promedio_velocidad'] = df_formatted['Promedio_velocidad'].apply(lambda x: f"{x:.1f}")
+        df_formatted['Promedio_bugs'] = df_formatted['Promedio_bugs'].apply(lambda x: f"{x:.1f}")
+        df_formatted['Promedio_bugs_extra'] = df_formatted['Promedio_bugs_extra'].apply(lambda x: f"{x:.1f}")
+        df_formatted['Promedio_nota_final'] = df_formatted['Promedio_nota_final'].apply(lambda x: f"{x:.1f}")
+        
+        # Mostrar tabla con resaltado y formato
+        st.dataframe(
+            df_formatted.style.apply(highlight_zero_months, axis=1),
+            use_container_width=True, 
+            hide_index=True
+        )
+        
+        # Leyenda simple
+        st.markdown("**Nota:** El texto en amarillo corresponde a desarrolladores que tienen meses con nota final 0.")
+    
+    def _mostrar_grafico_ranking(df_ranking, usuario_sel):
+        """Muestra el gráfico de ranking general"""
+        if usuario_sel != "Todos" or df_ranking.empty:
+            return
+            
+        st.subheader("📊 Velocidad por Desarrollador")
+        
+        # Preparar datos para el gráfico
+        df_grafico_ranking = df_ranking[['Usuario_nombre', 'Promedio_velocidad']].copy()
+        df_grafico_ranking = df_grafico_ranking.sort_values('Promedio_velocidad', ascending=False)
+        
+        # Crear gráfico de barras con Altair
+        import altair as alt
+        
+        # Crear DataFrame con datos y línea de objetivo
+        chart_df_ranking = df_grafico_ranking.copy()
+        chart_df_ranking['Objetivo'] = 8
+        
+        # Crear gráfico base
+        base_ranking = alt.Chart(chart_df_ranking).add_selection(
+            alt.selection_interval(bind='scales')
+        )
+        
+        # Barras de datos
+        bars = base_ranking.mark_bar(
+            color='#1f77b4',
+            opacity=0.7
+        ).encode(
+            x=alt.X('Usuario_nombre:N', sort=None, title='Desarrolladores'),
+            y=alt.Y('Promedio_velocidad:Q', title='Velocidad (horas/punto)')
+        )
+        
+        # Línea de objetivo
+        objective_ranking = base_ranking.mark_rule(
+            stroke='red',
+            strokeDash=[5, 5],
+            strokeWidth=2
+        ).encode(
+            y=alt.datum(8)
+        )
+        
+        # Combinar gráficos
+        chart_ranking = (bars + objective_ranking).resolve_scale(
+            color='independent'
+        ).properties(
+            width=600,
+            height=400,
+            title='Velocidad Promedio por Desarrollador'
+        )
+        
+        # Mostrar gráfico
+        st.altair_chart(chart_ranking, use_container_width=True)
+        
+        # Agregar nota sobre el objetivo
+        st.markdown("**Objetivo:** ≤8 horas/punto (línea roja punteada)")
+    
+    def _mostrar_historial_usuario(df_final, usuario_sel):
+        """Muestra el historial del usuario seleccionado"""
+        if usuario_sel == "Todos":
+            return
+            
+        st.subheader(f"Historial de {usuario_sel}")
+        df_hist = df_final[df_final["Usuario_nombre"] == usuario_sel].copy()
+        if not df_hist.empty:
+            df_hist = df_hist.sort_values("Mes_dt")
+        st.dataframe(
+            df_hist[[
+                "Usuario_nombre", "Mes", "Horas", "Puntos", "Claves",
+                "Velocidad", "Bugs", "Bugs_claves", "Bugs_resueltos_extra", 
+                "Bugs_extra_claves", "Nota_final"
+            ]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        return df_hist
+    
+    def _mostrar_grafico_velocidad_mensual(df_hist, usuario_sel):
+        """Muestra el gráfico de velocidad mensual del usuario"""
+        if len(df_hist) <= 1:  # Solo mostrar gráfico si hay más de un mes
+            st.info("Se necesita más de un mes de datos para mostrar el gráfico de velocidad mensual.")
+            return
+            
+        st.subheader(f"📈 Velocidad Mensual - {usuario_sel}")
+        
+        # Preparar datos para el gráfico mensual
+        df_grafico_mensual = df_hist[['Mes_label', 'Velocidad']].copy()
+        
+        # Crear gráfico de líneas con Altair (mantiene tema oscuro)
+        import altair as alt
+        
+        # Crear DataFrame con datos y línea de objetivo
+        chart_df = df_grafico_mensual.copy()
+        chart_df['Objetivo'] = 8
+        
+        # Crear gráfico base
+        base = alt.Chart(chart_df).add_selection(
+            alt.selection_interval(bind='scales')
+        )
+        
+        # Línea de datos
+        line = base.mark_line(
+            point=True,
+            strokeWidth=3,
+            color='#1f77b4'
+        ).encode(
+            x=alt.X('Mes_label:N', sort=None, title='Mes'),
+            y=alt.Y('Velocidad:Q', title='Velocidad (horas/punto)')
+        )
+        
+        # Línea de objetivo
+        objective = base.mark_rule(
+            stroke='red',
+            strokeDash=[5, 5],
+            strokeWidth=2
+        ).encode(
+            y=alt.datum(8)
+        )
+        
+        # Combinar gráficos
+        chart = (line + objective).resolve_scale(
+            color='independent'
+        ).properties(
+            width=600,
+            height=300,
+            title=f'Velocidad Mensual - {usuario_sel}'
+        )
+        
+        # Mostrar gráfico
+        st.altair_chart(chart, use_container_width=True)
+        
+        # Agregar nota sobre el objetivo
+        st.markdown("**Objetivo:** ≤8 horas/punto (línea roja punteada)")
 
     # ==========================
-    #   Gráficos
+    #   FUNCIÓN: MOSTRAR RANKING Y HISTÓRICO
     # ==========================
-    if usuario_sel == "Todos":
-        if not df_rank_src.empty:
-            chart_data = (
-                df_rank_src.groupby("Usuario_nombre", as_index=False)
-                .agg(Velocidad_promedio=("Velocidad", "mean"))
-            )
-            ch = (
-                alt.Chart(chart_data)
-                .mark_bar()
-                .encode(
-                    x=alt.X("Usuario_nombre:N", sort="-y", title="Usuario", axis=alt.Axis(labelAngle=-40)),
-                    y=alt.Y("Velocidad_promedio:Q", title="Velocidad promedio"),
-                    tooltip=["Usuario_nombre", alt.Tooltip("Velocidad_promedio:Q", format=".2f")],
-                )
-                .properties(height=280)
-            )
-            st.altair_chart(ch, use_container_width=True)
-    else:
-        # Historial del usuario (VENTANA = slider) + gráfico de Velocidad
-        df_user = df_win[df_win["Usuario_nombre"] == usuario_sel].copy()
-        if not df_user.empty:
-            def _combinar_claves(series):
-                vals = [str(v) for v in series.dropna() if str(v).strip()]
-                if not vals:
-                    return ""
-                planos = ", ".join(vals).split(",")
-                planos = [v.strip() for v in planos if v.strip()]
-                return ", ".join(sorted(set(planos)))
-
-            df_user = (
-                df_user.groupby(["Usuario_nombre", "Mes", "Mes_dt"], as_index=False)
-                .agg(
-                    Horas=("Horas", "sum"),
-                    Puntos=("Puntos", "sum"),
-                    Claves=("Claves", _combinar_claves),
-                    Velocidad=("Velocidad", "mean"),
-                    Bugs=("Bugs", "sum"),
-                    Bugs_claves=("Bugs_claves", _combinar_claves),
-                    Bugs_resueltos_extra=("Bugs_resueltos_extra", "sum"),
-                    Bugs_extra_claves=("Bugs_extra_claves", "sum"),
-                    Nota_final=("Nota_final", "mean"),
-                )
-                .sort_values("Mes_dt")
-            )
-
-            st.subheader(f"Historial de {usuario_sel} (últimos {meses} mes(es))")
-            st.dataframe(
-                df_user[
-                    [
-                        "Usuario_nombre",
-                        "Mes",
-                        "Horas",
-                        "Puntos",
-                        "Claves",
-                        "Velocidad",
-                        "Bugs",
-                        "Bugs_claves",
-                        "Bugs_resueltos_extra",
-                        "Bugs_extra_claves",
-                        "Nota_final",
-                    ]
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
-
-            # -------- Gráfico: Velocidad por mes (único por mes) + línea objetivo --------
-            df_user_plot = (
-                df_user[["Mes_dt", "Velocidad"]]
-                .dropna()
-                .groupby("Mes_dt", as_index=False)
-                .agg(Velocidad=("Velocidad", "mean"))
-                .sort_values("Mes_dt")
-            )
-            df_user_plot["Mes_lbl"] = df_user_plot["Mes_dt"].dt.strftime("%b %Y")
-
-            linea_usuario = (
-                alt.Chart(df_user_plot)
-                .mark_line(point=True)
-                .encode(
-                    x=alt.X("Mes_dt:T", title="Mes", axis=alt.Axis(format="%b %Y")),
-                    y=alt.Y("Velocidad:Q", title="Velocidad (hs/punto)"),
-                    tooltip=[
-                        alt.Tooltip("Mes_lbl:N", title="Mes"),
-                        alt.Tooltip("Velocidad:Q", format=".2f", title="Velocidad"),
-                    ],
-                )
-            )
-
-            linea_objetivo = (
-                alt.Chart(pd.DataFrame({"y": [OBJ["hs_por_punto"]]}))
-                .mark_rule(color="red", strokeWidth=2)
-                .encode(y="y:Q")
-            )
-
-            ch_u = (linea_usuario + linea_objetivo).properties(height=260)
-            st.altair_chart(ch_u, use_container_width=True)
+    
+    def mostrar_ranking_y_historico(df_final, usuario_sel, allowed_names):
+        """Función principal refactorizada para mostrar ranking y histórico"""
+        
+        # 1. Calcular usuarios válidos
+        usuarios_validos = _calcular_usuarios_validos(df_final, allowed_names)
+        
+        # 2. Mostrar selector de usuario
+        usuario_sel = _mostrar_selector_usuario(usuarios_validos)
+        
+        # 3. Mostrar cards de objetivos
+        _mostrar_cards_objetivos()
+        
+        # 4. Calcular ranking
+        st.subheader("Ranking de devs")
+        df_ranking = _calcular_ranking(df_final, usuarios_validos)
+        
+        if df_ranking.empty:
+            st.info("No hay usuarios con puntos en la ventana seleccionada.")
         else:
-            st.info("No hay datos del usuario en la ventana seleccionada.")
+            # 5. Filtrar por usuario si no es "Todos"
+            if usuario_sel != "Todos":
+                df_ranking = df_ranking[df_ranking["Usuario_nombre"] == usuario_sel]
+                
+                # Mostrar alerta si el usuario tiene meses con nota 0
+                if not df_ranking.empty and df_ranking.iloc[0]["Meses_con_nota_0"] > 0:
+                    meses_con_0 = df_ranking.iloc[0]["Meses_con_nota_0"]
+                    total_meses = df_ranking.iloc[0]["Total_meses"]
+                    st.warning(f"⚠️ **Atención:** {usuario_sel} tiene {meses_con_0} de {total_meses} meses con nota final 0. Verificar datos.")
+            
+            # 6. Mostrar tabla de ranking
+            _mostrar_tabla_ranking(df_ranking, usuario_sel)
+            
+            # 7. Mostrar gráfico de ranking general
+            _mostrar_grafico_ranking(df_ranking, usuario_sel)
+        
+        # 8. Mostrar historial del usuario
+        df_hist = _mostrar_historial_usuario(df_final, usuario_sel)
+        
+        # 9. Mostrar gráfico de velocidad mensual
+        if df_hist is not None:
+            _mostrar_grafico_velocidad_mensual(df_hist, usuario_sel)
+
+    # ==========================
+    #   EJECUCIÓN PRINCIPAL
+    # ==========================
+    
+    # Cargar datos
+    force_refresh = st.session_state.get("force_refresh", False)
+    historias, bugs = cargar_datos_velocidad(
+        jira, fecha_inicio.strftime("%Y-%m-%d"), fecha_fin.strftime("%Y-%m-%d"), 
+        proyecto_sel, force_refresh
+    )
+    
+    if not historias and not bugs:
+        st.error("❌ No se pudieron cargar datos de Jira")
+        st.stop()
+    
+    
+    # Procesar datos
+    df_issues = procesar_historias(historias, accountid_to_name, name_to_acc)
+    
+    # Crear mapeo de historias por desarrollador para bugs extra
+    historias_por_dev = {}
+    for _, row in df_issues.iterrows():
+        dev = row["Usuario_nombre"]
+        historia = row["Issue"]
+        if dev not in historias_por_dev:
+            historias_por_dev[dev] = set()
+        historias_por_dev[dev].add(historia)
+    
+    
+    
+    bug_rows, bugs_extra_rows = procesar_bugs(bugs, historias_por_dev)
+    
+    # Aplicar filtro de proyecto a las horas
+    if proyecto_sel == "ATI":
+        proyectos_validos = ["AFUs ATI", "TECH LAB - INTERNO"]
+    elif proyecto_sel == "Postventas":
+        proyectos_validos = ["TALLER - MAIPÚ -", "REPUESTOS MAIPU", "AFUS", "TECH LAB - INTERNO"]
+    else:  # Todos
+        proyectos_validos = ["TALLER - MAIPÚ -", "REPUESTOS MAIPU", "AFUS", "AFUs ATI", "TECH LAB - INTERNO"]
+    
+    # Filtrar horas por proyecto
+    df_horas_filtrado = df_horas[df_horas["Proyecto_logico"].isin(proyectos_validos)]
+    df_horas_sum_filtrado = df_horas_filtrado.groupby(["Usuario_nombre", "Mes_dt"], as_index=False)["Horas"].sum()
+    
+    # Agregar por usuario/mes
+    df_completo = agregar_por_usuario_mes(df_issues, bug_rows, bugs_extra_rows, df_horas_sum_filtrado)
+    
+    # Aplicar filtros
+    df_filtrado = aplicar_filtros(df_completo, fecha_inicio, fecha_fin, proyecto_sel)
+    
+    # Calcular métricas finales
+    df_final = calcular_metricas_finales(df_filtrado)
+    
+    # Mostrar resultados
+    mostrar_ranking_y_historico(df_final, "Todos", allowed_names)
 
 
 
-#GANTT
-# === PESTAÑA GANTT (CSV de Google Sheets) ===
+# === PESTAÑA DESARROLLO ATI ===
+if opcion == "Desarrollo ATI":
+    from src.jira_conexion import jira
+    import pandas as pd
+    import time
+    from datetime import datetime, timedelta
+    import re
+
+    # Funciones duplicadas eliminadas
+    
+    def traer_todas_las_issues(jira, jql, fields, max_results=100):
+        issues, start_at = [], 0
+        while True:
+            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        return issues
+
+    def get_issue_summary(issue_key, cache):
+        if issue_key in cache:
+            return cache[issue_key]
+        try:
+            issue = jira.issue(issue_key)
+            summary = issue.fields.summary
+            cache[issue_key] = summary
+            return summary
+        except Exception:
+            cache[issue_key] = issue_key
+            return issue_key
+
+    def get_fix_version(issue):
+        fix = issue["fields"].get("fixVersions", [])
+        if isinstance(fix, list) and fix:
+            return fix[-1].get("name", "")
+        return ""
+
+    ESTADOS_EN_PROCESO = [
+        "en desarrollo", "en testing", "en corrección", "por corregir",
+        "requiere validación", "en análisis", "sin refinar", "pausada", "en correccion"
+    ]
+    ESTADO_LISTO_PARA_IMPLEMENTAR = "lista para implementar"
+    ESTADO_LISTA_PARA_DESARROLLAR = "lista para desarrollar"
+
+    fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
+    
+    # Cache para issues de ATI
+    cache_key_ati_desarrollo = "desarrollo_ati_issues"
+    cache_file_ati_desarrollo = cache_path(cache_key_ati_desarrollo, 'pkl')
+    
+    try:
+        if os.path.exists(cache_file_ati_desarrollo):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_ati_desarrollo))
+            if (datetime.now() - mtime) < timedelta(hours=24):
+                with open(cache_file_ati_desarrollo, 'rb') as f:
+                    issues_ati = pickle.load(f)
+            else:
+                issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+                with open(cache_file_ati_desarrollo, 'wb') as f:
+                    pickle.dump(issues_ati, f)
+        else:
+            issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+            with open(cache_file_ati_desarrollo, 'wb') as f:
+                pickle.dump(issues_ati, f)
+    except Exception:
+        issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+
+    issues = [_unwrap_issue(iss) for iss in issues_ati]
+    issues_unicos = {}
+    for iss in issues:
+        k = _safe_issue_key(iss)
+        if k:
+            issues_unicos[k] = iss
+    issues = list(issues_unicos.values())
+
+    # ==== FILTROS ====
+    st.subheader("Filtros")
+    cols = st.columns([1, 1, 1, 1])
+    
+    with cols[0]:
+        version_sel = st.selectbox("Versión", ["Todas"] + sorted(set(get_fix_version(i) for i in issues if get_fix_version(i))), key="ati_version")
+    with cols[1]:
+        usuario_seleccionado = st.selectbox("Usuario", ["Todos"] + sorted(set(i["fields"]["assignee"]["displayName"] for i in issues if i["fields"].get("assignee"))), key="ati_usuario")
+    with cols[2]:
+        estado_sel = st.selectbox("Estado", ["Todos"] + sorted(set(i["fields"]["status"]["name"] for i in issues)), key="ati_estado")
+    with cols[3]:
+        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="ati_desarrollo_actualizar"):
+            # Limpiar cache de ATI desarrollo
+            cache_keys_to_clear = ["desarrollo_ati_issues"]
+            
+            for cache_key in cache_keys_to_clear:
+                cache_file = cache_path(cache_key, 'pkl')
+                if os.path.exists(cache_file):
+                    try:
+                        os.remove(cache_file)
+                    except Exception:
+                        pass
+            
+            st.success("✅ Cache limpiado. Recargando datos...")
+            st.rerun()
+
+    # ==== CONTADORES DE PORCENTAJE ====
+    if version_sel != "Todas":
+        historias_version = [i for i in issues if get_fix_version(i) == version_sel and "madre" not in i["fields"].get("summary", "").lower()]
+        total_hist = len(historias_version)
+        listas_implementar = [i for i in historias_version if i["fields"]["status"]["name"].strip().lower() == ESTADO_LISTO_PARA_IMPLEMENTAR]
+        total_listas = len(listas_implementar)
+        en_proceso = [i for i in historias_version if i["fields"]["status"]["name"].strip().lower() in ESTADOS_EN_PROCESO]
+        total_proceso = len(en_proceso)
+        porcentaje_avance = (total_listas / total_hist * 100) if total_hist > 0 else 0
+        porcentaje_proceso = (total_proceso / total_hist * 100) if total_hist > 0 else 0
+
+        cols = st.columns(2)
+        cols[0].metric("% Avance", f"{porcentaje_avance:.1f}%")
+        cols[1].metric("% En proceso", f"{porcentaje_proceso:.1f}%")
+
+    # ==== ALERTAS ====
+    hoy = datetime.now().date()
+    alertas = []
+    for issue in issues:
+        if issue["fields"].get("duedate"):
+            try:
+                duedate = datetime.strptime(issue["fields"]["duedate"], "%Y-%m-%d").date()
+                if duedate < hoy and issue["fields"]["status"]["name"].strip().lower() != ESTADO_LISTO_PARA_IMPLEMENTAR:
+                    alertas.append({
+                        "Clave": issue["key"],
+                        "Resumen": issue["fields"]["summary"],
+                        "Estado": issue["fields"]["status"]["name"],
+                        "Duedate": issue["fields"]["duedate"],
+                        "Días vencido": (hoy - duedate).days
+                    })
+            except ValueError:
+                pass
+
+    if alertas:
+        st.warning(f"⚠️ **{len(alertas)} historias vencidas**")
+        df_alertas = pd.DataFrame(alertas)
+        st.dataframe(df_alertas, use_container_width=True)
+
+    # ==== FILTRADO DE ISSUES ====
+    issues_filtradas = issues.copy()
+    
+    if version_sel != "Todas":
+        issues_filtradas = [i for i in issues_filtradas if get_fix_version(i) == version_sel]
+    
+    if usuario_seleccionado != "Todos":
+        issues_filtradas = [i for i in issues_filtradas if i["fields"].get("assignee") and i["fields"]["assignee"]["displayName"] == usuario_seleccionado]
+    
+    if estado_sel != "Todos":
+        issues_filtradas = [i for i in issues_filtradas if i["fields"]["status"]["name"] == estado_sel]
+
+    # ==== PROCESAMIENTO DE DATOS ====
+    rows = []
+    for issue in issues_filtradas:
+        fila = {
+            "Clave": issue["key"],
+            "Resumen": issue["fields"]["summary"],
+            "Estado": issue["fields"]["status"]["name"],
+            "Proyecto": issue["fields"]["project"]["key"],
+            "Asignado": issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else "Sin asignar",
+            "Duedate": issue["fields"].get("duedate", ""),
+            "Version": get_fix_version(issue),
+            "Puntos": issue["fields"].get("customfield_10026", 0),
+            "Porcentaje avance": "Sin subtareas"
+        }
+
+        if issue["fields"].get("assignee"):
+            fila["Asignado"] = issue["fields"]["assignee"]["displayName"]
+
+        rows.append(fila)
+
+    mostrar_todas = st.checkbox("Mostrar todas las historias filtradas (no solo las que están en desarrollo)", value=False, key="ati_mostrar_todas")
+
+    estados = {}
+    for fila in rows:
+        estado = fila["Estado"]
+        estados[estado] = estados.get(estado, 0) + 1
+    estado_names = sorted(estados.keys())
+    if estado_names:
+        cols = st.columns(len(estado_names))
+        for col, estado in zip(cols, estado_names):
+            col.metric(label=estado, value=estados[estado])
+
+    # Tabla
+    if mostrar_todas:
+        rows_a_mostrar = rows
+        label_tabla = "Todas las historias filtradas"
+    else:
+        rows_a_mostrar = [r for r in rows if r["Estado"].strip().lower() == "en desarrollo"]
+        label_tabla = "Todas las historias EN DESARROLLO"
+
+    st.markdown(f"### {label_tabla}")
+
+    if not rows_a_mostrar:
+        st.info("No hay historias para mostrar con los filtros seleccionados.")
+    else:
+        calcular_avance = st.checkbox("Mostrar % de avance de subtareas (puede demorar)", value=False, key="avance_subtareas_ati")
+        if calcular_avance:
+            # Cache para estados de subtareas
+            cache_key_subtareas = f"desarrollo_subtareas_ati_{version_sel}_{usuario_seleccionado}"
+            cache_file_subtareas = cache_path(cache_key_subtareas, 'pkl')
+            
+            # Intentar cargar desde cache
+            subtareas_cache = {}
+            try:
+                if os.path.exists(cache_file_subtareas):
+                    mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_subtareas))
+                    if (datetime.now() - mtime) < timedelta(hours=24):
+                        with open(cache_file_subtareas, 'rb') as f:
+                            subtareas_cache = pickle.load(f)
+            except Exception:
+                pass
+            
+            for fila in rows_a_mostrar:
+                issue = next((i for i in issues if i["key"] == fila["Clave"]), None)
+                if issue and issue["fields"].get("subtasks"):
+                    subtasks = issue["fields"]["subtasks"]
+                    total = len(subtasks)
+                    hechas = 0
+                    
+                    for stask in subtasks:
+                        st_key = stask["key"]
+                        
+                        # Usar cache si está disponible
+                        if st_key in subtareas_cache:
+                            st_status = subtareas_cache[st_key]
+                        else:
+                            try:
+                                st_info = jira._get_json(f'issue/{st_key}?fields=status')
+                                st_status = st_info["fields"]["status"]["name"]
+                                subtareas_cache[st_key] = st_status  # Guardar en cache
+                            except Exception:
+                                st_status = "Unknown"
+                                subtareas_cache[st_key] = st_status
+                        
+                        if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
+                            hechas += 1
+                    fila["Porcentaje avance"] = f"{round(100 * hechas / total, 1)} %"
+                else:
+                    fila["Porcentaje avance"] = "Sin subtareas"
+            
+            # Guardar cache de subtareas
+            try:
+                with open(cache_file_subtareas, 'wb') as f:
+                    pickle.dump(subtareas_cache, f)
+            except Exception:
+                pass
+
+        df = pd.DataFrame(rows_a_mostrar)
+        st.dataframe(df, use_container_width=True)
+
+# === PESTAÑA ENTREGABLES ATI ===
+if opcion == "Entregables ATI":
+    from src.jira_conexion import jira
+    import pandas as pd
+    import unicodedata
+    from datetime import datetime, timedelta
+
+    def normalize(s):
+        if not s:
+            return ""
+        return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII').lower().strip()
+
+    EPIC_LINK_CAMPO = "customfield_10016"
+
+    def traer_todos_los_issues(jira, jql, fields, max_results=100):
+        issues = []
+        start_at = 0
+        while True:
+            endpoint = (
+                f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            )
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        return issues
+
+    meses_orden = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    # Filtrar épicas de ATI
+    epicas_ati = [e for e in epicas_relevantes if e["rn"].startswith("ATI-")]
+    meses_entrega = sorted({epica["mes_entrega"] for epica in epicas_ati}, key=lambda m: meses_orden.index(m))
+
+    # ---- Filtros en columnas ----
+    cols = st.columns([1, 1, 1])
+    with cols[0]:
+        proyecto_seleccionado = st.selectbox("Filtrar por proyecto", ["Todos", "ATI"], key="ati_proyecto")
+    with cols[1]:
+        mes_seleccionado = st.selectbox("Filtrar por mes de entrega", ["Todos"] + meses_entrega, key="ati_mes")
+    with cols[2]:
+        # Botón para forzar actualización
+        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="ati_entregable_actualizar"):
+            # Limpiar cache de ATI
+            cache_keys_to_clear = ["entregable_ati_issues"]
+            
+            for cache_key in cache_keys_to_clear:
+                cache_file = cache_path(cache_key, 'pkl')
+                if os.path.exists(cache_file):
+                    try:
+                        os.remove(cache_file)
+                    except Exception:
+                        pass
+            
+            st.success("✅ Cache limpiado. Recargando datos...")
+            st.rerun()
+
+    fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated"
+
+    # Cache para issues de ATI en Entregable
+    cache_key_ati_entregable = "entregable_ati_issues"
+    cache_file_ati_entregable = cache_path(cache_key_ati_entregable, 'pkl')
+    
+    try:
+        if os.path.exists(cache_file_ati_entregable):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_ati_entregable))
+            if (datetime.now() - mtime) < timedelta(hours=24):
+                with open(cache_file_ati_entregable, 'rb') as f:
+                    issues_ati = pickle.load(f)
+            else:
+                issues_ati = traer_todos_los_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+                with open(cache_file_ati_entregable, 'wb') as f:
+                    pickle.dump(issues_ati, f)
+        else:
+            issues_ati = traer_todos_los_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+            with open(cache_file_ati_entregable, 'wb') as f:
+                pickle.dump(issues_ati, f)
+    except Exception:
+        issues_ati = traer_todos_los_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+
+    # Eliminar duplicados
+    issues = [_unwrap_issue(iss) for iss in issues_ati]
+    issues_unicos = {}
+    for iss in issues:
+        k = _safe_issue_key(iss)
+        if k:
+            issues_unicos[k] = iss
+    issues = list(issues_unicos.values())
+
+    # Filtrar épicas relevantes (solo ATI)
+    if mes_seleccionado != "Todos":
+        epicas_relevantes_filtradas = [e for e in epicas_ati if e["mes_entrega"] == mes_seleccionado]
+    else:
+        epicas_relevantes_filtradas = epicas_ati
+
+    nombres_relevantes = [normalize(epica["nombre"]) for epica in epicas_relevantes_filtradas]
+    rns_relevantes = [normalize(epica["rn"]) for epica in epicas_relevantes_filtradas]
+
+    # Agrupación por épica
+    epicas = {}
+    for issue in issues:
+        # Buscar epic_name
+        epic_name = None
+        if "parent" in issue["fields"] and issue["fields"]["parent"]:
+            parent = issue["fields"]["parent"]
+            if "summary" in parent and parent["summary"]:
+                epic_name = parent["summary"]
+            elif "fields" in parent and "summary" in parent["fields"]:
+                epic_name = parent["fields"]["summary"]
+        if not epic_name or epic_name.lower() in ["sin epica", "sin épica", "none", ""]:
+            epica_custom = issue["fields"].get(EPIC_LINK_CAMPO, None)
+            if epica_custom and isinstance(epica_custom, dict) and "value" in epica_custom and epica_custom["value"]:
+                epic_name = epica_custom["value"]
+            elif epica_custom and isinstance(epica_custom, str) and epica_custom:
+                epic_name = epica_custom
+        if not epic_name or epic_name.lower() in ["sin epica", "sin épica", "none", ""]:
+            epic_name = "Sin epica"
+
+        if not (normalize(epic_name) in nombres_relevantes or normalize(epic_name) in rns_relevantes):
+            continue
+
+        puntos = issue["fields"].get("customfield_10026")
+        try:
+            puntos = float(puntos)
+        except (TypeError, ValueError):
+            puntos = 0
+
+        summary = issue["fields"]["summary"]
+        if "madre" in summary.lower():
+            continue
+
+        estado = (issue["fields"]["status"]["name"] or "").strip().lower()
+        asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
+        key = issue["key"]
+        fecha_estado = issue["fields"].get("statuscategorychangedate") or issue["fields"].get("updated") or ""
+        duedate = issue["fields"].get("duedate") or ""
+
+        if epic_name not in epicas:
+            epicas[epic_name] = {
+                "Historias": [],
+                "Mes de entrega": None
+            }
+        epicas[epic_name]["Historias"].append({
+            "Clave": key,
+            "Nombre": summary,
+            "Estado": estado,
+            "Asignado": asignado,
+            "Fecha_estado": fecha_estado,
+            "Duedate": duedate,
+            "Puntos": puntos
+        })
+
+    # ---- Resumen para tabla de prioridades ----
+    tabla_prioridad = []
+    for epica_rn in epicas_relevantes_filtradas:
+        nombre_epica = epica_rn.get("nombre", "")
+        mes_entrega = epica_rn.get("mes_entrega", "")
+        epic_match = next((epic for epic in epicas if normalize(nombre_epica) == normalize(epic)), None)
+        if epic_match:
+            data = epicas[epic_match]
+            historias = data["Historias"]
+            total = len(historias)
+            listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+            pendientes = sum(
+                1 for h in historias 
+                if h["Estado"] == "lista para desarrollar" and not h["Asignado"]
+            )
+            en_proceso = sum(
+                1 for h in historias 
+                if h["Estado"] in [
+                    "en desarrollo", "en testing", "en corrección", "por corregir",
+                    "requiere validación", "en análisis", "sin refinar", "pausada"
+                ]
+            )
+            porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
+            porcentaje_avance = f"{porcentaje_num:.1f}%"
+            porcentaje_proceso_num = (en_proceso / total * 100) if total > 0 else 0
+            color_proc = "🟢" if porcentaje_proceso_num == 100 else "🟡" if porcentaje_proceso_num >= 50 else "🔴"
+            porcentaje_proceso = f"{porcentaje_proceso_num:.1f}% {color_proc}"
+            puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+        else:
+            historias = []
+            pendientes = 0
+            en_proceso = 0
+            porcentaje_num = 0
+            porcentaje_avance = "0%"
+            porcentaje_proceso = "0.0% 🔴"
+            puntos_totales = 0
+        tabla_prioridad.append({
+            "Épica": nombre_epica,
+            "Mes entrega": mes_entrega,
+            "Avance": f"{porcentaje_avance} " + ("🟢" if porcentaje_num == 100 else "🟡" if porcentaje_num >= 50 else "🔴"),
+            "% En proceso": porcentaje_proceso,
+            "Pendientes": pendientes,
+            "Puntos totales": puntos_totales,
+            "Historias": historias,
+            "%_num": porcentaje_num
+        })
+
+    # Ordenar: primero por mes de entrega, luego por % avance (menor arriba)
+    def ordenar_mes(m):
+        try:
+            return meses_orden.index(m)
+        except:
+            return 99
+    tabla_incompletas = [r for r in tabla_prioridad if r["%_num"] < 100]
+    tabla_completas = [r for r in tabla_prioridad if r["%_num"] == 100]
+    tabla_incompletas = sorted(tabla_incompletas, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
+    tabla_completas = sorted(tabla_completas, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
+
+    # ---- ALERTA: solo para el mes más próximo con historias pendientes y sin 100% ----
+    alerta_mes = ""
+    for m in meses_orden:
+        mes_tiene_alerta = any((r["Mes entrega"] == m and r["Pendientes"] > 0 and r["%_num"] < 100) for r in tabla_incompletas)
+        if mes_tiene_alerta:
+            alerta_mes = m
+            break
+
+    # --- Mostrar tabla incompletas ---
+    df_tabla = pd.DataFrame(tabla_incompletas)
+    if not df_tabla.empty:
+        st.markdown("## Prioridades actuales")
+        def gen_alerta(row):
+            if row["Mes entrega"] == alerta_mes and row["Pendientes"] > 0:
+                return "⚠️ Entrega próxima con pendientes"
+            else:
+                return ""
+        df_tabla["Alerta"] = df_tabla.apply(gen_alerta, axis=1)
+        
+        # Calcular %Faltante = 100% - %En proceso - %Avance
+        # Extraer números de las columnas que contienen strings con emojis
+        def extraer_porcentaje_avance(avance_str):
+            """Extrae el número del string de avance que contiene emojis"""
+            if pd.isna(avance_str) or not isinstance(avance_str, str):
+                return 0.0
+            # Buscar el primer número en el string (antes del espacio y emoji)
+            import re
+            match = re.search(r'(\d+\.?\d*)', str(avance_str))
+            return float(match.group(1)) if match else 0.0
+        
+        def extraer_porcentaje_proceso(proceso_str):
+            """Extrae el número del string de proceso que puede contener emojis"""
+            if pd.isna(proceso_str):
+                return 0.0
+            if isinstance(proceso_str, (int, float)):
+                return float(proceso_str)
+            # Buscar el primer número en el string
+            import re
+            match = re.search(r'(\d+\.?\d*)', str(proceso_str))
+            return float(match.group(1)) if match else 0.0
+        
+        # Aplicar las funciones de extracción
+        avance_numerico = df_tabla["Avance"].apply(extraer_porcentaje_avance)
+        proceso_numerico = df_tabla["% En proceso"].apply(extraer_porcentaje_proceso)
+        
+        # Calcular %Faltante con formato y colores semáforo
+        faltante_numerico = (100 - proceso_numerico - avance_numerico).round(1)
+        
+        # Aplicar colores semáforo: 🔴 >=70%, 🟡 20-70%, 🟢 <20%
+        def aplicar_color_semaforo(valor):
+            if valor >= 70:
+                return f"{valor}% 🔴"
+            elif valor >= 20:
+                return f"{valor}% 🟡"
+            else:
+                return f"{valor}% 🟢"
+        
+        df_tabla["%Faltante"] = faltante_numerico.apply(aplicar_color_semaforo)
+        
+        st.dataframe(
+            df_tabla[["Épica", "Mes entrega", "Avance", "% En proceso", "%Faltante", "Pendientes", "Puntos totales", "Alerta"]],
+            hide_index=True,
+            use_container_width=True
+        )
+
+    # ---- Agrupar historias pendientes (no tomadas) por mes de entrega ----
+    pendientes_por_mes = {}
+    for epica_rn in epicas_relevantes_filtradas:
+        nombre_epica = epica_rn.get("nombre", "")
+        mes_entrega = epica_rn.get("mes_entrega", "")
+        epic_match = next((epic for epic in epicas if normalize(nombre_epica) == normalize(epic)), None)
+        if not epic_match:
+            continue
+        historias = epicas[epic_match]["Historias"]
+        pendientes = [
+            h for h in historias
+            if h["Estado"] == "lista para desarrollar" and not h["Asignado"]
+        ]
+        if pendientes:
+            pendientes_por_mes.setdefault(mes_entrega, []).extend([
+                {
+                    **h,
+                    "Epica": nombre_epica,
+                    "Mes entrega": mes_entrega
+                } for h in pendientes
+            ])
+
+    # ---- Determinar el mes prioritario (primero que tenga pendientes) ----
+    mes_prioritario = None
+    historias_prioritarias = []
+    for m in meses_orden:
+        if m in pendientes_por_mes:
+            mes_prioritario = m
+            historias_prioritarias = pendientes_por_mes[m]
+            break
+
+    # ---- Mapear devs que trabajaron en cada RN (afinidad) ----
+    dev_hist_epica = {}
+    for epica_rn in epicas_relevantes_filtradas:
+        nombre_epica = epica_rn.get("nombre", "")
+        epic_match = next((epic for epic in epicas if normalize(nombre_epica) == normalize(epic)), None)
+        if not epic_match:
+            continue
+        historias = epicas[epic_match]["Historias"]
+        for h in historias:
+            if h["Asignado"]:
+                dev_hist_epica.setdefault(h["Asignado"], set()).add(nombre_epica)
+
+    # Carga de cada dev (para sugerencia por menor carga)
+    dev_carga = {d: 0 for d in dev_hist_epica}
+    for epica in epicas.values():
+        for h in epica["Historias"]:
+            if h["Asignado"]:
+                dev_carga[h["Asignado"]] += 1
+
+    st.markdown("## Historias prioritarias a tomar")
+    if mes_prioritario and historias_prioritarias:
+        st.markdown(f"**Mes prioritario:** <span style='color:gold; font-weight:bold;'>{mes_prioritario}</span>", unsafe_allow_html=True)
+        cols_cards = st.columns(2)
+        for idx, h in enumerate(historias_prioritarias):
+            # Sugerir devs por afinidad y menor carga (hasta 3), mostrando fecha en que se liberan y cambiando color de fondo
+            candidatos = [d for d, epics in dev_hist_epica.items() if h["Epica"] in epics]
+            todos_devs = list(dev_carga.keys())
+            if candidatos:
+                candidatos_ordenados = sorted(candidatos, key=lambda d: dev_carga.get(d, 0))
+            else:
+                candidatos_ordenados = sorted(todos_devs, key=lambda d: dev_carga.get(d, 0)) if todos_devs else []
+            devs_detalle = []
+            fondo_card = "#20232a"
+            for i, d in enumerate(candidatos_ordenados[:3]):
+                # Buscar la HU en proceso con due date más próxima para ese dev
+                hu_proceso = []
+                for epica in epicas.values():
+                    for hu_asig in epica["Historias"]:
+                        if hu_asig["Asignado"] == d and hu_asig["Duedate"]:
+                            try:
+                                fecha_lib = pd.to_datetime(hu_asig["Duedate"])
+                                hu_proceso.append((fecha_lib, hu_asig["Clave"]))
+                            except:
+                                pass
+                if hu_proceso:
+                    prox_fecha = min(hu_proceso)[0]
+                    fecha_texto = prox_fecha.strftime('%d/%m/%Y')
+                    dev_texto = f"{d} ({fecha_texto})"
+                    if i == 0:
+                        dias_restantes = (prox_fecha.date() - datetime.now().date()).days
+                        if dias_restantes <= 1:
+                            fondo_card = "#174e1a"  # verde
+                        elif dias_restantes <= 5:
+                            fondo_card = "#1a4666"  # azul oscuro
+                else:
+                    dev_texto = f"{d} (Disponible)"
+                    if i == 0:
+                        fondo_card = "#174e1a"  # verde
+                devs_detalle.append(dev_texto)
+            devs_sugeridos = ", ".join(devs_detalle)
+            afinidad = "Sí" if candidatos else "No"
+            with cols_cards[idx % 2]:
+                st.markdown(
+                    f"""\n                    <div style="border-radius:14px; background:{fondo_card}; padding:18px; margin-bottom:16px; box-shadow:0 2px 8px #0001;">\n                        <div style="font-size:1.1em; font-weight:bold; color:#fff; margin-bottom:4px;">\n                            🟡 {h['Clave']} - {h['Nombre']}\n                        </div>\n                        <div>\n                            <b>RN:</b> {h['Epica']}<br>\n                            <b>Mes de entrega:</b> <span style="color:gold;">{h['Mes entrega']}</span>\n                        </div>\n                        <div style="margin-top:8px;">\n                            <span style="font-size:1em; color:#bcbcff; font-weight:bold;">Devs sugeridos:</span> <br>\n                            <span style="font-size:1em; font-weight:bold; color:#9fffca;">{devs_sugeridos}</span>\n                            <br>\n                            <span style="font-size:0.95em; color:#ffd580;">Afinidad: {afinidad}</span>\n                        </div>\n                        <div style="margin-top:6px; color:orange;">\n                            <b>⚠️ Prioridad alta para cumplir con el entregable del mes</b>\n                        </div>\n                    </div>\n                    """,
+                    unsafe_allow_html=True
+                )
+    else:
+        st.success("¡No hay historias prioritarias pendientes a tomar para este mes!")
+
+    # --- Mostrar tabla completas abajo ---
+    if tabla_completas:
+        df_completas = pd.DataFrame(tabla_completas)
+        st.markdown("## Entregas completadas")
+        st.dataframe(
+            df_completas[["Épica", "Mes entrega", "Avance", "% En proceso", "Pendientes", "Puntos totales"]],
+            hide_index=True,
+            use_container_width=True
+        )
+
+# === PESTAÑA HISTÓRICO ATI ===
+if opcion == "Histórico ATI":
+    import re
+    import unicodedata
+    import pandas as pd
+    import streamlit as st
+    import time
+    from src.jira_conexion import jira
+
+    # Crear diccionario inverso name_to_acc
+    name_to_acc = {v: k for k, v in accountid_to_name.items()}
+
+    # ------------------ Helpers ------------------
+    def normalize(s):
+        if not s:
+            return ""
+        return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII').lower().strip()
+
+    def _status_norm(s: str) -> str:
+        return (s or "").strip().lower()
+
+    def _safe_issue_key(iss) -> str:
+        return (iss.get("key") or iss.get("id") or "") if isinstance(iss, dict) else ""
+
+    def _unwrap_issue(iss):
+        if isinstance(iss, dict) and "fields" in iss:
+            return iss
+        return {"key": str(iss), "fields": {}}
+
+    def traer_todos_las_issues(jira, jql, fields, max_results=100):
+        issues, start_at = [], 0
+        while True:
+            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        return issues
+
+    def traer_bugs_con_changelog(jira, jql, fields, max_results=100):
+        issues, start_at = [], 0
+        while True:
+            endpoint = (f'search?jql={jql}&fields={fields}'
+                        f'&expand=changelog&startAt={start_at}&maxResults={max_results}')
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        return issues
+
+    # --- FIX: cálculo robusto de horas desde changelog (con fallbacks) ---
+    def _bug_resolution_hours(bug_issue) -> float | None:
+        f = bug_issue.get("fields", {}) or {}
+        created = pd.to_datetime(f.get("created"), errors="coerce")
+        resolution = pd.to_datetime(f.get("resolutiondate"), errors="coerce")
+        updated = pd.to_datetime(f.get("updated"), errors="coerce")
+
+        TODO_PATTERNS     = ("to do", "por hacer", "pendiente", "backlog", "asignados a backlog")
+        PROGRESS_PATTERNS = ("in progress", "haciendo", "desarroll", "en curso", "working", "asignado a desarrollo")
+        DONE_PATTERNS     = ("cerrad", "done", "resuelt", "hech", "closed")
+
+        start_dt, end_dt, last_hist_dt = None, None, None
+        histories = (bug_issue.get("changelog", {}) or {}).get("histories", []) or []
+        histories = sorted(histories, key=lambda h: pd.to_datetime(h.get("created"), errors="coerce"))
+
+        for hist in histories:
+            h_created = pd.to_datetime(hist.get("created"), errors="coerce")
+            last_hist_dt = h_created if pd.notna(h_created) else last_hist_dt
+            for it in hist.get("items", []) or []:
+                if _status_norm(it.get("field")) != "status":
+                    continue
+                to_str  = _status_norm(it.get("toString"))
+                from_str= _status_norm(it.get("fromString"))
+
+                if start_dt is None:
+                    sale_de_todo  = any(p in from_str for p in TODO_PATTERNS) and not any(p in to_str for p in TODO_PATTERNS)
+                    entra_en_prog = any(p in to_str for p in PROGRESS_PATTERNS)
+                    if sale_de_todo or entra_en_prog:
+                        start_dt = h_created
+
+                if end_dt is None and any(p in to_str for p in DONE_PATTERNS):
+                    end_dt = h_created
+
+            if start_dt is not None and end_dt is not None:
+                break
+
+        if start_dt is None:
+            start_dt = created
+        if end_dt is None:
+            if pd.notna(resolution):
+                end_dt = resolution
+            else:
+                status_now = _status_norm((f.get("status") or {}).get("name"))
+                if any(p in status_now for p in DONE_PATTERNS):
+                    end_dt = last_hist_dt or updated
+
+        if pd.isna(start_dt) or pd.isna(end_dt):
+            return None
+
+        delta_hs = (end_dt - start_dt).total_seconds() / 3600.0
+        return None if delta_hs < 0 else float(delta_hs)
+
+    def _bugs_por_hu(bugs_issues) -> dict:
+        """
+        Dict { HU_KEY: {"bugs": [bug_key,...], "hrs": [resol_horas,...]} }
+        Para bugs de ATI (métrica 'Bugs asociados' + promedio hs).
+        """
+        por_hu = {}
+        for iss in bugs_issues:
+            f = iss.get("fields", {}) or {}
+            itype = _status_norm((f.get("issuetype", {}) or {}).get("name"))
+            if itype not in ("error", "bug", "defecto", "incidencia"):
+                continue
+            bug_key = iss.get("key", "")
+            if not bug_key:
+                continue
+            candidate_hus = set()
+            parent_key = (f.get("parent") or {}).get("key", "")
+            if parent_key:
+                candidate_hus.add(parent_key)
+            for link in (f.get("issuelinks") or []):
+                for side in ("inwardIssue", "outwardIssue"):
+                    lk = link.get(side) or {}
+                    k = lk.get("key")
+                    if k:
+                        candidate_hus.add(k)
+            hrs = _bug_resolution_hours(iss)
+            for hu in candidate_hus:
+                if not hu:
+                    continue
+                slot = por_hu.setdefault(hu, {"bugs": [], "hrs": []})
+                slot["bugs"].append(bug_key)
+                if hrs is not None:
+                    slot["hrs"].append(hrs)
+        return por_hu
+
+    def detectar_campo_epic_link():
+        try:
+            fields = jira._get_json("field")
+            candidatos = []
+            for f in fields:
+                name = (f.get("name") or "").strip().lower()
+                key  = (f.get("key") or f.get("id") or "").strip()
+                if any(x in name for x in ["epic link", "enlace épico", "enlace epico", "epik link"]):
+                    candidatos.append(key)
+            for c in candidatos:
+                if c.startswith("customfield_"):
+                    return c
+            return candidatos[0] if candidatos else None
+        except Exception:
+            return None
+
+    def _es_tipo_bug_uat(issuetype_name: str) -> bool:
+        n = (issuetype_name or "").lower()
+        return any(k in n for k in ("bug", "error", "defecto", "incidencia"))
+
+    # ------------------ Fuente de datos ------------------
+    meses_orden = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+    # Historias ATI → base de RN (con cache)
+    fields_hist = ("key,summary,status,project,issuetype,assignee,parent,"
+                   "customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated")
+    
+    # Cache para issues de ATI - OPTIMIZADO para primera carga
+    cache_key_ati = "desarrollo_ati_issues"
+    cache_file_ati = cache_path(cache_key_ati, 'pkl')
+    
+    # Cargar desde cache o consultar Jira con límites para primera carga rápida
+    try:
+        if os.path.exists(cache_file_ati):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_ati))
+            if (datetime.now() - mtime) < timedelta(hours=24):
+                with open(cache_file_ati, 'rb') as f:
+                    issues_ati = pickle.load(f)
+            else:
+                issues_ati = traer_todos_las_issues(jira, 'project = ATI AND issuetype = Historia ORDER BY updated DESC', fields_hist)
+                with open(cache_file_ati, 'wb') as f:
+                    pickle.dump(issues_ati, f)
+        else:
+            issues_ati = traer_todos_las_issues(jira, 'project = ATI AND issuetype = Historia ORDER BY updated DESC', fields_hist)
+            with open(cache_file_ati, 'wb') as f:
+                pickle.dump(issues_ati, f)
+    except Exception:
+        issues_ati = traer_todos_las_issues(jira, 'project = ATI AND issuetype = Historia ORDER BY updated DESC', fields_hist)
+    
+    issues = issues_ati
+
+    # Desduplico por key
+    issues = [_unwrap_issue(iss) for iss in issues]
+    issues_unicos = {}
+    for iss in issues:
+        k = _safe_issue_key(iss)
+        if k:
+            issues_unicos[k] = iss
+    issues = list(issues_unicos.values())
+
+    # Map RN (nombre de épica) → historias y → set de EPIC KEYS (para UAT)
+    EPIC_LINK_CAMPO_STORY = "customfield_10016"
+    epicas = {}              # { RN_name: {"Historias": [...] } }
+    rn_to_epic_keys = {}     # { RN_name: set([EPIC-123,...]) }
+
+    # Filtrar solo issues de ATI
+    issues_ati_filtered = [i for i in issues if i["fields"]["project"]["key"] == "ATI"]
+
+    for issue in issues_ati_filtered:
+        f = issue.get("fields", {}) or {}
+
+        # RN/Épica (nombre) desde parent.summary (o custom)
+        epic_name = None
+        parent = f.get("parent")
+        parent_key = None
+        if parent:
+            epic_name = (parent.get("summary") or (parent.get("fields") or {}).get("summary"))
+            parent_key = (parent.get("key") or (parent.get("fields") or {}).get("key"))
+        if not epic_name or normalize(epic_name) in {"sin epica", "sin épica", "none", ""}:
+            epica_custom = f.get(EPIC_LINK_CAMPO_STORY, None)
+            if isinstance(epica_custom, dict) and epica_custom.get("value"):
+                epic_name = epica_custom["value"]
+            elif isinstance(epica_custom, str) and epica_custom:
+                epic_name = epica_custom
+        if not epic_name or normalize(epic_name) in {"sin epica", "sin épica", "none", ""}:
+            epic_name = "Sin epica"
+
+        summary = f.get("summary", "")
+        if "madre" in (summary or "").lower():
+            continue
+
+        estado = _status_norm((f.get("status") or {}).get("name"))
+        asg = (f.get("assignee") or {})
+        asignado = asg.get("displayName", "")
+        puntos = f.get("customfield_10026", 0) or 0
+        try:
+            puntos = float(puntos)
+        except Exception:
+            puntos = 0.0
+
+        key = issue.get("key", "")
+        fecha_estado = f.get("statuscategorychangedate") or f.get("updated") or ""
+        duedate = f.get("duedate") or ""
+
+        epicas.setdefault(epic_name, {"Historias": []})["Historias"].append({
+            "Clave": key,
+            "Nombre": summary,
+            "Estado": estado,
+            "Asignado": asignado,
+            "Fecha_estado": fecha_estado,
+            "Duedate": duedate,
+            "Puntos": puntos,
+        })
+        if parent_key:
+            rn_to_epic_keys.setdefault(epic_name, set()).add(parent_key)
+
+    # Bugs ATI con changelog (para 'Bugs asociados' y promedio hs) - con cache
+    fields_bugs_ati = "key,project,issuetype,status,resolutiondate,assignee,parent,issuelinks,created,updated"
+    
+    # Cache para bugs de ATI
+    cache_key_bugs_ati = "desarrollo_bugs_ati"
+    cache_file_bugs_ati = cache_path(cache_key_bugs_ati, 'pkl')
+    
+    try:
+        if os.path.exists(cache_file_bugs_ati):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_ati))
+            if (datetime.now() - mtime) < timedelta(hours=24):
+                with open(cache_file_bugs_ati, 'rb') as f:
+                    bugs_ati = pickle.load(f)
+            else:
+                bugs_ati = traer_bugs_con_changelog(jira, 'project = ATI AND issuetype = Error ORDER BY updated DESC', fields_bugs_ati)
+                with open(cache_file_bugs_ati, 'wb') as f:
+                    pickle.dump(bugs_ati, f)
+        else:
+            bugs_ati = traer_bugs_con_changelog(jira, 'project = ATI AND issuetype = Error ORDER BY updated DESC', fields_bugs_ati)
+            with open(cache_file_bugs_ati, 'wb') as f:
+                pickle.dump(bugs_ati, f)
+    except Exception:
+        bugs_ati = traer_bugs_con_changelog(jira, 'project = ATI AND issuetype = Error ORDER BY updated DESC', fields_bugs_ati)
+    
+    bugs_all = bugs_ati
+    mapa_bugs_hu = _bugs_por_hu(bugs_all)
+
+    # BUGS UAT (project = BUG) — SOLO por Epic Link - con cache
+    EPIC_FIELD_BUG = detectar_campo_epic_link() or "customfield_10016"
+    fields_bugs_uat = f"key,issuetype,created,{EPIC_FIELD_BUG}"
+    
+    cache_key_bugs_uat = "desarrollo_bugs_uat_ati"
+    cache_file_bugs_uat = cache_path(cache_key_bugs_uat, 'pkl')
+    
+    try:
+        if os.path.exists(cache_file_bugs_uat):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_uat))
+            if (datetime.now() - mtime) < timedelta(hours=24):
+                with open(cache_file_bugs_uat, 'rb') as f:
+                    bugs_uat = pickle.load(f)
+            else:
+                bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat)
+                with open(cache_file_bugs_uat, 'wb') as f:
+                    pickle.dump(bugs_uat, f)
+        else:
+            bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat)
+            with open(cache_file_bugs_uat, 'wb') as f:
+                pickle.dump(bugs_uat, f)
+    except Exception:
+        bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat)
+
+    epic_to_bugs_uat: dict[str, set] = {}
+    for iss in bugs_uat:
+        f = iss.get("fields", {}) or {}
+        itype = (f.get("issuetype") or {}).get("name") or ""
+        if not _es_tipo_bug_uat(itype):
+            continue
+        bug_key = iss.get("key", "")
+        if not bug_key:
+            continue
+        epic_ref = f.get(EPIC_FIELD_BUG)
+        epic_key = ""
+        if isinstance(epic_ref, dict):
+            epic_key = (epic_ref.get("key") or epic_ref.get("id") or "").strip()
+        elif isinstance(epic_ref, str):
+            epic_key = epic_ref.strip()
+        if epic_key:
+            epic_to_bugs_uat.setdefault(epic_key, set()).add(bug_key)
+
+    # ------------------ Tabla de histórico (usa 'epicas_relevantes') - con cache ------------------
+    def ordenar_mes(m):
+        try:
+            return meses_orden.index(m)
+        except Exception:
+            return 99
+
+    # Cache para tabla histórica procesada
+    cache_key_historico = "historico_tabla_procesada_ati"
+    cache_file_historico = cache_path(cache_key_historico, 'pkl')
+    
+    # Intentar cargar tabla histórica desde cache
+    tabla_historico = []
+    try:
+        if os.path.exists(cache_file_historico):
+            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_historico))
+            if (datetime.now() - mtime) < timedelta(hours=24):
+                with open(cache_file_historico, 'rb') as f:
+                    tabla_historico = pickle.load(f)
+                    # Verificar si el cache tiene el campo DCR_% (nuevo campo)
+                    if tabla_historico and "DCR_%" not in tabla_historico[0]:
+                        # Cache antiguo sin DCR, limpiarlo para recalcular
+                        os.remove(cache_file_historico)
+                        tabla_historico = []
+    except Exception:
+        pass
+    
+    # Botón para limpiar cache del histórico
+    if st.button("🗑️ Limpiar Cache Histórico", help="Limpia el cache del histórico para regenerar datos"):
+        cache_file_historico = cache_path("historico_ati", 'pkl')
+        if os.path.exists(cache_file_historico):
+            os.remove(cache_file_historico)
+        st.success("✅ Cache del histórico limpiado. Recargando datos...")
+        st.rerun()
+
+    # Si no hay cache, procesar tabla histórica
+    if not tabla_historico:
+        st.info("⏳ **Procesando datos históricos de ATI**... Esto puede tomar unos minutos la primera vez.")
+        tabla_historico = []
+        # Filtrar solo épicas de ATI
+        epicas_ati = [e for e in epicas_relevantes if e["rn"].startswith("ATI-")]
+        for epica_rn in epicas_ati:
+            nombre_epica = epica_rn.get("nombre", "")
+            mes_entrega = epica_rn.get("mes_entrega", "")
+            epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
+
+            if epic_match:
+                data = epicas[epic_match]
+                historias = data["Historias"]
+                total = len(historias)
+                listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+                porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
+                puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+
+                # Bugs asociados (ATI) + promedio hs
+                hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
+                bugs_keys_ati, bugs_hrs = [], []
+                for hu in hu_keys:
+                    info = mapa_bugs_hu.get(hu)
+                    if not info:
+                        continue
+                    bugs_keys_ati.extend(info.get("bugs", []))
+                    bugs_hrs.extend(info.get("hrs", []))
+                uniq_bugs_ati = sorted(set(bugs_keys_ati))
+                bugs_cnt_ati = len(uniq_bugs_ati)
+                prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
+
+                # UAT por RN (solo Epic Link)
+                candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
+                uat_keys = set()
+                for ek in candidate_epic_keys:
+                    uat_keys |= epic_to_bugs_uat.get(ek, set())
+                uniq_bugs_uat = sorted(uat_keys)
+                bugs_cnt_uat = len(uniq_bugs_uat)
+                
+                # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
+                total_bugs = bugs_cnt_ati + bugs_cnt_uat
+                dcr = round((bugs_cnt_ati / total_bugs * 100), 1) if total_bugs > 0 else 0.0
+                    
+            else:
+                historias = []
+                porcentaje_num = 0
+                puntos_totales = 0
+                uniq_bugs_ati, bugs_cnt_ati, prom_hrs = [], 0, None
+                uniq_bugs_uat, bugs_cnt_uat = [], 0
+                dcr = 0.0  # Sin datos, DCR = 0
+
+            tabla_historico.append({
+                "Épica": nombre_epica,
+                "Mes entrega": mes_entrega,
+                "%_num": porcentaje_num,
+                "Historias": historias,
+                "Puntos totales": puntos_totales,
+                "Bugs_asociados": bugs_cnt_ati,
+                "Bugs_asociados_claves": ", ".join(uniq_bugs_ati),
+                "Promedio_resolucion_bugs_hs": prom_hrs,
+                "Bugs_pruebas_UAT": bugs_cnt_uat,
+                "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
+                "DCR_%": dcr,
+            })
+        
+        # Guardar tabla histórica en cache
+        try:
+            with open(cache_file_historico, 'wb') as f:
+                pickle.dump(tabla_historico, f)
+        except Exception:
+            pass
+
+    tabla_historico = sorted(tabla_historico, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
+
+    # ------------------ UI ------------------
+    st.markdown("## Histórico de RNs ATI")
+    
+    # Mostrar información sobre datos limitados en primera carga
+    if not tabla_historico:
+        st.info("🔄 Cargando datos limitados para primera carga rápida...")
+    else:
+        st.caption("ℹ️ **Primera carga optimizada**: Mostrando datos más recientes. Usa 'Actualizar' para datos completos.")
+    
+    # Leyenda de colores DCR
+    st.caption("🎨 **DCR**: 🟢 ≥90% (Excelente) | 🔴 <90% (Necesita mejora)")
+    
+    # Verificar si hay DCR mal calculado y mostrar advertencia
+    dcr_mal_calculado = any(row.get("DCR_%", 0) == 0.0 and row.get("Bugs_asociados", 0) > 0 for row in tabla_historico)
+    if dcr_mal_calculado:
+        st.warning("⚠️ **DCR mal calculado detectado**. Usa 'Actualizar' para recalcular con la fórmula correcta.")
+
+    # Filtro de entregable (RN)
+    colf1, colf2, colf3 = st.columns([2,1,1])
+    with colf1:
+        buscar_rn = st.text_input("Buscar entregable (RN)", value="", placeholder="Ej: Generar presupuesto")
+    with colf2:
+        st.caption("Filtra por nombre (ignora acentos y mayúsculas).")
+    with colf3:
+        # Botón para forzar actualización
+        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="historico_ati_actualizar"):
+            # Limpiar todos los caches relacionados con histórico ATI
+            cache_keys_to_clear = [
+                "desarrollo_ati_issues",
+                "desarrollo_bugs_ati",
+                "desarrollo_bugs_uat_ati",
+                "historico_tabla_procesada_ati"  # Cache de tabla con nuevo campo DCR
+            ]
+            
+            for cache_key in cache_keys_to_clear:
+                cache_file = cache_path(cache_key, 'pkl')
+                if os.path.exists(cache_file):
+                    try:
+                        os.remove(cache_file)
+                    except Exception:
+                        pass
+            
+            st.success("✅ Cache limpiado. Recargando datos...")
+            st.rerun()
+
+    buscar_norm = normalize(buscar_rn)
+    if buscar_norm:
+        tabla_filtrada = [r for r in tabla_historico if buscar_norm in normalize(r["Épica"])]
+    else:
+        tabla_filtrada = tabla_historico
+
+    for row in tabla_filtrada:
+        nombre = row["Épica"]
+        mes = row["Mes entrega"]
+        porcentaje = row["%_num"]
+        puntos_totales = row["Puntos totales"]
+        historias = row["Historias"]
+
+        bugs_cnt_ati = row["Bugs_asociados"]
+        prom_hrs = row["Promedio_resolucion_bugs_hs"]
+        prom_txt = f"{prom_hrs:.2f} hs" if prom_hrs is not None else "-"
+
+        bugs_cnt_uat = row.get("Bugs_pruebas_UAT", 0)
+        dcr = row.get("DCR_%", 0.0)
+
+        # Color para DCR: Verde si ≥90%, Rojo si <90%
+        dcr_color = "🟢" if dcr >= 90 else "🔴"
+
+        expander_title = (
+            f"{nombre} | Avance: {porcentaje:.1f}% | {mes} | "
+            f"Puntos: {puntos_totales} | Bugs: {bugs_cnt_ati} | UAT: {bugs_cnt_uat} | "
+            f"DCR: {dcr_color} {dcr}% | Prom. resolución: {prom_txt}"
+        )
+        with st.expander(expander_title, expanded=False):
+            st.markdown(
+                f"**Bugs asociados (ATI):** {bugs_cnt_ati} &nbsp;|&nbsp; "
+                f"**Promedio resolución (ATI):** {prom_txt} &nbsp;|&nbsp; "
+                f"**Claves ATI:** {row['Bugs_asociados_claves'] or '-'}"
+            )
+            st.markdown(
+                f"**Bugs pruebas UAT (project BUG, Epic Link):** {bugs_cnt_uat} &nbsp;|&nbsp; "
+                f"**Claves UAT:** {row.get('Bugs_pruebas_UAT_claves','') or '-'}"
+            )
+            st.markdown(
+                f"**DCR (Defect Containment Rate):** {dcr_color} **{dcr}%** &nbsp;|&nbsp; "
+                f"**Fórmula:** QBug / (QBug + QUAT) × 100 = {bugs_cnt_ati} / ({bugs_cnt_ati} + {bugs_cnt_uat}) × 100"
+            )
+            st.markdown("---")
+
+            if historias:
+                for h in historias:
+                    estado = h["Estado"]
+                    color_estado = (
+                        "#39d353" if estado == "lista para implementar"
+                        else "#fa4" if "desarroll" in estado
+                        else "#bbb"
+                    )
+                    asignado = h["Asignado"] if h["Asignado"] else "<i>Sin asignar</i>"
+                    st.markdown(
+                        f"- **{h['Clave']}** — {h['Nombre']} | "
+                        f"<span style='color:{color_estado}'>{estado.capitalize()}</span> | "
+                        f"{asignado} | <b>Puntos:</b> {h['Puntos']}",
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
+
+
+
 if opcion == "Gantt":
     import pandas as pd
     import plotly.express as px
