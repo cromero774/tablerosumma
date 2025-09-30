@@ -3288,33 +3288,23 @@ if opcion == "Velocidad de devs":
 
     def _owner_al_momento_testing(iss, accountid_to_name, name_to_acc):
         f = iss.get("fields", {}) or {}
+        
+        # Usar el assignee actual (quien tiene la historia ahora)
         current_id = (f.get("assignee") or {}).get("accountId")
         current_name = _norm(accountid_to_name.get(current_id) or (f.get("assignee") or {}).get("displayName"))
         
         histories = (iss.get("changelog", {}) or {}).get("histories", []) or []
         histories = sorted(histories, key=lambda h: pd.to_datetime(h.get("created"), errors="coerce"))
         
+        # Solo buscar la fecha de testing, no cambiar el assignee
         for hist in histories:
             h_created = pd.to_datetime(hist.get("created"), errors="coerce")
-            
-            # Cambios de asignado
-            for it in hist.get("items", []) or []:
-                if _norm(it.get("field")).lower() == "assignee":
-                    new_id = it.get("to")
-                    new_name = _norm(it.get("toString"))
-                    if new_id:
-                        current_id = new_id
-                        current_name = _norm(accountid_to_name.get(new_id) or new_name)
-                    else:
-                        infer_id = name_to_acc.get(new_name)
-                        if infer_id:
-                            current_id = infer_id
-                        current_name = new_name or current_name
             
             # Primera vez que pasa a testing
             for it in hist.get("items", []) or []:
                 if _norm(it.get("field")).lower() == "status" and _norm(it.get("toString")).lower() in STATUS_TESTING:
                     if pd.notna(h_created):
+                        # Retornar el assignee actual con la fecha de testing
                         return current_name, current_id, h_created
         
         return None, None, None
