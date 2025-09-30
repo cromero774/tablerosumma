@@ -3086,39 +3086,56 @@ if opcion == "Velocidad de devs":
         st.session_state["vel_proyecto_sel"] = "Todos"
     
     col_fecha1, col_fecha2, col_proj, col_btn = st.columns([1, 1, 1, 1])
+    
+    # === OPTIMIZACIÓN: Callbacks para evitar recargas innecesarias ===
+    def on_fecha_inicio_change():
+        st.session_state["vel_fecha_inicio"] = st.session_state["vel_fecha_inicio_input"]
+        st.session_state["force_refresh"] = True
+        
+    def on_fecha_fin_change():
+        st.session_state["vel_fecha_fin"] = st.session_state["vel_fecha_fin_input"]
+        st.session_state["force_refresh"] = True
+        
+    def on_proyecto_change():
+        st.session_state["vel_proyecto_sel"] = st.session_state["vel_proyecto_input"]
+        st.session_state["force_refresh"] = True
+    
     with col_fecha1:
         fecha_inicio = st.date_input(
             "Fecha inicio",
             value=st.session_state["vel_fecha_inicio"],
             help="Fecha de inicio del período a evaluar",
-            key="vel_fecha_inicio_input"
+            key="vel_fecha_inicio_input",
+            on_change=on_fecha_inicio_change
         )
-        st.session_state["vel_fecha_inicio"] = fecha_inicio
     with col_fecha2:
         fecha_fin = st.date_input(
             "Fecha fin",
             value=st.session_state["vel_fecha_fin"],
             help="Fecha de fin del período a evaluar",
-            key="vel_fecha_fin_input"
+            key="vel_fecha_fin_input",
+            on_change=on_fecha_fin_change
         )
-        st.session_state["vel_fecha_fin"] = fecha_fin
     with col_proj:
         proyecto_sel = st.selectbox(
             "Proyecto", 
             ["Todos", "ATI", "Postventas"], 
             index=["Todos", "ATI", "Postventas"].index(st.session_state["vel_proyecto_sel"]),
-            key="vel_proyecto_input"
+            key="vel_proyecto_input",
+            on_change=on_proyecto_change
         )
-        st.session_state["vel_proyecto_sel"] = proyecto_sel
     with col_btn:
         if st.button("🔄 Actualizar datos", help="Fuerza la recarga de datos desde Jira", key="velocidad_actualizar"):
             st.session_state["force_refresh"] = True
-            # Limpiar cache de velocidad
-            keys_to_clear = [k for k in st.session_state.keys() if k.startswith("velocidad_cache")]
+            # Limpiar TODOS los caches de velocidad
+            keys_to_clear = [k for k in st.session_state.keys() if k.startswith(("velocidad_cache", "calculos_velocidad", "usuarios_validos"))]
             for key in keys_to_clear:
                 del st.session_state[key]
             st.success("✅ Actualizando datos...")
             st.rerun()
+    
+    # === PROTECCIÓN: Cache inteligente con invalidación ===
+    cache_key_velocidad = f"velocidad_{proyecto_sel}_{fecha_inicio}_{fecha_fin}"
     
     # Botón adicional para limpiar cache específico
     if st.button("🗑️ Limpiar Cache Velocidad", help="Limpia completamente el cache de velocidad", key="velocidad_limpiar_cache"):
@@ -3159,13 +3176,18 @@ if opcion == "Velocidad de devs":
         else:
             proy_jql = "project in (REP, TAL, ATI)"
 
-        # Siempre filtrar solo historias con puntos para el cálculo de velocidad
-        # Usar 'updated' en lugar de 'created' para capturar historias que fueron actualizadas en el período
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND updated >= \"{_fecha_inicio}\" AND updated <= \"{_fecha_fin}\" AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
+        # Buscar TODAS las historias con puntos (sin filtro de fecha, se filtra por primera fecha de testing después)
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
         
-        jql_bugs = f"{proy_jql} AND issuetype = Error AND resolved >= \"{_fecha_inicio}\" AND resolved <= \"{_fecha_fin}\""
+        jql_bugs = f"{proy_jql} AND issuetype = Error"
         
         FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
+        
+        # === PROTECCIÓN: Logs de monitoreo ===
+        print(f"🔍 VELOCIDAD DEBUG: JQL historias: {jql_hist}")
+        print(f"🔍 VELOCIDAD DEBUG: JQL bugs: {jql_bugs}")
+        print(f"🔍 VELOCIDAD DEBUG: Período: {_fecha_inicio} a {_fecha_fin}")
+        print(f"🔍 VELOCIDAD DEBUG: Proyecto: {_proyecto_sel}")
         
         # Cargar historias con changelog
         historias = []
@@ -3189,6 +3211,12 @@ if opcion == "Velocidad de devs":
                     break
             start_at += 100
 
+        # === PROTECCIÓN: Validación de datos mínimos ===
+        print(f"🔍 VELOCIDAD DEBUG: Historias encontradas: {len(historias)}")
+        if len(historias) < 5:  # Mínimo esperado
+            st.warning(f"⚠️ **ALERTA**: Solo se encontraron {len(historias)} historias. Esto puede indicar un problema con el JQL o los datos de Jira.")
+            st.info("💡 **Sugerencia**: Verifica que el proyecto seleccionado tenga historias con puntos asignados.")
+
         # Cargar bugs
         bugs = []
         start_at = 0
@@ -3200,6 +3228,27 @@ if opcion == "Velocidad de devs":
             if len(batch) < 100:
                 break
             start_at += 100
+        
+        # === PROTECCIÓN: Validación de bugs ===
+        print(f"🔍 VELOCIDAD DEBUG: Bugs encontrados: {len(bugs)}")
+        if len(bugs) < 1:  # Mínimo esperado
+            st.warning(f"⚠️ **ALERTA**: No se encontraron bugs. Esto puede indicar un problema con el JQL de bugs.")
+            st.info("💡 **Sugerencia**: Verifica que el proyecto seleccionado tenga bugs reportados.")
+        
+        # === PROTECCIÓN: Guardar en cache si los datos son válidos ===
+        if len(historias) >= 5:  # Solo cachear si hay datos suficientes
+            cache_data = {
+                "historias": historias,
+                "bugs": bugs,
+                "timestamp": pd.Timestamp.now(),
+                "proyecto": _proyecto_sel,
+                "fecha_inicio": _fecha_inicio,
+                "fecha_fin": _fecha_fin
+            }
+            st.session_state[cache_key_velocidad] = cache_data
+            print(f"🔍 VELOCIDAD DEBUG: Datos guardados en cache - {len(historias)} historias, {len(bugs)} bugs")
+        else:
+            print(f"🔍 VELOCIDAD DEBUG: No se guarda en cache - datos insuficientes")
         
         return historias, bugs
 
@@ -3539,8 +3588,19 @@ if opcion == "Velocidad de devs":
     
     def _mostrar_selector_usuario(usuarios_validos):
         """Muestra el selector de usuario y maneja la selección"""
+        # === OPTIMIZACIÓN: Cache de usuarios para evitar recargas ===
+        cache_key_usuarios = f"usuarios_validos_{len(usuarios_validos)}"
+        
         # Mantener la selección de usuario si está disponible
         usuario_actual = st.session_state.get("vel_usuario_actual", "Todos")
+        
+        # Verificar si la lista de usuarios cambió
+        usuarios_cache = st.session_state.get(cache_key_usuarios, [])
+        if usuarios_cache != usuarios_validos:
+            # Lista de usuarios cambió, resetear selección
+            usuario_actual = "Todos"
+            st.session_state[cache_key_usuarios] = usuarios_validos.copy()
+        
         if usuario_actual not in ["Todos"] + usuarios_validos:
             usuario_actual = "Todos"
         
@@ -3550,10 +3610,15 @@ if opcion == "Velocidad de devs":
         else:
             index_usuario = 0  # "Todos"
             
+        # === OPTIMIZACIÓN: Usar on_change para evitar recargas ===
+        def on_usuario_change():
+            st.session_state["vel_usuario_actual"] = st.session_state["vel_usuario"]
+            
         usuario_sel = st.selectbox(
             "Seleccioná usuario", ["Todos"] + usuarios_validos, 
             index=index_usuario,
-            key="vel_usuario"
+            key="vel_usuario",
+            on_change=on_usuario_change
         )
         
         # Guardar la selección actual
@@ -3842,31 +3907,49 @@ if opcion == "Velocidad de devs":
     def mostrar_ranking_y_historico(df_final, usuario_sel, allowed_names):
         """Función principal refactorizada para mostrar ranking y histórico"""
         
-        # 1. Calcular usuarios válidos
-        usuarios_validos = _calcular_usuarios_validos(df_final, allowed_names)
+        # === OPTIMIZACIÓN: Cache de cálculos pesados ===
+        cache_key_calculos = f"calculos_velocidad_{len(df_final)}_{hash(str(allowed_names))}"
         
-        # 2. Mostrar selector de usuario
+        # Verificar si ya tenemos los cálculos en cache
+        if cache_key_calculos in st.session_state:
+            usuarios_validos = st.session_state[cache_key_calculos]["usuarios_validos"]
+            df_ranking_completo = st.session_state[cache_key_calculos]["df_ranking"]
+            print(f"🔍 VELOCIDAD DEBUG: Usando cálculos del cache")
+        else:
+            # 1. Calcular usuarios válidos
+            usuarios_validos = _calcular_usuarios_validos(df_final, allowed_names)
+            
+            # 4. Calcular ranking completo (una sola vez)
+            st.subheader("Ranking de devs")
+            df_ranking_completo = _calcular_ranking(df_final, usuarios_validos)
+            
+            # Guardar en cache
+            st.session_state[cache_key_calculos] = {
+                "usuarios_validos": usuarios_validos,
+                "df_ranking": df_ranking_completo
+            }
+            print(f"🔍 VELOCIDAD DEBUG: Cálculos guardados en cache")
+        
+        # 2. Mostrar selector de usuario (rápido, solo filtro)
         usuario_sel = _mostrar_selector_usuario(usuarios_validos)
         
         # 3. Mostrar cards de objetivos
         _mostrar_cards_objetivos()
         
-        # 4. Calcular ranking
-        st.subheader("Ranking de devs")
-        df_ranking = _calcular_ranking(df_final, usuarios_validos)
-        
-        if df_ranking.empty:
+        if df_ranking_completo.empty:
             st.info("No hay usuarios con puntos en la ventana seleccionada.")
         else:
-            # 5. Filtrar por usuario si no es "Todos"
+            # 5. Filtrar por usuario si no es "Todos" (rápido, solo filtro)
             if usuario_sel != "Todos":
-                df_ranking = df_ranking[df_ranking["Usuario_nombre"] == usuario_sel]
+                df_ranking = df_ranking_completo[df_ranking_completo["Usuario_nombre"] == usuario_sel]
                 
                 # Mostrar alerta si el usuario tiene meses con nota 0
                 if not df_ranking.empty and df_ranking.iloc[0]["Meses_con_nota_0"] > 0:
                     meses_con_0 = df_ranking.iloc[0]["Meses_con_nota_0"]
                     total_meses = df_ranking.iloc[0]["Total_meses"]
                     st.warning(f"⚠️ **Atención:** {usuario_sel} tiene {meses_con_0} de {total_meses} meses con nota final 0. Verificar datos.")
+            else:
+                df_ranking = df_ranking_completo
             
             # 6. Mostrar tabla de ranking
             _mostrar_tabla_ranking(df_ranking, usuario_sel)
@@ -3885,17 +3968,46 @@ if opcion == "Velocidad de devs":
     #   EJECUCIÓN PRINCIPAL
     # ==========================
     
-    # Cargar datos
+    # Cargar datos (usar cache si está disponible y es válido)
     force_refresh = st.session_state.get("force_refresh", False)
-    historias, bugs = cargar_datos_velocidad(
-        jira, fecha_inicio.strftime("%Y-%m-%d"), fecha_fin.strftime("%Y-%m-%d"), 
-        proyecto_sel, force_refresh
-    )
+    
+    # Verificar si hay cache válido
+    if (not force_refresh and 
+        cache_key_velocidad in st.session_state and 
+        len(st.session_state[cache_key_velocidad].get("historias", [])) >= 5):
+        print(f"🔍 VELOCIDAD DEBUG: Usando datos del cache...")
+        cache_data = st.session_state[cache_key_velocidad]
+        historias = cache_data.get("historias", [])
+        bugs = cache_data.get("bugs", [])
+    else:
+        print(f"🔍 VELOCIDAD DEBUG: Cargando datos desde Jira...")
+        historias, bugs = cargar_datos_velocidad(
+            jira, fecha_inicio.strftime("%Y-%m-%d"), fecha_fin.strftime("%Y-%m-%d"), 
+            proyecto_sel, force_refresh
+        )
     
     if not historias and not bugs:
         st.error("❌ No se pudieron cargar datos de Jira")
         st.stop()
     
+    # === PROTECCIÓN: Alertas visuales de calidad de datos ===
+    col_alert1, col_alert2 = st.columns(2)
+    
+    with col_alert1:
+        if len(historias) < 10:
+            st.warning(f"⚠️ **Pocas historias**: Solo {len(historias)} encontradas")
+        elif len(historias) < 20:
+            st.info(f"ℹ️ **Historias moderadas**: {len(historias)} encontradas")
+        else:
+            st.success(f"✅ **Historias suficientes**: {len(historias)} encontradas")
+    
+    with col_alert2:
+        if len(bugs) < 5:
+            st.warning(f"⚠️ **Pocos bugs**: Solo {len(bugs)} encontrados")
+        elif len(bugs) < 15:
+            st.info(f"ℹ️ **Bugs moderados**: {len(bugs)} encontrados")
+        else:
+            st.success(f"✅ **Bugs suficientes**: {len(bugs)} encontrados")
     
     # Procesar datos
     df_issues = procesar_historias(historias, accountid_to_name, name_to_acc)

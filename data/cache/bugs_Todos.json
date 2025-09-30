@@ -1,6 +1,266 @@
 [
   {
     "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+    "id": "190729",
+    "self": "https://evoltis.atlassian.net/rest/api/3/issue/190729",
+    "key": "BUG-286",
+    "fields": {
+      "summary": "[TAL] Recepción | Inspección OT- Consulta | Funcionalidad no asociada a las acciones",
+      "issuetype": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/issuetype/10015",
+        "id": "10015",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+        "name": "Error",
+        "subtask": false,
+        "avatarId": 10303,
+        "hierarchyLevel": 0
+      },
+      "created": "2025-09-30T09:37:17.786-0300",
+      "issuelinks": [],
+      "priority": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/priority/1",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/highest.svg",
+        "name": "1-Muy Alta",
+        "id": "1"
+      },
+      "customfield_10014": null,
+      "status": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/",
+        "name": "Tareas por hacer",
+        "id": "10011",
+        "statusCategory": {
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "Por hacer"
+        }
+      }
+    }
+  },
+  {
+    "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+    "id": "190691",
+    "self": "https://evoltis.atlassian.net/rest/api/3/issue/190691",
+    "key": "BUG-285",
+    "fields": {
+      "summary": "[REP] Movimiento entre ubicaciones | Imposibilidad de realizar movimiento de ubicaciones",
+      "issuetype": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/issuetype/10015",
+        "id": "10015",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+        "name": "Error",
+        "subtask": false,
+        "avatarId": 10303,
+        "hierarchyLevel": 0
+      },
+      "created": "2025-09-29T15:57:32.849-0300",
+      "issuelinks": [],
+      "priority": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/priority/1",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/highest.svg",
+        "name": "1-Muy Alta",
+        "id": "1"
+      },
+      "customfield_10014": null,
+      "status": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/",
+        "name": "Tareas por hacer",
+        "id": "10011",
+        "statusCategory": {
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "Por hacer"
+        }
+      }
+    }
+  },
+  {
+    "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+    "id": "190689",
+    "self": "https://evoltis.atlassian.net/rest/api/3/issue/190689",
+    "key": "BUG-284",
+    "fields": {
+      "summary": "[REP] CONFIGURACION DE TOPES DE DESCUENTO-INCREMENTO | Error en mensaje al eliminar configuraciones",
+      "issuetype": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/issuetype/10015",
+        "id": "10015",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+        "name": "Error",
+        "subtask": false,
+        "avatarId": 10303,
+        "hierarchyLevel": 0
+      },
+      "created": "2025-09-29T14:42:50.587-0300",
+      "issuelinks": [],
+      "priority": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/priority/4",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/low.svg",
+        "name": "4-Baja",
+        "id": "4"
+      },
+      "customfield_10014": null,
+      "status": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/",
+        "name": "Tareas por hacer",
+        "id": "10011",
+        "statusCategory": {
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "Por hacer"
+        }
+      }
+    }
+  },
+  {
+    "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+    "id": "190681",
+    "self": "https://evoltis.atlassian.net/rest/api/3/issue/190681",
+    "key": "BUG-283",
+    "fields": {
+      "summary": "[REP] CONFIGURACION DE TOPES DESCUENTO-iNCREMENTO | Error en mensaje",
+      "issuetype": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/issuetype/10015",
+        "id": "10015",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+        "name": "Error",
+        "subtask": false,
+        "avatarId": 10303,
+        "hierarchyLevel": 0
+      },
+      "created": "2025-09-29T14:25:34.341-0300",
+      "issuelinks": [],
+      "priority": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/priority/4",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/low.svg",
+        "name": "4-Baja",
+        "id": "4"
+      },
+      "customfield_10014": null,
+      "status": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/",
+        "name": "Tareas por hacer",
+        "id": "10011",
+        "statusCategory": {
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "Por hacer"
+        }
+      }
+    }
+  },
+  {
+    "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+    "id": "190616",
+    "self": "https://evoltis.atlassian.net/rest/api/3/issue/190616",
+    "key": "BUG-282",
+    "fields": {
+      "summary": "[REP] Recepción | Control de calidad | Asignar Ubicaciones | Restricción de cantidades deriva en bloqueo de proceso de recepción de piezas",
+      "issuetype": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/issuetype/10015",
+        "id": "10015",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+        "name": "Error",
+        "subtask": false,
+        "avatarId": 10303,
+        "hierarchyLevel": 0
+      },
+      "created": "2025-09-29T10:41:34.992-0300",
+      "issuelinks": [
+        {
+          "id": "83310",
+          "self": "https://evoltis.atlassian.net/rest/api/3/issueLink/83310",
+          "type": {
+            "id": "10104",
+            "name": "relates to",
+            "inward": "relacionado a",
+            "outward": "relacionado",
+            "self": "https://evoltis.atlassian.net/rest/api/3/issueLinkType/10104"
+          },
+          "inwardIssue": {
+            "id": "190707",
+            "key": "REP-5767",
+            "self": "https://evoltis.atlassian.net/rest/api/3/issue/190707",
+            "fields": {
+              "summary": "No permite ubicar una pieza ya que la cantidad es menor ",
+              "status": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10089",
+                "description": "[VOCUS AGILE KANBAN]\n\nTarea en proceso",
+                "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
+                "name": "Haciendo",
+                "id": "10089",
+                "statusCategory": {
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+                  "id": 4,
+                  "key": "indeterminate",
+                  "colorName": "yellow",
+                  "name": "En curso"
+                }
+              },
+              "priority": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/priority/2",
+                "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/high.svg",
+                "name": "2-Alta",
+                "id": "2"
+              },
+              "issuetype": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/issuetype/10015",
+                "id": "10015",
+                "description": "",
+                "iconUrl": "https://evoltis.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+                "name": "Error",
+                "subtask": false,
+                "avatarId": 10303,
+                "hierarchyLevel": 0
+              }
+            }
+          }
+        }
+      ],
+      "priority": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/priority/1",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/highest.svg",
+        "name": "1-Muy Alta",
+        "id": "1"
+      },
+      "customfield_10014": "REP-4219",
+      "status": {
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10282",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/",
+        "name": "ASIGNADO A DESARROLLO",
+        "id": "10282",
+        "statusCategory": {
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "En curso"
+        }
+      }
+    }
+  },
+  {
+    "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
     "id": "190579",
     "self": "https://evoltis.atlassian.net/rest/api/3/issue/190579",
     "key": "BUG-281",
@@ -17,20 +277,70 @@
         "hierarchyLevel": 0
       },
       "created": "2025-09-26T17:42:17.132-0300",
-      "issuelinks": [],
+      "issuelinks": [
+        {
+          "id": "83309",
+          "self": "https://evoltis.atlassian.net/rest/api/3/issueLink/83309",
+          "type": {
+            "id": "10000",
+            "name": "blocks",
+            "inward": "está bloqueado por",
+            "outward": "Bloqueado",
+            "self": "https://evoltis.atlassian.net/rest/api/3/issueLinkType/10000"
+          },
+          "outwardIssue": {
+            "id": "190692",
+            "key": "REP-5766",
+            "self": "https://evoltis.atlassian.net/rest/api/3/issue/190692",
+            "fields": {
+              "summary": "[HOTFIX] PEDIDOS DE COMPRA | Campo Nro. pedido proveedor",
+              "status": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10088",
+                "description": "[VOCUS AGILE KANBAN]\n\nNueva tarea para realizar",
+                "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
+                "name": "Por Hacer",
+                "id": "10088",
+                "statusCategory": {
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
+                  "id": 2,
+                  "key": "new",
+                  "colorName": "blue-gray",
+                  "name": "Por hacer"
+                }
+              },
+              "priority": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/priority/4",
+                "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/low.svg",
+                "name": "4-Baja",
+                "id": "4"
+              },
+              "issuetype": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/issuetype/10015",
+                "id": "10015",
+                "description": "",
+                "iconUrl": "https://evoltis.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+                "name": "Error",
+                "subtask": false,
+                "avatarId": 10303,
+                "hierarchyLevel": 0
+              }
+            }
+          }
+        }
+      ],
       "priority": {
         "self": "https://evoltis.atlassian.net/rest/api/3/priority/4",
         "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/low.svg",
         "name": "4-Baja",
         "id": "4"
       },
-      "customfield_10014": null,
+      "customfield_10014": "REP-5621",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10284",
         "description": "",
         "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "Tareas por hacer",
-        "id": "10011",
+        "name": "ASIGNADO AL BACKLOG",
+        "id": "10284",
         "statusCategory": {
           "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
           "id": 2,
@@ -59,26 +369,76 @@
         "hierarchyLevel": 0
       },
       "created": "2025-09-26T10:22:11.380-0300",
-      "issuelinks": [],
+      "issuelinks": [
+        {
+          "id": "83312",
+          "self": "https://evoltis.atlassian.net/rest/api/3/issueLink/83312",
+          "type": {
+            "id": "10104",
+            "name": "relates to",
+            "inward": "relacionado a",
+            "outward": "relacionado",
+            "self": "https://evoltis.atlassian.net/rest/api/3/issueLinkType/10104"
+          },
+          "outwardIssue": {
+            "id": "190753",
+            "key": "REP-5773",
+            "self": "https://evoltis.atlassian.net/rest/api/3/issue/190753",
+            "fields": {
+              "summary": "Disponibilidad de Stock | No se encuentra el stock 'En Tránsito Interno - Disponible' en una Ubicación administrativa",
+              "status": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10088",
+                "description": "[VOCUS AGILE KANBAN]\n\nNueva tarea para realizar",
+                "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
+                "name": "Por Hacer",
+                "id": "10088",
+                "statusCategory": {
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
+                  "id": 2,
+                  "key": "new",
+                  "colorName": "blue-gray",
+                  "name": "Por hacer"
+                }
+              },
+              "priority": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/priority/2",
+                "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/high.svg",
+                "name": "2-Alta",
+                "id": "2"
+              },
+              "issuetype": {
+                "self": "https://evoltis.atlassian.net/rest/api/3/issuetype/10015",
+                "id": "10015",
+                "description": "",
+                "iconUrl": "https://evoltis.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+                "name": "Error",
+                "subtask": false,
+                "avatarId": 10303,
+                "hierarchyLevel": 0
+              }
+            }
+          }
+        }
+      ],
       "priority": {
         "self": "https://evoltis.atlassian.net/rest/api/3/priority/2",
         "iconUrl": "https://evoltis.atlassian.net/images/icons/priorities/high.svg",
         "name": "2-Alta",
         "id": "2"
       },
-      "customfield_10014": null,
+      "customfield_10014": "REP-5621",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
-        "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "Tareas por hacer",
-        "id": "10011",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
+        "description": "This issue is being actively worked on at the moment by the assignee.",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "EN VALIDACIÓN QA",
+        "id": "3",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
-          "id": 2,
-          "key": "new",
-          "colorName": "blue-gray",
-          "name": "Por hacer"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "En curso"
         }
       }
     }
@@ -284,19 +644,19 @@
         "name": "3-Media",
         "id": "3"
       },
-      "customfield_10014": null,
+      "customfield_10014": "REP-4219",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
-        "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "Tareas por hacer",
-        "id": "10011",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
+        "description": "This issue is being actively worked on at the moment by the assignee.",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "EN VALIDACIÓN QA",
+        "id": "3",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
-          "id": 2,
-          "key": "new",
-          "colorName": "blue-gray",
-          "name": "Por hacer"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "En curso"
         }
       }
     }
@@ -370,11 +730,11 @@
       },
       "customfield_10014": null,
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
-        "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
+        "description": "This issue is being actively worked on at the moment by the assignee.",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "EN VALIDACIÓN QA",
+        "id": "3",
         "statusCategory": {
           "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
           "id": 4,
@@ -421,17 +781,17 @@
             "fields": {
               "summary": "[ALMACENAMIENTO] 14.7 GESTIÓN DE ALMACEN | CONFIRMAR [MODIFICACIONES]",
               "status": {
-                "self": "https://evoltis.atlassian.net/rest/api/3/status/10080",
-                "description": "[VOCUS AGILE UH]\nUH aprobada por el PO para ser desarrollada e incorporar tareas a la misma",
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10081",
+                "description": "",
                 "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
-                "name": "Lista para Desarrollar",
-                "id": "10080",
+                "name": "En Desarrollo",
+                "id": "10081",
                 "statusCategory": {
-                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
-                  "id": 2,
-                  "key": "new",
-                  "colorName": "blue-gray",
-                  "name": "Por hacer"
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+                  "id": 4,
+                  "key": "indeterminate",
+                  "colorName": "yellow",
+                  "name": "En curso"
                 }
               },
               "priority": {
@@ -470,17 +830,17 @@
             "fields": {
               "summary": "DER | NOTAS DE NO CONFORMIDAD",
               "status": {
-                "self": "https://evoltis.atlassian.net/rest/api/3/status/10080",
-                "description": "[VOCUS AGILE UH]\nUH aprobada por el PO para ser desarrollada e incorporar tareas a la misma",
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10082",
+                "description": "[VOCUS AGILE UH]\nUH en proceso de testing y revisión de código",
                 "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
-                "name": "Lista para Desarrollar",
-                "id": "10080",
+                "name": "En Testing",
+                "id": "10082",
                 "statusCategory": {
-                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
-                  "id": 2,
-                  "key": "new",
-                  "colorName": "blue-gray",
-                  "name": "Por hacer"
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+                  "id": 4,
+                  "key": "indeterminate",
+                  "colorName": "yellow",
+                  "name": "En curso"
                 }
               },
               "priority": {
@@ -568,17 +928,17 @@
             "fields": {
               "summary": "[ALMACENAMIENTO] 14.8 GESTIÓN DE ALMACEN | CONTROL DE CALIDAD [MODIFICACIONES]",
               "status": {
-                "self": "https://evoltis.atlassian.net/rest/api/3/status/10080",
-                "description": "[VOCUS AGILE UH]\nUH aprobada por el PO para ser desarrollada e incorporar tareas a la misma",
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10081",
+                "description": "",
                 "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
-                "name": "Lista para Desarrollar",
-                "id": "10080",
+                "name": "En Desarrollo",
+                "id": "10081",
                 "statusCategory": {
-                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
-                  "id": 2,
-                  "key": "new",
-                  "colorName": "blue-gray",
-                  "name": "Por hacer"
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+                  "id": 4,
+                  "key": "indeterminate",
+                  "colorName": "yellow",
+                  "name": "En curso"
                 }
               },
               "priority": {
@@ -699,7 +1059,7 @@
         "name": "4-Baja",
         "id": "4"
       },
-      "customfield_10014": null,
+      "customfield_10014": "REP-4268",
       "status": {
         "self": "https://evoltis.atlassian.net/rest/api/3/status/10284",
         "description": "",
@@ -743,17 +1103,17 @@
       },
       "customfield_10014": "REP-4219",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
-        "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "Tareas por hacer",
-        "id": "10011",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
+        "description": "This issue is being actively worked on at the moment by the assignee.",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "EN VALIDACIÓN QA",
+        "id": "3",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
-          "id": 2,
-          "key": "new",
-          "colorName": "blue-gray",
-          "name": "Por hacer"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "En curso"
         }
       }
     }
@@ -869,17 +1229,17 @@
       },
       "customfield_10014": null,
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
-        "description": "This issue is being actively worked on at the moment by the assignee.",
-        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
-        "name": "EN VALIDACIÓN QA",
-        "id": "3",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/",
+        "name": "Tareas por hacer",
+        "id": "10011",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-          "id": 4,
-          "key": "indeterminate",
-          "colorName": "yellow",
-          "name": "En curso"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "Por hacer"
         }
       }
     }
@@ -920,17 +1280,17 @@
             "fields": {
               "summary": "[REP] Transacciones | Acción Reparar | COntrol de calidad | Imposibilidad de anular registros del control de calidad",
               "status": {
-                "self": "https://evoltis.atlassian.net/rest/api/3/status/10088",
-                "description": "[VOCUS AGILE KANBAN]\n\nNueva tarea para realizar",
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10086",
+                "description": "[VOCUS AGILE UH]\nEn Pausa: Se poné en pausa la actividad pero es posible que se retome en este u otro sprint.",
                 "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
-                "name": "Por Hacer",
-                "id": "10088",
+                "name": "Pausada",
+                "id": "10086",
                 "statusCategory": {
-                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
-                  "id": 2,
-                  "key": "new",
-                  "colorName": "blue-gray",
-                  "name": "Por hacer"
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
+                  "id": 4,
+                  "key": "indeterminate",
+                  "colorName": "yellow",
+                  "name": "En curso"
                 }
               },
               "priority": {
@@ -1053,17 +1413,17 @@
       },
       "customfield_10014": "REP-4219",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10042",
         "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/status_generic.gif",
+        "name": "Cerrado",
+        "id": "10042",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-          "id": 4,
-          "key": "indeterminate",
-          "colorName": "yellow",
-          "name": "En curso"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Listo"
         }
       }
     }
@@ -1272,17 +1632,17 @@
             "fields": {
               "summary": "[HOTFIX] ERROR AL ELIMINAR UN CONTROL DE CALIDAD",
               "status": {
-                "self": "https://evoltis.atlassian.net/rest/api/3/status/10089",
-                "description": "[VOCUS AGILE KANBAN]\n\nTarea en proceso",
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10090",
+                "description": "[VOCUS AGILE KANBAN]\nTarea realizada",
                 "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
-                "name": "Haciendo",
-                "id": "10089",
+                "name": "Hecha",
+                "id": "10090",
                 "statusCategory": {
-                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-                  "id": 4,
-                  "key": "indeterminate",
-                  "colorName": "yellow",
-                  "name": "En curso"
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/3",
+                  "id": 3,
+                  "key": "done",
+                  "colorName": "green",
+                  "name": "Listo"
                 }
               },
               "priority": {
@@ -1456,17 +1816,17 @@
             "fields": {
               "summary": "[REP] Transacciones | Transferencias Internas / Externas | Edición | Inconsistencia de cantidad faltante en tiempo real - bloqueo de flujo por mal cálculo de cantidades",
               "status": {
-                "self": "https://evoltis.atlassian.net/rest/api/3/status/10088",
-                "description": "[VOCUS AGILE KANBAN]\n\nNueva tarea para realizar",
+                "self": "https://evoltis.atlassian.net/rest/api/3/status/10090",
+                "description": "[VOCUS AGILE KANBAN]\nTarea realizada",
                 "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/generic.png",
-                "name": "Por Hacer",
-                "id": "10088",
+                "name": "Hecha",
+                "id": "10090",
                 "statusCategory": {
-                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
-                  "id": 2,
-                  "key": "new",
-                  "colorName": "blue-gray",
-                  "name": "Por hacer"
+                  "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/3",
+                  "id": 3,
+                  "key": "done",
+                  "colorName": "green",
+                  "name": "Listo"
                 }
               },
               "priority": {
@@ -2033,17 +2393,17 @@
       },
       "customfield_10014": "REP-4270",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10042",
         "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/status_generic.gif",
+        "name": "Cerrado",
+        "id": "10042",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-          "id": 4,
-          "key": "indeterminate",
-          "colorName": "yellow",
-          "name": "En curso"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Listo"
         }
       }
     }
@@ -2626,11 +2986,11 @@
       },
       "customfield_10014": "REP-5641",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
-        "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
+        "description": "This issue is being actively worked on at the moment by the assignee.",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "EN VALIDACIÓN QA",
+        "id": "3",
         "statusCategory": {
           "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
           "id": 4,
@@ -2844,17 +3204,17 @@
       },
       "customfield_10014": "REP-5621",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
-        "description": "This issue is being actively worked on at the moment by the assignee.",
-        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
-        "name": "EN VALIDACIÓN QA",
-        "id": "3",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10011",
+        "description": "",
+        "iconUrl": "https://evoltis.atlassian.net/",
+        "name": "Tareas por hacer",
+        "id": "10011",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-          "id": 4,
-          "key": "indeterminate",
-          "colorName": "yellow",
-          "name": "En curso"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "Por hacer"
         }
       }
     }
@@ -3705,17 +4065,17 @@
       },
       "customfield_10014": "REP-5621",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10042",
         "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/status_generic.gif",
+        "name": "Cerrado",
+        "id": "10042",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-          "id": 4,
-          "key": "indeterminate",
-          "colorName": "yellow",
-          "name": "En curso"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Listo"
         }
       }
     }
@@ -4289,17 +4649,17 @@
       },
       "customfield_10014": "REP-5641",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10042",
         "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/status_generic.gif",
+        "name": "Cerrado",
+        "id": "10042",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-          "id": 4,
-          "key": "indeterminate",
-          "colorName": "yellow",
-          "name": "En curso"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Listo"
         }
       }
     }
@@ -4331,11 +4691,11 @@
       },
       "customfield_10014": "REP-5641",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
-        "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
+        "description": "This issue is being actively worked on at the moment by the assignee.",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "EN VALIDACIÓN QA",
+        "id": "3",
         "statusCategory": {
           "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
           "id": 4,
@@ -5821,17 +6181,17 @@
       },
       "customfield_10014": "REP-5420",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10042",
         "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/status_generic.gif",
+        "name": "Cerrado",
+        "id": "10042",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-          "id": 4,
-          "key": "indeterminate",
-          "colorName": "yellow",
-          "name": "En curso"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Listo"
         }
       }
     }
@@ -6265,11 +6625,11 @@
       },
       "customfield_10014": null,
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
-        "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
+        "description": "This issue is being actively worked on at the moment by the assignee.",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "EN VALIDACIÓN QA",
+        "id": "3",
         "statusCategory": {
           "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
           "id": 4,
@@ -6307,11 +6667,11 @@
       },
       "customfield_10014": null,
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
-        "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/3",
+        "description": "This issue is being actively worked on at the moment by the assignee.",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "EN VALIDACIÓN QA",
+        "id": "3",
         "statusCategory": {
           "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
           "id": 4,
@@ -6777,17 +7137,17 @@
       },
       "customfield_10014": "REP-5420",
       "status": {
-        "self": "https://evoltis.atlassian.net/rest/api/3/status/10283",
+        "self": "https://evoltis.atlassian.net/rest/api/3/status/10042",
         "description": "",
-        "iconUrl": "https://evoltis.atlassian.net/",
-        "name": "APROBADO POR QA",
-        "id": "10283",
+        "iconUrl": "https://evoltis.atlassian.net/images/icons/status_generic.gif",
+        "name": "Cerrado",
+        "id": "10042",
         "statusCategory": {
-          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/4",
-          "id": 4,
-          "key": "indeterminate",
-          "colorName": "yellow",
-          "name": "En curso"
+          "self": "https://evoltis.atlassian.net/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Listo"
         }
       }
     }
