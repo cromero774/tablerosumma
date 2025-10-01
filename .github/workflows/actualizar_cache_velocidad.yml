@@ -1,0 +1,63 @@
+name: Actualizar Cache de Velocidad
+
+on:
+  # Ejecutar automáticamente cada día a las 6 AM (hora UTC)
+  schedule:
+    - cron: '0 6 * * *'
+  
+  # Permitir ejecución manual desde GitHub
+  workflow_dispatch:
+
+jobs:
+  actualizar-cache:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Instalar dependencias
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Crear archivo .env con credenciales
+        run: |
+          echo "JIRA_SERVER=${{ secrets.JIRA_SERVER }}" > .env
+          echo "JIRA_USER=${{ secrets.JIRA_USER }}" >> .env
+          echo "JIRA_TOKEN=${{ secrets.JIRA_TOKEN }}" >> .env
+          echo "TEMPO_API_TOKEN=${{ secrets.TEMPO_API_TOKEN }}" >> .env
+      
+      - name: Ejecutar precarga de datos
+        run: |
+          python precarga_velocidad.py
+      
+      - name: Verificar cambios en cache
+        id: verify_changes
+        run: |
+          if [[ -n $(git status --porcelain data/cache/) ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Commit y push de cache actualizado
+        if: steps.verify_changes.outputs.changes == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/cache/velocidad_data_*.pkl
+          git commit -m "🔄 Actualización automática de cache de velocidad [skip ci]"
+          git push
+      
+      - name: Sin cambios detectados
+        if: steps.verify_changes.outputs.changes == 'false'
+        run: |
+          echo "ℹ️ No hay cambios en el cache. Los datos ya están actualizados."
+
