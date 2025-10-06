@@ -1,4 +1,4 @@
-# ===== BOOTSTRAP SRC (compat sin cambiar tu estructura) =====
+﻿# ===== BOOTSTRAP SRC (compat sin cambiar tu estructura) =====
 from pathlib import Path
 import sys, importlib.util as _ilu
 BASE = Path(__file__).resolve().parent
@@ -457,28 +457,6 @@ if opcion == "Menú":
         </div>
         """, unsafe_allow_html=True)
 
-elif opcion == "Horas Postventas":
-    proyectos_mostrar = PROYECTOS_POSTVENTA
-    titulo = "Horas - Postventas"
-elif opcion == "Horas ATI":
-    proyectos_mostrar = PROYECTOS_ATI
-    titulo = "Horas - ATI"
-elif opcion == "Desarrollo Postventas":
-    titulo = "Desarrollo Postventas - Estados de Historias de Usuario en Sprints Activos"
-elif opcion == "Entregables Postventas":
-    titulo = "Entregables Postventas"
-elif opcion == "BUGS":
-    titulo = "BUGS"
-elif opcion == "Histórico Postventa":
-    titulo = "Histórico postventas"
-elif opcion == "Velocidad de devs":
-    titulo = "Velocidad de devs"
-elif opcion == "Desarrollo ATI":
-    titulo = "Desarrollo ATI - Estados de Historias de Usuario en Sprints Activos"
-elif opcion == "Entregables ATI":
-    titulo = "Entregables ATI"
-elif opcion == "Histórico ATI":
-    titulo = "Histórico ATI"
 
 # === PESTAÑA HORAS (Postventas / ATI) ===
 if opcion in ["Horas Postventas", "Horas ATI"]:
@@ -1505,8 +1483,353 @@ if opcion == "BUGS":
     import pandas as pd
     import streamlit as st
     from src.jira_conexion import jira
+    import json
+    import os
+    from datetime import datetime, timedelta
 
-    st.subheader("Bugs creados por Mes – Proyecto BUG")
+    st.header("🐛 Bugs - Análisis por Mes")
+    st.caption("📊 Métricas de bugs del proyecto BUG con clasificación por tipo y épicas")
+
+    # ==========================
+    # FUNCIONES AUXILIARES
+    # ==========================
+    
+    def _strip(s):
+        if not s:
+            return ""
+        return unicodedata.normalize('NFKD', str(s)).encode('ASCII', 'ignore').decode('ASCII').strip()
+    
+    def detectar_etiqueta_kinetic_mejora(labels):
+        if not labels:
+            return None
+        labels_str = " ".join(labels).upper()
+        if "KINETIC" in labels_str:
+            return "KINETIC"
+        elif "MEJORA" in labels_str:
+            return "MEJORA"
+        return None
+    
+    def es_epica_del_json(epic_key):
+        if not epic_key:
+            return False
+        return epic_key in [epic["rn"] for epic in epicas_relevantes]
+    
+    def es_bloqueante_por_prioridad(priority):
+        if not priority:
+            return False
+        priority_str = _strip(priority).upper()
+        return "MUY ALTA" in priority_str or "HIGHEST" in priority_str or "CRITICAL" in priority_str
+    
+    def _obtener_nombre_epica(epic_key):
+        if not epic_key:
+            return "Sin épica"
+        for epic in epicas_relevantes:
+            if epic["rn"] == epic_key:
+                return epic.get("nombre", epic_key)
+        return epic_key
+    
+    def _calcular_tiempos_estado(issue):
+        """Calcula tiempos de transiciones de estado para bugs bloqueantes"""
+        try:
+            changelog = issue.get("changelog", {})
+            histories = changelog.get("histories", [])
+            
+            if not histories:
+                return "N/A", "N/A"
+            
+            # Buscar transiciones de estado
+            to_do_to_qa = None
+            qa_to_approved = None
+            
+            for history in histories:
+                created = pd.to_datetime(history.get("created", ""), errors="coerce")
+                if pd.isna(created):
+                    continue
+                
+                for item in history.get("items", []):
+                    if item.get("field") == "status":
+                        from_status = item.get("fromString", "").strip()
+                        to_status = item.get("toString", "").strip()
+                        
+                        # Transición: To Do -> EN VALIDACIÓN QA
+                        if from_status == "To Do" and to_status == "EN VALIDACIÓN QA":
+                            to_do_to_qa = created
+                        
+                        # Transición: ASIGNADO A DESARROLLO -> APROBADO POR QA
+                        elif from_status == "ASIGNADO A DESARROLLO" and to_status == "APROBADO POR QA":
+                            qa_to_approved = created
+            
+            # Calcular días (excluyendo fines de semana)
+            def calcular_dias_laborables(fecha_inicio, fecha_fin):
+                if pd.isna(fecha_inicio) or pd.isna(fecha_fin):
+                    return 0
+                
+                dias = 0
+                fecha_actual = fecha_inicio.date()
+                fecha_final = fecha_fin.date()
+                
+                while fecha_actual <= fecha_final:
+                    # Excluir sábados (5) y domingos (6)
+                    if fecha_actual.weekday() < 5:
+                        dias += 1
+                    fecha_actual += timedelta(days=1)
+                
+                return dias
+            
+            dias_to_qa = calcular_dias_laborables(to_do_to_qa, to_do_to_qa) if to_do_to_qa else 0
+            dias_qa_approved = calcular_dias_laborables(qa_to_approved, qa_to_approved) if qa_to_approved else 0
+            
+            return f"{dias_to_qa}d", f"{dias_qa_approved}d"
+            
+        except Exception as e:
+            return "N/A", "N/A"
+
+    # ==========================
+    # CARGA DE DATOS
+    # ==========================
+    
+    # Cargar épicas relevantes
+    try:
+        with open("data/epicas_relevantes.json", "r", encoding="utf-8") as f:
+            epicas_relevantes = json.load(f)
+    except Exception as e:
+        st.error(f"❌ No se pudo cargar el archivo epicas_relevantes.json: {e}")
+        st.stop()
+    
+    # JQL y campos
+    jql = 'project = BUG AND created >= "2025-01-01"'
+    fields = "key,created,priority,issuetype,summary,status,labels,parent,customfield_10016"
+    
+    # Cargar issues con changelog para calcular tiempos
+    st.info("🔄 Cargando bugs desde Jira...")
+    issues = []
+    start_at = 0
+    max_results = 100
+    
+    while True:
+        try:
+            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            
+            # Enriquecer cada issue con changelog
+            for issue in batch:
+                try:
+                    issue_key = issue.get("key", "")
+                    changelog_endpoint = f'issue/{issue_key}?expand=changelog&fields={fields}'
+                    enriched_issue = jira._get_json(changelog_endpoint)
+                    issues.append(enriched_issue)
+                except Exception as e:
+                    # Si falla el changelog, usar la issue sin enriquecer
+                    issues.append(issue)
+            
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        except Exception as e:
+            st.error(f"❌ Error cargando datos: {e}")
+            break
+    
+    if not issues:
+        st.warning("⚠️ No se encontraron bugs")
+        st.stop()
+    
+    st.success(f"✅ Cargados {len(issues)} bugs")
+    
+    # ==========================
+    # PROCESAMIENTO DE DATOS
+    # ==========================
+    
+    rows = []
+    for issue in issues:
+        f = issue.get("fields", {}) or {}
+        
+        # Verificar que sea un bug
+        issue_type = (f.get("issuetype", {}) or {}).get("name", "").lower()
+        if issue_type != "error":
+            continue
+        
+        # Datos básicos
+        key = issue.get("key", "")
+        created = f.get("created", "")
+        priority = (f.get("priority", {}) or {}).get("name", "")
+        summary = f.get("summary", "")
+        status = (f.get("status", {}) or {}).get("name", "")
+        labels = f.get("labels", [])
+        
+        # Obtener épica
+        parent = f.get("parent", {}) or {}
+        epic_key = parent.get("key", "")
+        if not epic_key:
+            epic_key = f.get("customfield_10016", "")
+        
+        # Clasificaciones
+        tipo_etiqueta = detectar_etiqueta_kinetic_mejora(labels)
+        es_epica_json = es_epica_del_json(epic_key)
+        es_bloqueante = es_bloqueante_por_prioridad(priority)
+        
+        # Calcular tiempos para bugs bloqueantes
+        tiempo_to_qa, tiempo_qa_approved = _calcular_tiempos_estado(issue) if es_bloqueante else ("N/A", "N/A")
+        
+        # Fecha de creación para agrupación mensual
+        try:
+            fecha_creacion = pd.to_datetime(created)
+            año_mes = fecha_creacion.strftime("%Y-%m")
+            mes_nombre = fecha_creacion.strftime("%B %Y")
+        except:
+            continue
+        
+        rows.append({
+            "Clave": key,
+            "Fecha": created,
+            "AñoMes": año_mes,
+            "Mes": mes_nombre,
+            "Prioridad": priority,
+            "Summary": summary,
+            "Status": status,
+            "Labels": labels,
+            "Epic": epic_key,
+            "Tipo": "Bug",
+            "EsKinetic": tipo_etiqueta == "KINETIC",
+            "EsMejora": tipo_etiqueta == "MEJORA",
+            "EsEpicaDelJson": es_epica_json,
+            "EsBloqueante": es_bloqueante,
+            "EpicaNombre": _obtener_nombre_epica(epic_key),
+            "TiempoToQA": tiempo_to_qa,
+            "TiempoQAApproved": tiempo_qa_approved
+        })
+    
+    df = pd.DataFrame(rows)
+    
+    if df.empty:
+        st.warning("⚠️ No hay datos para mostrar")
+        st.stop()
+    
+    # ==========================
+    # CÁLCULO DE MÉTRICAS
+    # ==========================
+    
+    # Agrupar por mes
+    df_mensual = df.groupby("AñoMes").agg({
+        "Clave": "count",
+        "EsKinetic": "sum",
+        "EsMejora": "sum",
+        "EsBloqueante": "sum"
+    }).rename(columns={"Clave": "Q_Mensual"})
+    
+    # Calcular métricas derivadas
+    df_mensual["Q_KINETIC"] = df_mensual["EsKinetic"]
+    df_mensual["Q_MEJORA"] = df_mensual["EsMejora"]
+    df_mensual["Q_Bugs_EVOLTIS"] = df_mensual["Q_Mensual"] - df_mensual["Q_KINETIC"] - df_mensual["Q_MEJORA"]
+    df_mensual["Q_Bloqueantes"] = df_mensual["EsBloqueante"]
+    df_mensual["%_Bloqueantes"] = (df_mensual["Q_Bloqueantes"] / df_mensual["Q_Bugs_EVOLTIS"] * 100).round(1)
+    
+    # Agregar nombre del mes
+    df_mensual["Mes_Nombre"] = df_mensual.index.map(lambda x: pd.to_datetime(x + "-01").strftime("%B %Y"))
+    
+    # Ordenar por fecha
+    df_mensual = df_mensual.sort_index()
+    
+    # ==========================
+    # INTERFAZ DE USUARIO
+    # ==========================
+    
+    # Mostrar tabla mensual (transpuesta)
+    st.subheader("📊 Resumen Mensual")
+    
+    # Crear tabla transpuesta con meses como columnas
+    tabla_transpuesta = {
+        "Métrica": ["Q Mensual", "Q KINETIC", "Q MEJORA", "Q Bugs EVOLTIS", "Q Bloqueantes", "% Bloqueantes"]
+    }
+    
+    for idx, row in df_mensual.iterrows():
+        mes_nombre = row["Mes_Nombre"]
+        color_icon = "🟢" if row["%_Bloqueantes"] < 20 else "🔴"
+        
+        tabla_transpuesta[mes_nombre] = [
+            int(row["Q_Mensual"]),
+            int(row["Q_KINETIC"]),
+            int(row["Q_MEJORA"]),
+            int(row["Q_Bugs_EVOLTIS"]),
+            int(row["Q_Bloqueantes"]),
+            f"{color_icon} {row['%_Bloqueantes']}%"
+        ]
+    
+    df_tabla_transpuesta = pd.DataFrame(tabla_transpuesta)
+    st.dataframe(df_tabla_transpuesta, use_container_width=True, hide_index=True)
+    
+    # Detalle por mes
+    st.subheader("🔍 Detalle por Mes")
+    
+    for idx, row in df_mensual.iterrows():
+        mes_nombre = row["Mes_Nombre"]
+        df_mes = df[df["AñoMes"] == idx]
+        
+        # Crear expander para cada mes
+        expander_title = f"{mes_nombre} | Q Mensual: {int(row['Q_Mensual'])} | Q KINETIC: {int(row['Q_KINETIC'])} | Q MEJORA: {int(row['Q_MEJORA'])} | Q Bugs EVOLTIS: {int(row['Q_Bugs_EVOLTIS'])} | Q Bloqueantes: {int(row['Q_Bloqueantes'])} | % Bloqueantes: {'🟢' if row['%_Bloqueantes'] < 20 else '🔴'} {row['%_Bloqueantes']}%"
+        
+        with st.expander(expander_title, expanded=False):
+            # Mejoras
+            df_mejoras = df_mes[df_mes["EsMejora"] == True]
+            if not df_mejoras.empty:
+                st.subheader(f"🔧 Mejoras ({len(df_mejoras)})")
+                claves_mejoras = ", ".join(df_mejoras["Clave"].tolist())
+                st.write(f"**Claves:** {claves_mejoras}")
+            
+            # Crear dos columnas para las tablas
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Bugs Otras Funcionalidades (sin épica del JSON)
+                df_otras_func = df_mes[(df_mes["EsEpicaDelJson"] == False) & (df_mes["EsKinetic"] == False) & (df_mes["EsMejora"] == False)]
+                if not df_otras_func.empty:
+                    st.subheader(f"🔧 Bugs Otras Funcionalidades ({len(df_otras_func)})")
+                    
+                    # Agrupar por épica
+                    df_otras_agrupado = df_otras_func.groupby("EpicaNombre").agg({
+                        "Clave": "count",
+                        "Prioridad": lambda x: x.value_counts().to_dict()
+                    }).reset_index()
+                    df_otras_agrupado.columns = ["Épica", "Total", "Por Prioridad"]
+                    
+                    # Mostrar tabla
+                    st.dataframe(df_otras_agrupado, use_container_width=True, hide_index=True)
+                else:
+                    st.subheader("🔧 Bugs Otras Funcionalidades (0)")
+                    st.write("No hay bugs de otras funcionalidades")
+            
+            with col2:
+                # Bugs de Entregables (con épica del JSON)
+                df_entregables = df_mes[(df_mes["EsEpicaDelJson"] == True) & (df_mes["EsKinetic"] == False) & (df_mes["EsMejora"] == False)]
+                if not df_entregables.empty:
+                    st.subheader(f"📦 Bugs de Entregables ({len(df_entregables)})")
+                    
+                    # Agrupar por épica
+                    df_entregables_agrupado = df_entregables.groupby("EpicaNombre").agg({
+                        "Clave": "count",
+                        "Prioridad": lambda x: x.value_counts().to_dict()
+                    }).reset_index()
+                    df_entregables_agrupado.columns = ["Épica", "Total", "Por Prioridad"]
+                    
+                    # Mostrar tabla
+                    st.dataframe(df_entregables_agrupado, use_container_width=True, hide_index=True)
+                else:
+                    st.subheader("📦 Bugs de Entregables (0)")
+                    st.write("No hay bugs de entregables")
+            
+            # Bugs Bloqueantes (con tiempos)
+            df_bloqueantes = df_mes[(df_mes["EsBloqueante"] == True) & (df_mes["EsKinetic"] == False) & (df_mes["EsMejora"] == False)]
+            if not df_bloqueantes.empty:
+                st.subheader(f"🚨 Bugs Bloqueantes ({len(df_bloqueantes)})")
+                
+                # Crear tabla de bugs bloqueantes con tiempos
+                df_bloqueantes_tabla = df_bloqueantes[["Clave", "TiempoToQA", "TiempoQAApproved"]].copy()
+                df_bloqueantes_tabla.columns = ["Clave", "Días To Do → Validación QA", "Días Validación QA → Aprobado QA"]
+                
+                st.dataframe(df_bloqueantes_tabla, use_container_width=True, hide_index=True)
+            else:
+                st.subheader("🚨 Bugs Bloqueantes (0)")
+                st.write("No hay bugs bloqueantes")
 
     # ----------------------------
     # Helpers
@@ -2192,207 +2515,6 @@ if opcion == "BUGS":
     if not cache_cargado and progress_bar and status_text:
         progress_bar.empty()
         status_text.empty()
-
-    # ====== TABLA con expansión embebida por MES (ÉPICA × Prioridad) ======
-    st.markdown("### Tabla de Bugs creados por Mes")
-
-    # Optimización: Solo mostrar tabla si hay datos y no es muy grande
-    if not out.empty and len(out) <= 50:  # Límite de 50 filas para evitar lentitud
-        def _html_escape(s: str) -> str:
-            s = "" if s is None else str(s)
-            return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-    else:
-        if not out.empty:
-            out = out.head(50)
-    def _html_escape(s: str) -> str:
-        s = "" if s is None else str(s)
-        return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-
-    def _pivot_epica_mes_html(anio_mes: str) -> str:
-        df_mes_bugs = df_bugs[df_bugs["AñoMes"] == anio_mes].copy()
-        if df_mes_bugs.empty:
-            return "<em>Sin BUGS en este mes.</em>"
-
-        # Etiquetas de épica
-        epic_keys = sorted(set([e for e in df_mes_bugs["Epic"].dropna().unique() if str(e).strip()]))
-        epic_name_cache = {ek: (get_issue_summary(ek, summary_cache) or "") for ek in epic_keys}
-        def epic_label(ek):
-            ek = (ek or "").strip()
-            if not ek:
-                return "(sin épica)"
-            name = (epic_name_cache.get(ek, "") or "").strip()
-            return f"{_html_escape(name)} [{ek}]" if name else f"(épica sin nombre) [{ek}]"
-
-        df_mes_bugs["EpicLabel"] = df_mes_bugs["Epic"].fillna("").apply(epic_label)
-
-        grp = (
-            df_mes_bugs.groupby(["EpicLabel","Prioridad"], as_index=False)["Clave"]
-            .count()
-            .rename(columns={"Clave":"Cantidad"})
-        )
-        pivot_ep = grp.pivot_table(
-            index="EpicLabel", columns="Prioridad", values="Cantidad",
-            aggfunc="sum", fill_value=0
-        ).reset_index()
-
-        # Garantiza columnas
-        for p in PRIORIDADES_ORDEN:
-            if p not in pivot_ep.columns:
-                pivot_ep[p] = 0
-        pivot_ep["Total"] = pivot_ep[PRIORIDADES_ORDEN].sum(axis=1)
-        pivot_ep = pivot_ep.sort_values("Total", ascending=False)
-
-        # Render HTML de la tabla interna
-        head = "<tr><th>Épica</th>" + "".join(f"<th>{p}</th>" for p in PRIORIDADES_ORDEN) + "<th>Total</th></tr>"
-        rows_html = []
-        for _, r in pivot_ep.iterrows():
-            tds = [f"<td>{_html_escape(r['EpicLabel'])}</td>"] + \
-                  [f"<td>{int(r[p])}</td>" for p in PRIORIDADES_ORDEN] + \
-                  [f"<td>{int(r['Total'])}</td>"]
-            rows_html.append("<tr>" + "".join(tds) + "</tr>")
-        inner = "<table class='tbl-inner'><thead>{}</thead><tbody>{}</tbody></table>".format(head, "".join(rows_html))
-        return inner
-
-    # Estilos
-    css = """
-    <style>
-    .tbl-bugs { width:100%; border-collapse:collapse; }
-    .tbl-bugs th, .tbl-bugs td { padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.08); font-size:0.9rem; }
-    .tbl-bugs th { text-align:left; color:#cfd3d7; }
-    .tbl-bugs td { color:#e6e8eb; vertical-align:top; }
-# # #     .tbl-bugs .wrap { white-space:normal; word-break:break-word; }
-    .tbl-bugs details summary { cursor:pointer; list-style:none; }
-    .tbl-bugs details summary::marker { display:none; }
-    .tbl-bugs details summary .chev { display:inline-block; transition:transform .15s ease; margin-right:6px; }
-    .tbl-bugs details[open] summary .chev { transform:rotate(90deg); }
-    .tbl-inner { width:100%; border-collapse:collapse; margin-top:8px; }
-    .tbl-inner th, .tbl-inner td { padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.06); font-size:0.85rem; }
-    .tbl-inner th { color:#cfd3d7; }
-    </style>
-    """
-    st.markdown(css, unsafe_allow_html=True)
-
-    # Columnas visibles de la tabla (igual que antes)
-    cols_visibles = ["AñoMes","Mes"] + PRIORIDADES_ORDEN + ["Mejoras","Total","Claves (Mejoras + Muy alta)"]
-    if out.empty:
-        st.info("No hay datos para la tabla de meses.")
-    else:
-        out_sorted = out.sort_values("AñoMes").reset_index(drop=True)
-
-        head_html = (
-            "<tr>"
-            + "".join(f"<th>{c}</th>" for c in cols_visibles)
-            + "<th>🔎 Épicas</th>"
-            + "</tr>"
-        )
-        rows_html = []
-        for _, row in out_sorted.iterrows():
-            am = row["AñoMes"]
-            cells = []
-            for c in cols_visibles:
-                val = row[c]
-                if c in PRIORIDADES_ORDEN + ["Mejoras","Total"] and pd.notna(val):
-                    val = int(val)
-                cells.append(f"<td class='wrap'>{_html_escape(val)}</td>")
-            inner = _pivot_epica_mes_html(am)
-            detalle = (
-                "<details>"
-                "<summary><span class='chev'>▶</span>Ver por ÉPICA × Prioridad</summary>"
-                f"{inner}"
-                "</details>"
-            )
-            cells.append(f"<td>{detalle}</td>")
-            rows_html.append("<tr>" + "".join(cells) + "</tr>")
-
-        tabla_html = "<table class='tbl-bugs'><thead>{}</thead><tbody>{}</tbody></table>".format(head_html, "".join(rows_html))
-        st.markdown(tabla_html, unsafe_allow_html=True)
-
-    # ----------------------------
-    # DETALLE POR MES (mantiene lo anterior) + FIX de mejora por épica
-    # ----------------------------
-    if mes_detalle != "(sin detalle)" and not df_all.empty:
-        am_sel = inv.get(mes_detalle)
-        if am_sel:
-            st.markdown(f"### Detalle de {mes_detalle}")
-            df_mes = df_all[df_all["AñoMes"] == am_sel].copy()
-            df_mes_bugs = df_mes[df_mes["Tipo"] == "Bug"].copy()
-            df_mes_mej  = df_mes[df_mes["Tipo"] == "Mejora"].copy()
-
-            if not df_mes_bugs.empty:
-                res_b = (
-                    df_mes_bugs.groupby("Prioridad", as_index=False)["Clave"].count()
-                    .rename(columns={"Clave": "Cantidad"})
-                    .sort_values(["Prioridad"], key=lambda s: s.map({p:i for i,p in enumerate(PRIORIDADES_ORDEN)}))
-                )
-                st.markdown("**Bugs — Resumen por Prioridad**")
-                st.dataframe(res_b, use_container_width=True, hide_index=True)
-
-            if not df_mes_mej.empty:
-                st.markdown("**Mejoras — Total y Claves**")
-                total_mej = len(df_mes_mej)
-                claves_mej = ", ".join(sorted(df_mes_mej["Clave"].tolist()))
-                st.info(f"Total de Mejoras: **{total_mej}**\n\nClaves: {claves_mej}")
-
-            STOP_ES = {"para","cuando","como","con","sin","una","uno","unos","unas","las","los","que","de","del","la","el","es","se","ya","por","al","y","en","a","un","una","sobre","entre","hasta","desde","hacia","the","and","a","an","is","are","of","to","in","on","for","by","from"}
-            def tokens_summary(summary: str):
-                s = _strip(summary)
-                toks = re.split(r"[^a-z0-9áéíóúñ]+", s)
-                toks = [t for t in toks if t and len(t) >= 4 and t not in STOP_ES and not t.isdigit()]
-                return toks
-            def key_nombre_base(summary: str, max_tokens=3):
-                toks = tokens_summary(summary)
-                return " ".join(toks[:max_tokens]) if toks else "(otros)"
-
-            if not df_mes_bugs.empty:
-                df_nb = df_mes_bugs.copy()
-                df_nb["Nombre base"] = df_nb["Summary"].apply(key_nombre_base)
-                grupo_nb = (
-                    df_nb.groupby("Nombre base")
-                    .agg(
-                        Cantidad=("Clave","size"),
-                        Claves=("Clave", lambda s: ", ".join(sorted(s.tolist())))
-                    )
-                    .reset_index()
-                    .sort_values("Cantidad", ascending=False)
-                )
-                st.markdown("**Bugs — Agrupados por Nombre base (primeros 3 tokens)**")
-                st.dataframe(grupo_nb[["Nombre base","Cantidad","Claves"]], use_container_width=True, hide_index=True)
-
-            if not df_mes_bugs.empty:
-                df_ep = df_mes_bugs.copy()
-                df_ep["Épica"] = df_ep["Epic"].fillna("")
-                df_ep = df_ep[df_ep["Épica"] != ""]
-                if not df_ep.empty:
-                    grupo_ep = (
-                        df_ep.groupby("Épica")
-                        .agg(
-                            Cantidad=("Clave","size"),
-                            Claves=("Clave", lambda s: ", ".join(sorted(s.tolist())))
-                        ).reset_index().sort_values("Cantidad", ascending=False)
-                    )
-                    st.markdown("**Bugs — Agrupados por Épica (Epic Link)**")
-                    st.dataframe(grupo_ep[["Épica","Cantidad","Claves"]], use_container_width=True, hide_index=True)
-
-            # ---- FIX ROBUSTO: mejoras agrupadas por épica (sin mismatch de índices)
-            if not df_mes_mej.empty:
-                df_ep_m = df_mes_mej.copy()
-                df_ep_m["Épica"] = df_ep_m["Epic"].fillna("")
-                df_ep_m = df_ep_m[df_ep_m["Épica"] != ""]
-
-                grupo_ep_m = (
-                    df_ep_m.groupby("Épica")
-                    .agg(
-                        Cantidad=("Clave", "size"),
-                        Claves=("Clave", lambda s: ", ".join(sorted(s.tolist())))
-                    )
-                    .reset_index()
-                    .sort_values("Cantidad", ascending=False)
-                )
-                st.markdown("**Mejoras — Agrupadas por Épica (Epic Link)**")
-                st.dataframe(grupo_ep_m[["Épica","Cantidad","Claves"]], use_container_width=True, hide_index=True)
-
-
-
 
 
 
