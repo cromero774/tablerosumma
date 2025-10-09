@@ -61,3 +61,4 @@ def normalize(s):
 - Agrupación por épica
 - Estado visual con colores
 - Información de puntos y fechas
+

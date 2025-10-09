@@ -125,3 +125,4 @@ def _obtener_nombre_epica(epic_key):
 - **Mostrar nombres de épicas**, no claves
 - **Excluir fines de semana** en cálculo de días
 - **Mantener compatibilidad** con filtros existentes
+

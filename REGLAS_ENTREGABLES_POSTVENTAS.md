@@ -60,3 +60,4 @@ def _status_norm(s):
 - Verde: Épicas completadas (100%)
 - Amarillo: Épicas en progreso
 - Rojo: Épicas atrasadas
+

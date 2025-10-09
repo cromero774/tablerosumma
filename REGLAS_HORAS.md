@@ -52,3 +52,4 @@
 - Resumen por usuario
 - Detalle por fecha
 - Comparación entre proyectos
+
