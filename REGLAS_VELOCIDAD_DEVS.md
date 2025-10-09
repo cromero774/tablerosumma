@@ -129,3 +129,4 @@ def calcular_metricas_finales(df_filtrado):
 - **Archivo**: `data/cache_velocidad_data_{proyecto}_{fecha_inicio}_{fecha_fin}.pkl`
 - **Duración**: 24 horas
 - **Session state**: Cache temporal para cálculos pesados
+

@@ -1485,7 +1485,7 @@ if opcion == "BUGS":
     from src.jira_conexion import jira
     import json
     import os
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
 
     st.header("🐛 Bugs - Análisis por Mes")
     st.caption("📊 Métricas de bugs del proyecto BUG con clasificación por tipo y épicas")
@@ -1537,9 +1537,11 @@ if opcion == "BUGS":
             if not histories:
                 return "N/A", "N/A"
             
-            # Buscar transiciones de estado
-            to_do_to_qa = None
-            qa_to_approved = None
+            
+            # Buscar fechas clave
+            fecha_salida_to_do = None
+            fecha_entrada_validacion_qa = None
+            fecha_entrada_aprobado_qa = None
             
             for history in histories:
                 created = pd.to_datetime(history.get("created", ""), errors="coerce")
@@ -1551,15 +1553,19 @@ if opcion == "BUGS":
                         from_status = item.get("fromString", "").strip()
                         to_status = item.get("toString", "").strip()
                         
-                        # Transición: To Do -> EN VALIDACIÓN QA
-                        if from_status == "To Do" and to_status == "EN VALIDACIÓN QA":
-                            to_do_to_qa = created
+                        # Capturar salida de estado inicial (primera vez que sale de estado inicial)
+                        if from_status in ["To Do", "Por Hacer"] and fecha_salida_to_do is None:
+                            fecha_salida_to_do = created
                         
-                        # Transición: ASIGNADO A DESARROLLO -> APROBADO POR QA
-                        elif from_status == "ASIGNADO A DESARROLLO" and to_status == "APROBADO POR QA":
-                            qa_to_approved = created
+                        # Capturar entrada a "EN VALIDACIÓN QA" (primera vez)
+                        if to_status == "EN VALIDACIÓN QA" and fecha_entrada_validacion_qa is None:
+                            fecha_entrada_validacion_qa = created
+                        
+                        # Capturar entrada a "APROBADO POR QA" (primera vez)
+                        if to_status == "APROBADO POR QA" and fecha_entrada_aprobado_qa is None:
+                            fecha_entrada_aprobado_qa = created
             
-            # Calcular días (excluyendo fines de semana)
+            # Calcular días laborables (excluyendo sábados, domingos y feriados)
             def calcular_dias_laborables(fecha_inicio, fecha_fin):
                 if pd.isna(fecha_inicio) or pd.isna(fecha_fin):
                     return 0
@@ -1568,18 +1574,50 @@ if opcion == "BUGS":
                 fecha_actual = fecha_inicio.date()
                 fecha_final = fecha_fin.date()
                 
+                # Lista de feriados (Argentina 2025 - ajustar según necesidad)
+                feriados = [
+                    date(2025, 1, 1),   # Año Nuevo
+                    date(2025, 2, 24),  # Carnaval
+                    date(2025, 2, 25),  # Carnaval
+                    date(2025, 3, 24),  # Día de la Memoria
+                    date(2025, 4, 2),   # Día del Veterano
+                    date(2025, 4, 18),  # Viernes Santo
+                    date(2025, 5, 1),   # Día del Trabajador
+                    date(2025, 5, 25),  # Día de la Revolución de Mayo
+                    date(2025, 6, 16),  # Día de la Bandera
+                    date(2025, 6, 20),  # Paso a la Inmortalidad del Gral. Güemes
+                    date(2025, 7, 9),   # Día de la Independencia
+                    date(2025, 8, 17),  # Paso a la Inmortalidad del Gral. San Martín
+                    date(2025, 10, 12), # Día del Respeto a la Diversidad Cultural
+                    date(2025, 11, 24), # Día de la Soberanía Nacional
+                    date(2025, 12, 8),  # Inmaculada Concepción de María
+                    date(2025, 12, 25), # Navidad
+                ]
+                
                 while fecha_actual <= fecha_final:
-                    # Excluir sábados (5) y domingos (6)
-                    if fecha_actual.weekday() < 5:
+                    # Excluir sábados (5), domingos (6) y feriados
+                    if fecha_actual.weekday() < 5 and fecha_actual not in feriados:
                         dias += 1
                     fecha_actual += timedelta(days=1)
                 
                 return dias
             
-            dias_to_qa = calcular_dias_laborables(to_do_to_qa, to_do_to_qa) if to_do_to_qa else 0
-            dias_qa_approved = calcular_dias_laborables(qa_to_approved, qa_to_approved) if qa_to_approved else 0
+            # Calcular los dos períodos solicitados
+            # 1. De "To Do" a "EN VALIDACIÓN QA"
+            if fecha_salida_to_do and fecha_entrada_validacion_qa:
+                dias_to_qa = calcular_dias_laborables(fecha_salida_to_do, fecha_entrada_validacion_qa)
+                resultado_to_qa = f"{dias_to_qa}d" if dias_to_qa > 0 else "N/A"
+            else:
+                resultado_to_qa = "N/A"
             
-            return f"{dias_to_qa}d", f"{dias_qa_approved}d"
+            # 2. De "To Do" a "APROBADO POR QA"
+            if fecha_salida_to_do and fecha_entrada_aprobado_qa:
+                dias_to_approved = calcular_dias_laborables(fecha_salida_to_do, fecha_entrada_aprobado_qa)
+                resultado_to_approved = f"{dias_to_approved}d" if dias_to_approved > 0 else "N/A"
+            else:
+                resultado_to_approved = "N/A"
+            
+            return resultado_to_qa, resultado_to_approved
             
         except Exception as e:
             return "N/A", "N/A"
@@ -1739,12 +1777,57 @@ if opcion == "BUGS":
     
     # Crear tabla transpuesta con meses como columnas
     tabla_transpuesta = {
-        "Métrica": ["Q Mensual", "Q KINETIC", "Q MEJORA", "Q Bugs EVOLTIS", "Q Bloqueantes", "% Bloqueantes"]
+        "Métrica": ["Q Mensual", "Q KINETIC", "Q MEJORA", "Q Bugs EVOLTIS", "Q Bloqueantes", "% Cumplimiento", "SLA Validación QA", "SLA Aprobado por QA"]
     }
     
     for idx, row in df_mensual.iterrows():
         mes_nombre = row["Mes_Nombre"]
         color_icon = "🟢" if row["%_Bloqueantes"] < 20 else "🔴"
+        
+        # Calcular promedios de SLA para bugs bloqueantes del mes
+        df_mes_bloqueantes = df[(df["AñoMes"] == idx) & (df["EsBloqueante"] == True) & (df["EsKinetic"] == False) & (df["EsMejora"] == False)]
+        
+        sla_qa_promedio = "N/A"
+        sla_approved_promedio = "N/A"
+        
+        if not df_mes_bloqueantes.empty:
+            # Extraer días de los tiempos (remover "d" y convertir a número)
+            tiempos_qa = []
+            tiempos_approved = []
+            
+            for _, bug in df_mes_bloqueantes.iterrows():
+                tiempo_qa = bug["TiempoToQA"]
+                tiempo_approved = bug["TiempoQAApproved"]
+                
+                if tiempo_qa != "N/A" and tiempo_qa.endswith("d"):
+                    try:
+                        dias = int(tiempo_qa.replace("d", ""))
+                        tiempos_qa.append(dias)
+                    except:
+                        pass
+                
+                if tiempo_approved != "N/A" and tiempo_approved.endswith("d"):
+                    try:
+                        dias = int(tiempo_approved.replace("d", ""))
+                        tiempos_approved.append(dias)
+                    except:
+                        pass
+            
+            # Calcular promedios
+            if tiempos_qa:
+                sla_qa_promedio = f"{sum(tiempos_qa) / len(tiempos_qa):.1f} días"
+            if tiempos_approved:
+                sla_approved_promedio = f"{sum(tiempos_approved) / len(tiempos_approved):.1f} días"
+        
+        # Calcular % de cumplimiento: Bugs EVOLTIS cerrados / Bugs EVOLTIS total
+        df_mes_evoltis = df[df["AñoMes"] == idx]
+        df_mes_evoltis = df_mes_evoltis[(df_mes_evoltis["EsKinetic"] == False) & (df_mes_evoltis["EsMejora"] == False)]
+        df_mes_evoltis_cerrados = df_mes_evoltis[df_mes_evoltis["Status"].str.contains("cerrado|closed|done|resuelto", case=False, na=False)]
+        
+        if not df_mes_evoltis.empty:
+            cumplimiento = f"{(len(df_mes_evoltis_cerrados) / len(df_mes_evoltis) * 100):.1f}%"
+        else:
+            cumplimiento = "N/A"
         
         tabla_transpuesta[mes_nombre] = [
             int(row["Q_Mensual"]),
@@ -1752,7 +1835,9 @@ if opcion == "BUGS":
             int(row["Q_MEJORA"]),
             int(row["Q_Bugs_EVOLTIS"]),
             int(row["Q_Bloqueantes"]),
-            f"{color_icon} {row['%_Bloqueantes']}%"
+            cumplimiento,
+            sla_qa_promedio,
+            sla_approved_promedio
         ]
     
     df_tabla_transpuesta = pd.DataFrame(tabla_transpuesta)
@@ -1769,6 +1854,17 @@ if opcion == "BUGS":
         expander_title = f"{mes_nombre} | Q Mensual: {int(row['Q_Mensual'])} | Q KINETIC: {int(row['Q_KINETIC'])} | Q MEJORA: {int(row['Q_MEJORA'])} | Q Bugs EVOLTIS: {int(row['Q_Bugs_EVOLTIS'])} | Q Bloqueantes: {int(row['Q_Bloqueantes'])} | % Bloqueantes: {'🟢' if row['%_Bloqueantes'] < 20 else '🔴'} {row['%_Bloqueantes']}%"
         
         with st.expander(expander_title, expanded=False):
+            # Mostrar bugs no cerrados si el cumplimiento no es 100%
+            df_mes_evoltis = df_mes[(df_mes["EsKinetic"] == False) & (df_mes["EsMejora"] == False)]
+            df_mes_evoltis_cerrados = df_mes_evoltis[df_mes_evoltis["Status"].str.contains("cerrado|closed|done|resuelto", case=False, na=False)]
+            
+            if not df_mes_evoltis.empty:
+                cumplimiento_porcentaje = (len(df_mes_evoltis_cerrados) / len(df_mes_evoltis) * 100)
+                if cumplimiento_porcentaje < 100:
+                    df_bugs_no_cerrados = df_mes_evoltis[~df_mes_evoltis["Status"].str.contains("cerrado|closed|done|resuelto", case=False, na=False)]
+                    if not df_bugs_no_cerrados.empty:
+                        st.warning(f"⚠️ **Bugs no cerrados ({len(df_bugs_no_cerrados)}):** {', '.join(df_bugs_no_cerrados['Clave'].tolist())}")
+            
             # Mejoras
             df_mejoras = df_mes[df_mes["EsMejora"] == True]
             if not df_mejoras.empty:
@@ -1824,7 +1920,7 @@ if opcion == "BUGS":
                 
                 # Crear tabla de bugs bloqueantes con tiempos
                 df_bloqueantes_tabla = df_bloqueantes[["Clave", "TiempoToQA", "TiempoQAApproved"]].copy()
-                df_bloqueantes_tabla.columns = ["Clave", "Días To Do → Validación QA", "Días Validación QA → Aprobado QA"]
+                df_bloqueantes_tabla.columns = ["Clave", "Días To Do → Validación QA", "Días To Do → Aprobado por QA"]
                 
                 st.dataframe(df_bloqueantes_tabla, use_container_width=True, hide_index=True)
             else:
@@ -2147,12 +2243,6 @@ if opcion == "BUGS":
             st.warning(f"No se pudo guardar cache de enlaces: {e}")
 
     # Aviso de excluidos (texto)
-    if excluidos:
-        keys_preview = ", ".join(sorted(x["Clave"] for x in excluidos[:80]))
-        extra = f" (+{len(excluidos)-80} más)" if len(excluidos) > 80 else ""
-        st.warning(
-            f"Se excluyeron {len(excluidos)} issues por no tener vínculos válidos (Bug/HU) o proyecto ambiguo/fuera de ATI-Taller-Repuestos: {keys_preview}{extra}"
-        )
 
     if not rows and not excluidos:
         st.info("No hay datos para mostrar con las condiciones actuales.")
@@ -2258,265 +2348,6 @@ if opcion == "BUGS":
     def es_bloqueante_por_prioridad(name: str, summary: str = "") -> bool:
         n = (_strip(name) + " " + _strip(summary)).strip()
         return ("bloqueante" in n) or ("blocker" in n) or (re.search(r"\bp0\b", n) is not None)
-
-    # ----------------------------
-    # Universo para CARDS y KPIs (mes elegido o último)
-    # ----------------------------
-    if not cache_cargado:
-        status_text.text("📋 Preparando cards y KPIs...")
-        progress_bar.progress(60)
-    
-    if not df_all.empty:
-        if mes_detalle != "(sin detalle)":
-            df_cards = df_all[df_all["Mes"] == mes_detalle].copy()
-            titulo_cards = f"Cards por estado — {mes_detalle}"
-            ym_cards = inv.get(mes_detalle)
-        else:
-            ultimo_ym = df_all["AñoMes"].max()
-            df_cards = df_all[df_all["AñoMes"] == ultimo_ym].copy()
-            mes_txt = df_cards["Mes"].iloc[0] if not df_cards.empty else ""
-            titulo_cards = f"Cards por estado — {mes_txt or 'Último mes'}"
-            ym_cards = ultimo_ym
-    else:
-        df_cards = pd.DataFrame()
-        titulo_cards = "Cards por estado"
-        ym_cards = None
-
-    # ----------------------------
-    # KPIs arriba de todo
-    # ----------------------------
-    if not df_cards.empty:
-        df_cards = df_cards[df_cards["Tipo"] == "Bug"].copy()
-        df_cards["Bucket"] = df_cards["Status"].apply(bucket_estado)
-
-        PEND_STATES = {"POR HACER","EN VALIDACION QA","ASIGNADOS A BACKLOG","ASIGNADO A DESARROLLO"}
-        pendientes_q = int(df_cards[df_cards["Bucket"].isin(PEND_STATES)].shape[0])
-        revision_q   = int((df_cards["Bucket"] == "APROBADOS POR QA").sum())
-        cerrados_q   = int((df_cards["Bucket"] == "CERRADOS").sum())
-        total_kpi    = pendientes_q + revision_q + cerrados_q
-        cumplimiento = (cerrados_q / total_kpi * 100.0) if total_kpi > 0 else 0.0
-
-        k1,k2,k3,k4 = st.columns([1,1,1,1])
-        with k1: st.metric("Pendientes", pendientes_q)
-        with k2: st.metric("Pendiente revisión cliente (Aprobados QA)", revision_q)
-        with k3: st.metric("Cerrados", cerrados_q)
-        with k4: st.metric("% Cumplimiento", f"{cumplimiento:0.1f}%")
-
-    # ----------------------------
-    # CARDS DE ESTADO + ALERTAS + EXCLUIDOS
-    # ----------------------------
-    if df_cards.empty:
-        st.info("No hay BUGS para construir las cards en el período seleccionado.")
-    else:
-        # Épicas relevantes para resaltar (si existe la lista)
-        nombres_rel = set()
-        try:
-            for ep in epicas_relevantes:
-                if ep.get("nombre"): nombres_rel.add(_strip(ep["nombre"]))
-                if ep.get("rn"):     nombres_rel.add(_strip(ep["rn"]))
-        except Exception:
-            pass
-
-        epic_name_cache_cards = {}
-        for ek in sorted(set(x for x in df_cards["Epic"].dropna().unique() if str(x).strip())):
-            epic_name_cache_cards[ek] = _strip(get_issue_summary(ek, summary_cache))
-
-        def es_epica_relevante(row) -> bool:
-            ek = row.get("Epic", "") or ""
-            ename = epic_name_cache_cards.get(ek, "")
-            if not ek or not ename: return False
-            return any(rel in ename for rel in nombres_rel)
-
-        df_cards["EsEpicaRel"] = df_cards.apply(es_epica_relevante, axis=1)
-        df_cards["EsBloqueante"] = df_cards.apply(lambda r: es_bloqueante_por_prioridad(r["Prioridad"], r["Summary"]), axis=1)
-        df_cards["EsMuyAlta"] = (df_cards["Prioridad"] == "Muy alta")
-
-        st.markdown(f"### {titulo_cards}")
-        cols_cards = st.columns(3)
-        cols_cards2 = st.columns(3)
-
-        def _listar(keys, max_items=12):
-            keys = sorted([k for k in keys if k])
-            if len(keys) <= max_items: return ", ".join(keys)
-            return ", ".join(keys[:max_items]) + f" +{len(keys)-max_items} más"
-
-        CARD_ORDER = ["POR HACER","EN VALIDACION QA","ASIGNADOS A BACKLOG","APROBADOS POR QA","ASIGNADO A DESARROLLO","CERRADOS"]
-        BG = {
-            "POR HACER": "#343a40","EN VALIDACION QA": "#1a4666","ASIGNADOS A BACKLOG": "#30384a",
-            "APROBADOS POR QA": "#174e1a","ASIGNADO A DESARROLLO": "#4a2f6b","CERRADOS": "#2f3b2f",
-        }
-
-        # 6 cards de estado (optimizado para mejor rendimiento)
-        for idx, bucket in enumerate(CARD_ORDER):
-            dfb = df_cards[df_cards["Bucket"] == bucket]
-            total = int(len(dfb))
-            
-            # Optimización: Solo calcular strings si hay datos
-            bloq_str = ""
-            muy_str = ""
-            epi_str = ""
-            
-            if total > 0:
-                bloq_str = _listar(dfb[dfb["EsBloqueante"]]["Clave"].tolist())
-                muy_str = _listar(dfb[dfb["EsMuyAlta"]]["Clave"].tolist())
-                epi_str = _listar(dfb[dfb["EsEpicaRel"]]["Clave"].tolist())
-
-            bloq_html = f"<div style='color:#ff8b8b'><b>Bloqueantes:</b> {bloq_str}</div>" if bloq_str else ""
-            muy_html  = f"<div style='color:#ffb199'><b>Prioridad Muy alta:</b> {muy_str}</div>" if muy_str else ""
-            epi_html  = f"<div style='color:#ffd25e'><b>Épicas relevantes:</b> {epi_str}</div>" if epi_str else ""
-
-            card_html = (
-                f"<div style='border-radius:14px; background:{BG[bucket]}; padding:16px; margin-bottom:14px; box-shadow:0 2px 10px #0002;'>"
-                f"<div style='font-size:0.95rem; color:#cfd3d7; text-transform:uppercase; letter-spacing:.06em;'>{bucket}</div>"
-                f"<div style='font-size:2rem; font-weight:800; color:white; margin-top:2px;'>{total}</div>"
-                "<div style='margin-top:8px; font-size:0.9rem; line-height:1.35;'>"
-                f"{bloq_html}{muy_html}{epi_html}"
-                "</div>"
-                "</div>"
-            )
-
-            col = cols_cards[idx] if idx < 3 else cols_cards2[idx-3]
-            with col:
-                st.markdown(card_html, unsafe_allow_html=True)
-
-        # Card EXCLUIDOS (por el mes del universo de cards)
-        if excluidos and ym_cards:
-            excl_mes = [x["Clave"] for x in excluidos if x["AñoMes"] == ym_cards]
-            total_excl = len(excl_mes)
-            if total_excl > 0:
-                excl_str = _listar(excl_mes, max_items=18)
-                card_html = (
-                    "<div style='border-radius:14px; background:#2b2f36; padding:16px; margin-bottom:14px; box-shadow:0 2px 10px #0002;'>"
-                    "<div style='font-size:0.95rem; color:#cfd3d7; text-transform:uppercase; letter-spacing:.06em;'>EXCLUIDOS</div>"
-                    f"<div style='font-size:2rem; font-weight:800; color:white; margin-top:2px;'>{total_excl}</div>"
-                    f"<div style='margin-top:8px; font-size:0.9rem; line-height:1.35; color:#e0e3e7;'><b>Claves:</b> {excl_str}</div>"
-                    "</div>"
-                )
-                with cols_cards2[0]:
-                    st.markdown(card_html, unsafe_allow_html=True)
-
-    # ----------------------------
-    # Alerta de pendientes si se selecciona un mes anterior
-    # ----------------------------
-    if mes_detalle != "(sin detalle)" and not df_all.empty:
-        am_sel = inv.get(mes_detalle)
-        ultimo_ym = df_all["AñoMes"].max()
-        if am_sel and am_sel < ultimo_ym:
-            df_sel = df_all[(df_all["AñoMes"] == am_sel) & (df_all["Tipo"] == "Bug")].copy()
-            df_sel["Bucket"] = df_sel["Status"].apply(bucket_estado)
-            PENDIENTES = {"POR HACER","EN VALIDACION QA","ASIGNADOS A BACKLOG","ASIGNADO A DESARROLLO"}
-            df_pend = df_sel[df_sel["Bucket"].isin(PENDIENTES)]
-            if not df_pend.empty:
-                claves_all = ", ".join(sorted(df_pend["Clave"].tolist()))
-                st.warning(f"Bugs de {mes_detalle} que SIGUEN PENDIENTES: {claves_all}")
-                for estado, dfb in df_pend.sort_values("Bucket").groupby("Bucket"):
-                    claves_estado = ", ".join(sorted(dfb["Clave"].tolist()))
-                    st.markdown(f"- **{estado}**: {claves_estado}")
-
-    # ----------------------------
-    # Tabla principal por Mes (datos base)
-    # ----------------------------
-    df_bugs    = df_all[df_all["Tipo"] == "Bug"].copy()
-    df_mejoras = df_all[df_all["Tipo"] == "Mejora"].copy()
-
-    if df_bugs.empty:
-        tabla_pivot = pd.DataFrame(columns=["AñoMes"] + PRIORIDADES_ORDEN)
-    else:
-        tabla = (
-            df_bugs.groupby(["AñoMes", "Prioridad"], as_index=False)["Clave"].count()
-            .rename(columns={"Clave": "Cantidad"})
-        )
-        tabla_pivot = tabla.pivot_table(
-            index=["AñoMes"], columns="Prioridad", values="Cantidad",
-            aggfunc="sum", fill_value=0
-        ).reset_index()
-
-    for p in PRIORIDADES_ORDEN:
-        if p not in tabla_pivot.columns:
-            tabla_pivot[p] = 0
-
-    if df_mejoras.empty:
-        mejoras_por_mes = pd.DataFrame(columns=["AñoMes", "Mejoras"])
-        claves_mejoras = pd.DataFrame(columns=["AñoMes", "__claves_mejoras__"])
-    else:
-        mejoras_por_mes = (
-            df_mejoras.groupby(["AñoMes"], as_index=False)["Clave"].count()
-            .rename(columns={"Clave": "Mejoras"})
-        )
-        claves_mejoras = (
-            df_mejoras.groupby("AñoMes")["Clave"]
-            .apply(lambda s: ", ".join(sorted(s.tolist())))
-            .reset_index(name="__claves_mejoras__")
-        )
-
-    if df_bugs.empty:
-        claves_muy_alta = pd.DataFrame(columns=["AñoMes", "__claves_muyalta__"])
-    else:
-        df_muy_alta = df_bugs[df_bugs["Prioridad"] == "Muy alta"]
-        claves_muy_alta = (
-            df_muy_alta.groupby("AñoMes")["Clave"]
-            .apply(lambda s: ", ".join(sorted(s.tolist())))
-            .reset_index(name="__claves_muyalta__")
-        )
-
-    out = tabla_pivot.merge(mejoras_por_mes, on="AñoMes", how="outer")
-    out = out.merge(claves_mejoras, on="AñoMes", how="left")
-    out = out.merge(claves_muy_alta, on="AñoMes", how="left")
-    out = out.merge(mes_lookup, on="AñoMes", how="left")
-
-    out["Mejoras"] = out["Mejoras"].fillna(0).astype(int)
-    out["__claves_mejoras__"] = out["__claves_mejoras__"].fillna("")
-    out["__claves_muyalta__"] = out["__claves_muyalta__"].fillna("")
-    out["Total"] = out[PRIORIDADES_ORDEN].sum(axis=1) + out["Mejoras"]
-
-    def _combinar_claves(row):
-        parts = []
-        if row["__claves_mejoras__"]:
-            parts.append(f"Mejoras: {row['__claves_mejoras__']}")
-        if row["__claves_muyalta__"]:
-            parts.append(f"Muy alta: {row['__claves_muyalta__']}")
-        return " · ".join(parts)
-
-    out["Claves (Mejoras + Muy alta)"] = out.apply(_combinar_claves, axis=1)
-
-    # Guardar resultados procesados en cache (solo si no vino del cache)
-    if not cache_cargado and cache_file_procesado:
-        try:
-            if status_text:
-                status_text.text("💾 Guardando en cache para futuras cargas...")
-            if progress_bar:
-                progress_bar.progress(90)
-            
-            cache_data = {
-                'df_all': df_all,
-                'excluidos': excluidos,
-                'out': out,
-                'meses_disp': meses_disp,
-                'mes_lookup': mes_lookup,
-                'inv': inv,
-                'df_cards': df_cards,
-                'titulo_cards': titulo_cards,
-                'ym_cards': ym_cards,
-                'epic_name_cache_cards': epic_name_cache_cards
-            }
-            
-            with open(cache_file_procesado, 'wb') as f:
-                pickle.dump(cache_data, f)
-            if progress_bar:
-                progress_bar.progress(100)
-            if status_text:
-                status_text.text("✅ Procesamiento completado")
-        except Exception as e:
-            st.error(f"Error guardando cache: {e}")
-            import traceback
-            st.write(traceback.format_exc())
-    
-    # Limpiar indicadores de progreso
-    if not cache_cargado and progress_bar and status_text:
-        progress_bar.empty()
-        status_text.empty()
-
-
 
 
 #Historico postventas
@@ -2687,9 +2518,13 @@ if opcion == "Histórico Postventa":
     cache_file_tal = cache_path(cache_key_tal, 'pkl')
     cache_file_rep = cache_path(cache_key_rep, 'pkl')
     
+    # Inicializar variable de sesión para controlar carga completa
+    if 'historico_carga_completa' not in st.session_state:
+        st.session_state.historico_carga_completa = False
+    
     # Cargar desde cache o consultar Jira con límites para primera carga rápida
     try:
-        if os.path.exists(cache_file_tal):
+        if os.path.exists(cache_file_tal) and not st.session_state.historico_carga_completa:
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_tal))
             if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_tal, 'rb') as f:
@@ -2700,15 +2535,23 @@ if opcion == "Histórico Postventa":
                 with open(cache_file_tal, 'wb') as f:
                     pickle.dump(issues_tal, f)
         else:
-            # Primera carga: solo 50 issues más recientes
-            issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+            # Carga completa o primera carga
+            if st.session_state.historico_carga_completa:
+                # Carga completa: usar el límite máximo de Jira (5000)
+                issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=5000)
+            else:
+                # Primera carga limitada
+                issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
             with open(cache_file_tal, 'wb') as f:
                 pickle.dump(issues_tal, f)
     except Exception:
-        issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+        if st.session_state.historico_carga_completa:
+            issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=5000)
+        else:
+            issues_tal = traer_todos_las_issues(jira, 'project = TAL AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
     
     try:
-        if os.path.exists(cache_file_rep):
+        if os.path.exists(cache_file_rep) and not st.session_state.historico_carga_completa:
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_rep))
             if (datetime.now() - mtime) < timedelta(hours=24):
                 with open(cache_file_rep, 'rb') as f:
@@ -2719,12 +2562,20 @@ if opcion == "Histórico Postventa":
                 with open(cache_file_rep, 'wb') as f:
                     pickle.dump(issues_rep, f)
         else:
-            # Primera carga: solo 50 issues más recientes
-            issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+            # Carga completa o primera carga
+            if st.session_state.historico_carga_completa:
+                # Carga completa: usar el límite máximo de Jira (5000)
+                issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=5000)
+            else:
+                # Primera carga limitada
+                issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
             with open(cache_file_rep, 'wb') as f:
                 pickle.dump(issues_rep, f)
     except Exception:
-        issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
+        if st.session_state.historico_carga_completa:
+            issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=5000)
+        else:
+            issues_rep = traer_todos_las_issues(jira, 'project = REP AND issuetype = Historia ORDER BY updated DESC', fields_hist, max_results=50)
     
     issues = issues_tal + issues_rep
 
@@ -2933,58 +2784,58 @@ if opcion == "Histórico Postventa":
             mes_entrega = epica_rn.get("mes_entrega", "")
             epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
 
-        if epic_match:
-            data = epicas[epic_match]
-            historias = data["Historias"]
-            total = len(historias)
-            listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
-            porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
-            puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+            if epic_match:
+                data = epicas[epic_match]
+                historias = data["Historias"]
+                total = len(historias)
+                listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+                porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
+                puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
 
-            # Bugs asociados (REP/TAL) + promedio hs
-            hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
-            bugs_keys_rep_tal, bugs_hrs = [], []
-            for hu in hu_keys:
-                info = mapa_bugs_hu.get(hu)
-                if not info:
-                    continue
-                bugs_keys_rep_tal.extend(info.get("bugs", []))
-                bugs_hrs.extend(info.get("hrs", []))
-            uniq_bugs_rep_tal = sorted(set(bugs_keys_rep_tal))
-            bugs_cnt_rep_tal = len(uniq_bugs_rep_tal)
-            prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
+                # Bugs asociados (REP/TAL) + promedio hs
+                hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
+                bugs_keys_rep_tal, bugs_hrs = [], []
+                for hu in hu_keys:
+                    info = mapa_bugs_hu.get(hu)
+                    if not info:
+                        continue
+                    bugs_keys_rep_tal.extend(info.get("bugs", []))
+                    bugs_hrs.extend(info.get("hrs", []))
+                uniq_bugs_rep_tal = sorted(set(bugs_keys_rep_tal))
+                bugs_cnt_rep_tal = len(uniq_bugs_rep_tal)
+                prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
 
-            # UAT por RN (solo Epic Link)
-            candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
-            uat_keys = set()
-            for ek in candidate_epic_keys:
-                uat_keys |= epic_to_bugs_uat.get(ek, set())
-            uniq_bugs_uat = sorted(uat_keys)
-            bugs_cnt_uat = len(uniq_bugs_uat)
-            
-            # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
-            total_bugs = bugs_cnt_rep_tal + bugs_cnt_uat
-            dcr = round((bugs_cnt_rep_tal / total_bugs * 100), 1) if total_bugs > 0 else 0.0
+                # UAT por RN (solo Epic Link)
+                candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
+                uat_keys = set()
+                for ek in candidate_epic_keys:
+                    uat_keys |= epic_to_bugs_uat.get(ek, set())
+                uniq_bugs_uat = sorted(uat_keys)
+                bugs_cnt_uat = len(uniq_bugs_uat)
                 
-        else:
-            historias = []
-            porcentaje_num = 0
-            puntos_totales = 0
-            uniq_bugs_rep_tal, bugs_cnt_rep_tal, prom_hrs = [], 0, None
-            uniq_bugs_uat, bugs_cnt_uat = [], 0
-            dcr = 0.0  # Sin datos, DCR = 0
+                # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
+                total_bugs = bugs_cnt_rep_tal + bugs_cnt_uat
+                dcr = round((bugs_cnt_rep_tal / total_bugs * 100), 1) if total_bugs > 0 else 0.0
+                    
+            else:
+                historias = []
+                porcentaje_num = 0
+                puntos_totales = 0
+                uniq_bugs_rep_tal, bugs_cnt_rep_tal, prom_hrs = [], 0, None
+                uniq_bugs_uat, bugs_cnt_uat = [], 0
+                dcr = 0.0  # Sin datos, DCR = 0
 
-        tabla_historico.append({
-            "Épica": nombre_epica,
-            "Mes entrega": mes_entrega,
-            "%_num": porcentaje_num,
-            "Historias": historias,
-            "Puntos totales": puntos_totales,
-            "Bugs_asociados": bugs_cnt_rep_tal,
-            "Bugs_asociados_claves": ", ".join(uniq_bugs_rep_tal),
-            "Promedio_resolucion_bugs_hs": prom_hrs,
-            "Bugs_pruebas_UAT": bugs_cnt_uat,
-            "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
+            tabla_historico.append({
+                "Épica": nombre_epica,
+                "Mes entrega": mes_entrega,
+                "%_num": porcentaje_num,
+                "Historias": historias,
+                "Puntos totales": puntos_totales,
+                "Bugs_asociados": bugs_cnt_rep_tal,
+                "Bugs_asociados_claves": ", ".join(uniq_bugs_rep_tal),
+                "Promedio_resolucion_bugs_hs": prom_hrs,
+                "Bugs_pruebas_UAT": bugs_cnt_uat,
+                "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
                 "DCR_%": dcr,
             })
         
@@ -3004,7 +2855,10 @@ if opcion == "Histórico Postventa":
     if not tabla_historico:
         st.info("🔄 Cargando datos limitados para primera carga rápida...")
     else:
-        st.caption("ℹ️ **Primera carga optimizada**: Mostrando datos más recientes. Usa 'Actualizar' para datos completos.")
+        if st.session_state.historico_carga_completa:
+            st.caption("✅ **Carga completa**: Mostrando TODOS los datos disponibles.")
+        else:
+            st.caption("ℹ️ **Primera carga optimizada**: Mostrando datos más recientes. Usa 'Actualizar' para datos completos.")
     
     # Leyenda de colores DCR
     st.caption("🎨 **DCR**: 🟢 ≥90% (Excelente) | 🔴 <90% (Necesita mejora)")
@@ -3023,6 +2877,9 @@ if opcion == "Histórico Postventa":
     with colf3:
         # Botón para forzar actualización
         if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="historico_actualizar"):
+            # Activar carga completa
+            st.session_state.historico_carga_completa = True
+            
             # Limpiar todos los caches relacionados con histórico postventa (comparte cache con desarrollo)
             cache_keys_to_clear = [
                 "desarrollo_tal_issues",
@@ -3041,7 +2898,7 @@ if opcion == "Histórico Postventa":
                     except Exception:
                         pass
             
-            st.success("✅ Cache limpiado. Recargando datos...")
+            st.success("✅ Cache limpiado. Cargando TODOS los datos...")
             st.rerun()
 
     buscar_norm = normalize(buscar_rn)
