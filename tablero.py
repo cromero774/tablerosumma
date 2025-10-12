@@ -1485,6 +1485,7 @@ if opcion == "BUGS":
     from src.jira_conexion import jira
     import json
     import os
+    import time
     from datetime import datetime, timedelta, date
 
     st.header("🐛 Bugs - Análisis por Mes")
@@ -2027,42 +2028,102 @@ if opcion == "BUGS":
         except Exception:
             return ""
 
+    def calcular_dias_laborables(fecha_inicio, fecha_fin):
+        """Calcula días laborables entre dos fechas, excluyendo fines de semana y feriados argentinos 2025"""
+        if not fecha_inicio or not fecha_fin:
+            return 0
+        
+        # Feriados argentinos 2025
+        feriados_2025 = [
+            date(2025, 1, 1),   # Año Nuevo
+            date(2025, 2, 20),  # Carnaval
+            date(2025, 2, 21),  # Carnaval
+            date(2025, 3, 24),  # Día Nacional de la Memoria
+            date(2025, 4, 2),   # Viernes Santo
+            date(2025, 5, 1),   # Día del Trabajador
+            date(2025, 5, 25),  # Día de la Revolución de Mayo
+            date(2025, 6, 17),  # Paso a la Inmortalidad del Gral. Martín Miguel de Güemes
+            date(2025, 6, 20),  # Paso a la Inmortalidad del Gral. Manuel Belgrano
+            date(2025, 7, 9),   # Día de la Independencia
+            date(2025, 12, 8),  # Inmaculada Concepción de María
+            date(2025, 12, 25), # Navidad
+        ]
+        
+        dias_laborables = 0
+        fecha_actual = fecha_inicio
+        
+        while fecha_actual <= fecha_fin:
+            # Excluir sábados (5) y domingos (6)
+            if fecha_actual.weekday() < 5 and fecha_actual not in feriados_2025:
+                dias_laborables += 1
+            fecha_actual += timedelta(days=1)
+        
+        return dias_laborables
+
+    def _calcular_tiempos_estado(issue):
+        """Calcula tiempos de SLA desde To Do hasta EN VALIDACIÓN QA y APROBADO POR QA"""
+        try:
+            changelog = issue.get("changelog", {}).get("histories", [])
+            if not changelog:
+                return {"sla_validacion_qa": "N/A", "sla_aprobado_qa": "N/A"}
+            
+            # Buscar primera salida de "To Do" o "Por Hacer"
+            fecha_salida_todo = None
+            for history in changelog:
+                for item in history.get("items", []):
+                    if item.get("field") == "status":
+                        from_string = item.get("fromString", "").strip()
+                        to_string = item.get("toString", "").strip()
+                        
+                        # Buscar salida de To Do o Por Hacer
+                        if (from_string.lower() in ["to do", "por hacer"] and 
+                            to_string.lower() not in ["to do", "por hacer"]):
+                            fecha_salida_todo = datetime.strptime(history["created"], "%Y-%m-%dT%H:%M:%S.%f%z").date()
+                            break
+                if fecha_salida_todo:
+                    break
+            
+            if not fecha_salida_todo:
+                return {"sla_validacion_qa": "N/A", "sla_aprobado_qa": "N/A"}
+            
+            # Buscar entrada a "EN VALIDACIÓN QA"
+            fecha_validacion_qa = None
+            for history in changelog:
+                for item in history.get("items", []):
+                    if item.get("field") == "status":
+                        to_string = item.get("toString", "").strip()
+                        if to_string.lower() == "en validación qa":
+                            fecha_validacion_qa = datetime.strptime(history["created"], "%Y-%m-%dT%H:%M:%S.%f%z").date()
+                            break
+                if fecha_validacion_qa:
+                    break
+            
+            # Buscar entrada a "APROBADO POR QA"
+            fecha_aprobado_qa = None
+            for history in changelog:
+                for item in history.get("items", []):
+                    if item.get("field") == "status":
+                        to_string = item.get("toString", "").strip()
+                        if to_string.lower() == "aprobado por qa":
+                            fecha_aprobado_qa = datetime.strptime(history["created"], "%Y-%m-%dT%H:%M:%S.%f%z").date()
+                            break
+                if fecha_aprobado_qa:
+                    break
+            
+            # Calcular SLA
+            sla_validacion = calcular_dias_laborables(fecha_salida_todo, fecha_validacion_qa) if fecha_validacion_qa else "N/A"
+            sla_aprobado = calcular_dias_laborables(fecha_salida_todo, fecha_aprobado_qa) if fecha_aprobado_qa else "N/A"
+            
+            return {"sla_validacion_qa": sla_validacion, "sla_aprobado_qa": sla_aprobado}
+            
+        except Exception:
+            return {"sla_validacion_qa": "N/A", "sla_aprobado_qa": "N/A"}
+
     # ----------------------------
-    # UI: filtros
+    # CONFIGURACIÓN
     # ----------------------------
     MESES_ES = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
     PRIORIDADES_ORDEN = ["Muy alta", "Alta", "Media", "Baja", "Muy baja"]
-    PROYECTOS_VALIDOS = ["Taller", "Repuestos", "ATI"]
-
-    col1, col2, col3 = st.columns([1,1,1])
-    with col1:
-        proyecto_filtro = st.selectbox(
-            "Proyecto",
-            options=["Todos"] + PROYECTOS_VALIDOS,
-            index=0,
-            key="bugs_proyecto_filtro",
-        )
-    
-    with col3:
-        # Botón para forzar actualización
-        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira"):
-            # Limpiar todos los caches relacionados con bugs
-            cache_keys_to_clear = [
-                f"bugs_{proyecto_filtro}",
-                f"bugs_enlaces_{proyecto_filtro}",
-                f"bugs_completo_{proyecto_filtro}"
-            ]
-            
-            for cache_key in cache_keys_to_clear:
-                cache_file = cache_path(cache_key, 'pkl')
-                if os.path.exists(cache_file):
-                    try:
-                        os.remove(cache_file)
-                    except Exception:
-                        pass
-            
-            st.success("✅ Cache limpiado. Recargando datos...")
-            st.rerun()
 
     # ----------------------------
     # Consulta a Jira (incluye STATUS) y armado base
@@ -2073,13 +2134,13 @@ if opcion == "BUGS":
 
     try:
         # Uso de cache para acelerar cargas repetidas de la pestaña Bugs
-        issues = cargar_issues_jira_cache(jql, fields, f"bugs_{proyecto_filtro}")
+        issues = cargar_issues_jira_cache(jql, fields, "bugs_completo")
     except Exception as e:
         st.error(f"Error consultando Jira: {e}")
         issues = []
 
     # Cache de procesamiento de enlaces (la parte más costosa)
-    cache_enlaces_key = f"bugs_enlaces_{proyecto_filtro}"
+    cache_enlaces_key = "bugs_enlaces_completo"
     cache_enlaces_file = cache_path(cache_enlaces_key, 'pkl')
     
     try:
@@ -2105,7 +2166,7 @@ if opcion == "BUGS":
         type_cache, links_cache, summary_cache = {}, {}, {}
     rows = []
     excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
-
+    
     for it in issues:
         f = it.get("fields") or {}
         itype = ((f.get("issuetype") or {}).get("name") or "")
@@ -2211,7 +2272,7 @@ if opcion == "BUGS":
         anio_mes = f"{anio}-{mes:02d}"
         mes_txt  = f"{MESES_ES[mes]} {anio}"
 
-        if (tipo_final == "Excluir") or (proyecto not in PROYECTOS_VALIDOS):
+        if tipo_final == "Excluir":
             excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
         else:
             rows.append({
@@ -2249,74 +2310,12 @@ if opcion == "BUGS":
         st.stop()
 
     # ----------------------------
-    # DataFrame base + filtros (con cache de resultados procesados)
+    # DataFrame base simplificado
     # ----------------------------
-    # Cache más agresivo: evita todo el procesamiento pesado
-    cache_key_procesado = f"bugs_completo_{proyecto_filtro}"
-    cache_file_procesado = cache_path(cache_key_procesado, 'pkl')
-
-    # Intentar cargar desde cache primero
-    cache_cargado = False
-    try:
-        if os.path.exists(cache_file_procesado):
-            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_procesado))
-            if (datetime.now() - mtime) < timedelta(hours=12):  # Cache de 12h para Bugs
-                with open(cache_file_procesado, 'rb') as f:
-                    cache_data = pickle.load(f)
-                    # Cargar TODO desde cache
-                    df_all = cache_data['df_all']
-                    excluidos = cache_data['excluidos']
-                    out = cache_data['out']
-                    meses_disp = cache_data['meses_disp']
-                    mes_lookup = cache_data['mes_lookup']
-                    inv = cache_data['inv']
-                    df_cards = cache_data['df_cards']
-                    titulo_cards = cache_data['titulo_cards']
-                    ym_cards = cache_data['ym_cards']
-                    epic_name_cache_cards = cache_data['epic_name_cache_cards']
-                
-                # Cache cargado exitosamente
-                cache_cargado = True
-    except Exception:
-        pass
-
-    # Si no hay cache, mostrar mensaje de carga y procesar en background
-    if not cache_cargado:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-    else:
-        progress_bar = None
-        status_text = None
-
-    if not cache_cargado:
-        # Procesar con indicadores de progreso
-        status_text.text("📊 Procesando DataFrame base...")
-        progress_bar.progress(10)
-        
     df_all = pd.DataFrame(rows).drop_duplicates(subset=["Clave"]).sort_values("AñoMes") if rows else pd.DataFrame(columns=["AñoMes","Mes"])
     meses_disp = (df_all[["AñoMes","Mes"]].drop_duplicates().sort_values("AñoMes")
                   if not df_all.empty else pd.DataFrame([{"AñoMes":"0000-00","Mes":"(sin datos)"}]))
-    mes_lookup = meses_disp.copy()
-
-    if not cache_cargado:
-        status_text.text("🔍 Aplicando filtros de proyecto...")
-        progress_bar.progress(20)
-
-    if proyecto_filtro != "Todos" and not df_all.empty:
-        df_all = df_all[df_all["Proyecto"] == proyecto_filtro]
-
-    opciones_mes = ["(sin detalle)"] + meses_disp["Mes"].tolist()
-    mes_detalle = col2.selectbox(
-        "Mes (detalle opcional)",
-        options=opciones_mes,
-        index=0,
-        key="bugs_mes_detalle_main"
-    )
     inv = dict(zip(meses_disp["Mes"], meses_disp["AñoMes"]))
-
-    if not cache_cargado:
-        status_text.text("⚙️ Calculando buckets y estados...")
-        progress_bar.progress(40)
 
     # ----------------------------
     # Buckets de estado + utilidades
@@ -2349,6 +2348,382 @@ if opcion == "BUGS":
         n = (_strip(name) + " " + _strip(summary)).strip()
         return ("bloqueante" in n) or ("blocker" in n) or (re.search(r"\bp0\b", n) is not None)
 
+    # ----------------------------
+    # TABLA TRANSPUESTA MENSUAL
+    # ----------------------------
+    # Procesar datos para tabla transpuesta
+    tabla_transpuesta = {}
+    
+    for mes in meses_disp["Mes"]:
+        if mes == "(sin datos)":
+            continue
+            
+        bugs_mes = df_all[df_all["Mes"] == mes] if not df_all.empty else pd.DataFrame()
+        
+        # Métricas básicas
+        pendientes = len(bugs_mes[bugs_mes["Status"].str.contains("POR HACER|ASIGNADOS A BACKLOG|ASIGNADO A DESARROLLO|EN VALIDACION QA", case=False, na=False)])
+        cerrados = len(bugs_mes[bugs_mes["Status"].str.contains("CERRADOS|APROBADOS POR QA", case=False, na=False)])
+        total = len(bugs_mes)
+        cumplimiento = round((cerrados / total * 100), 1) if total > 0 else 0
+        
+        # Métricas por tipo
+        mejoras = len(bugs_mes[bugs_mes["Tipo"] == "MEJORA"])
+        bugs_otras = len(bugs_mes[bugs_mes["Tipo"] == "BUG_OTRAS"])
+        bugs_entregables = len(bugs_mes[bugs_mes["Tipo"] == "BUG_ENTREGABLE"])
+        bugs_bloqueantes = len(bugs_mes[bugs_mes["Tipo"] == "BLOQUEANTE"])
+        
+        # Calcular SLA promedio para el mes
+        sla_validacion_qa = "N/A"
+        sla_aprobado_qa = "N/A"
+        
+        if not bugs_mes.empty:
+            # Obtener issues con changelog para calcular SLA
+            issues_mes = []
+            for _, row in bugs_mes.iterrows():
+                issue_key = row["Clave"]
+                # Buscar issue en la lista original
+                for issue in issues:
+                    if issue.get("key") == issue_key:
+                        issues_mes.append(issue)
+                        break
+            
+            # Calcular SLA promedio
+            slas_validacion = []
+            slas_aprobado = []
+            
+            for issue in issues_mes:
+                sla_data = _calcular_tiempos_estado(issue)
+                if sla_data["sla_validacion_qa"] != "N/A":
+                    slas_validacion.append(sla_data["sla_validacion_qa"])
+                if sla_data["sla_aprobado_qa"] != "N/A":
+                    slas_aprobado.append(sla_data["sla_aprobado_qa"])
+            
+            if slas_validacion:
+                sla_validacion_qa = round(sum(slas_validacion) / len(slas_validacion), 1)
+            if slas_aprobado:
+                sla_aprobado_qa = round(sum(slas_aprobado) / len(slas_aprobado), 1)
+        
+        tabla_transpuesta[mes] = {
+            "Pendientes": pendientes,
+            "Cerrados": cerrados,
+            "% Cumplimiento": cumplimiento,
+            "Mejoras": mejoras,
+            "Bugs Otras Funcionalidades": bugs_otras,
+            "Bugs de Entregables": bugs_entregables,
+            "Bugs Bloqueantes": bugs_bloqueantes,
+            "SLA Validación QA": sla_validacion_qa,
+            "SLA Aprobado por QA": sla_aprobado_qa
+        }
+
+    # Tabla transpuesta eliminada - usando la tabla original del código
+
+    # ----------------------------
+    # DESPLEGABLES POR MES
+    # ----------------------------
+    for mes in meses_disp["Mes"]:
+        if mes == "(sin datos)":
+            continue
+            
+        bugs_mes = df_all[df_all["Mes"] == mes] if not df_all.empty else pd.DataFrame()
+        
+        if not bugs_mes.empty:
+            with st.expander(f"📅 {mes} - {len(bugs_mes)} bugs"):
+                # Mejoras
+                mejoras_mes = bugs_mes[bugs_mes["Tipo"] == "MEJORA"]
+                if not mejoras_mes.empty:
+                    st.write("**✅ Mejoras:**")
+                    for _, row in mejoras_mes.iterrows():
+                        st.write(f"• {row['Clave']}: {row['Summary']}")
+                
+                # Bugs Otras Funcionalidades
+                bugs_otras_mes = bugs_mes[bugs_mes["Tipo"] == "BUG_OTRAS"]
+                if not bugs_otras_mes.empty:
+                    st.write("**🐛 Bugs Otras Funcionalidades:**")
+                    for _, row in bugs_otras_mes.iterrows():
+                        st.write(f"• {row['Clave']}: {row['Summary']}")
+                
+                # Bugs de Entregables
+                bugs_entregables_mes = bugs_mes[bugs_mes["Tipo"] == "BUG_ENTREGABLE"]
+                if not bugs_entregables_mes.empty:
+                    st.write("**📦 Bugs de Entregables:**")
+                    for _, row in bugs_entregables_mes.iterrows():
+                        st.write(f"• {row['Clave']}: {row['Summary']}")
+                
+                # Bugs Bloqueantes
+                bugs_bloqueantes_mes = bugs_mes[bugs_mes["Tipo"] == "BLOQUEANTE"]
+                if not bugs_bloqueantes_mes.empty:
+                    st.write("**🚨 Bugs Bloqueantes:**")
+                    for _, row in bugs_bloqueantes_mes.iterrows():
+                        st.write(f"• {row['Clave']}: {row['Summary']}")
+
+
+    # ----------------------------
+    # BUGS INTERNOS POR MES
+    # ----------------------------
+    st.subheader("🐛 Bugs Internos por Mes")
+    st.caption("Cantidad de bugs internos por proyecto y mes (excluyendo bugs externos vinculados a BUG-XXX)")
+
+    def tiene_vinculo_bug(issue):
+        """Detecta si bug está vinculado a proyecto BUG-XXX (externo)"""
+        try:
+            issuelinks = issue.get("fields", {}).get("issuelinks", [])
+            for link in issuelinks:
+                # Verificar outward links
+                outward_issue = link.get("outwardIssue")
+                if outward_issue:
+                    key = outward_issue.get("key", "")
+                    if key.startswith("BUG-"):
+                        return True
+                
+                # Verificar inward links
+                inward_issue = link.get("inwardIssue")
+                if inward_issue:
+                    key = inward_issue.get("key", "")
+                    if key.startswith("BUG-"):
+                        return True
+            return False
+        except Exception:
+            return False
+
+    def traer_todas_las_issues_global(jira, jql, fields, max_results=5000):
+        """Función global para cargar issues con paginación por mes para evitar límites de API"""
+        issues = []
+        # Cargar por mes para evitar límites de API
+        meses_fechas = [
+            ("2025-01", "2025-01-01", "2025-02-01"),
+            ("2025-02", "2025-02-01", "2025-03-01"),
+            ("2025-03", "2025-03-01", "2025-04-01"),
+            ("2025-04", "2025-04-01", "2025-05-01"),
+            ("2025-05", "2025-05-01", "2025-06-01"),
+            ("2025-06", "2025-06-01", "2025-07-01"),
+            ("2025-07", "2025-07-01", "2025-08-01"),
+            ("2025-08", "2025-08-01", "2025-09-01"),
+            ("2025-09", "2025-09-01", "2025-10-01"),
+            ("2025-10", "2025-10-01", "2025-11-01"),
+            ("2025-11", "2025-11-01", "2025-12-01"),
+            ("2025-12", "2025-12-01", "2026-01-01")
+        ]
+        
+        for mes, inicio, fin in meses_fechas:
+            # Modificar JQL para filtrar por mes específico
+            if 'created >= "2025-01-01"' in jql:
+                jql_mes = jql.replace('created >= "2025-01-01"', f'created >= "{inicio}" AND created < "{fin}"')
+            else:
+                # Si no tiene el filtro de fecha, agregarlo
+                jql_mes = f'{jql} AND created >= "{inicio}" AND created < "{fin}"'
+            start_at = 0
+            while True:
+                endpoint = f'search?jql={jql_mes}&fields={fields}&startAt={start_at}&maxResults=100&expand=issuelinks'
+                data = jira._get_json(endpoint)
+                batch = data.get("issues", [])
+                issues.extend(batch)
+                if len(batch) < 100:  # Si devuelve menos de 100, es el último lote del mes
+                    break
+                start_at += 100
+                if len(issues) >= max_results:
+                    break
+            if len(issues) >= max_results:
+                break
+        return issues[:max_results]
+
+    try:
+        # Cargar bugs de TAL, REP, ATI
+        jql_tal = 'project = TAL AND issuetype in (Error, Bug) AND created >= "2025-01-01" ORDER BY created ASC'
+        jql_rep = 'project = REP AND issuetype in (Error, Bug) AND created >= "2025-01-01" ORDER BY created ASC'
+        jql_ati = 'project = ATI AND issuetype in (Error, Bug) AND created >= "2025-01-01" ORDER BY created ASC'
+        
+        fields_bugs = "key,created,issuelinks,summary,status"
+        
+        bugs_tal = traer_todas_las_issues_global(jira, jql_tal, fields_bugs, max_results=5000)
+        bugs_rep = traer_todas_las_issues_global(jira, jql_rep, fields_bugs, max_results=5000)
+        bugs_ati = traer_todas_las_issues_global(jira, jql_ati, fields_bugs, max_results=5000)
+        
+        # Filtrar bugs externos (vinculados a BUG-XXX)
+        bugs_tal_internos = [b for b in bugs_tal if not tiene_vinculo_bug(b)]
+        bugs_rep_internos = [b for b in bugs_rep if not tiene_vinculo_bug(b)]
+        bugs_ati_internos = [b for b in bugs_ati if not tiene_vinculo_bug(b)]
+        
+        # Procesar datos para tabla
+        datos_internos = []
+        
+        for bug in bugs_tal_internos:
+            created = bug.get("fields", {}).get("created", "")
+            if created:
+                fecha = datetime.strptime(created[:10], "%Y-%m-%d")
+                mes_nombre = MESES_ES[fecha.month]
+                datos_internos.append({"Proyecto": "TAL", "Mes": mes_nombre, "Cantidad": 1})
+        
+        for bug in bugs_rep_internos:
+            created = bug.get("fields", {}).get("created", "")
+            if created:
+                fecha = datetime.strptime(created[:10], "%Y-%m-%d")
+                mes_nombre = MESES_ES[fecha.month]
+                datos_internos.append({"Proyecto": "REP", "Mes": mes_nombre, "Cantidad": 1})
+        
+        for bug in bugs_ati_internos:
+            created = bug.get("fields", {}).get("created", "")
+            if created:
+                fecha = datetime.strptime(created[:10], "%Y-%m-%d")
+                mes_nombre = MESES_ES[fecha.month]
+                datos_internos.append({"Proyecto": "ATI", "Mes": mes_nombre, "Cantidad": 1})
+        
+        if datos_internos:
+            df_internos = pd.DataFrame(datos_internos)
+            
+            # Crear pivot table
+            df_pivot = df_internos.groupby(["Proyecto", "Mes"]).size().reset_index(name="Cantidad")
+            df_pivot = df_pivot.pivot(index="Proyecto", columns="Mes", values="Cantidad").fillna(0)
+            
+            # Asegurar que todos los meses estén presentes
+            meses_orden = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+                          "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+            for mes in meses_orden:
+                if mes not in df_pivot.columns:
+                    df_pivot[mes] = 0
+            
+            # Reordenar columnas
+            df_pivot = df_pivot[meses_orden]
+            
+            # Agregar columna de total
+            df_pivot['Total'] = df_pivot.sum(axis=1)
+            
+            # Mostrar tabla
+            st.dataframe(df_pivot, use_container_width=True)
+            
+            # Métricas totales
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("TAL Total", len(bugs_tal_internos))
+            with col2:
+                st.metric("REP Total", len(bugs_rep_internos))
+            with col3:
+                st.metric("ATI Total", len(bugs_ati_internos))
+            with col4:
+                st.metric("Total General", len(bugs_tal_internos) + len(bugs_rep_internos) + len(bugs_ati_internos))
+        else:
+            st.info("No se encontraron bugs internos para mostrar.")
+            
+    except Exception as e:
+        st.error(f"Error cargando bugs internos: {e}")
+
+    # ----------------------------
+    # BUGS INTERNOS POR USUARIO
+    # ----------------------------
+    st.subheader("👥 Bugs Internos por Usuario")
+    st.caption("Cantidad de bugs internos por usuario y mes (bugs vinculados a historias, asignado por historia)")
+
+    try:
+        # Cargar mapeo de usuarios
+        with open('data/accountid_to_name.json', 'r', encoding='utf-8') as f:
+            accountid_to_name = json.load(f)
+
+        # Cargar historias de TAL, REP, ATI
+        jql_historias_tal = 'project = TAL AND issuetype in ("Historia", "Story", "User Story") AND created >= "2025-01-01"'
+        jql_historias_rep = 'project = REP AND issuetype in ("Historia", "Story", "User Story") AND created >= "2025-01-01"'
+        jql_historias_ati = 'project = ATI AND issuetype in ("Historia", "Story", "User Story") AND created >= "2025-01-01"'
+        
+        fields_historias = "key,assignee,summary,status"
+        
+        historias_tal = traer_todas_las_issues_global(jira, jql_historias_tal, fields_historias, max_results=5000)
+        historias_rep = traer_todas_las_issues_global(jira, jql_historias_rep, fields_historias, max_results=5000)
+        historias_ati = traer_todas_las_issues_global(jira, jql_historias_ati, fields_historias, max_results=5000)
+        
+        # Crear diccionario de historias por clave
+        historias_por_clave = {}
+        for historia in historias_tal + historias_rep + historias_ati:
+            clave = historia.get("key", "")
+            assignee = historia.get("fields", {}).get("assignee")
+            account_id = assignee.get("accountId", "") if assignee else ""
+            nombre = accountid_to_name.get(account_id, "Sin asignar") if account_id else "Sin asignar"
+            historias_por_clave[clave] = nombre
+        
+        # Cargar todos los bugs internos (ya cargados arriba)
+        todos_los_bugs = bugs_tal_internos + bugs_rep_internos + bugs_ati_internos
+        
+        # Procesar bugs vinculados a historias
+        datos_usuarios = []
+        
+        for bug in todos_los_bugs:
+            created = bug.get("fields", {}).get("created", "")
+            if not created:
+                continue
+                
+            fecha = datetime.strptime(created[:10], "%Y-%m-%d")
+            mes_nombre = MESES_ES[fecha.month]
+            
+            # Buscar historia vinculada
+            issuelinks = bug.get("fields", {}).get("issuelinks", [])
+            usuario_asignado = "Sin historia vinculada"
+            
+            for link in issuelinks:
+                # Verificar outward links
+                outward_issue = link.get("outwardIssue")
+                if outward_issue:
+                    clave_historia = outward_issue.get("key", "")
+                    if clave_historia in historias_por_clave:
+                        usuario_asignado = historias_por_clave[clave_historia]
+                        break
+                
+                # Verificar inward links
+                inward_issue = link.get("inwardIssue")
+                if inward_issue:
+                    clave_historia = inward_issue.get("key", "")
+                    if clave_historia in historias_por_clave:
+                        usuario_asignado = historias_por_clave[clave_historia]
+                        break
+            
+            # Si no hay historia vinculada, usar asignado del bug como fallback
+            if usuario_asignado == "Sin historia vinculada":
+                assignee_bug = bug.get("fields", {}).get("assignee")
+                if assignee_bug:
+                    account_id = assignee_bug.get("accountId", "")
+                    usuario_asignado = accountid_to_name.get(account_id, "") if account_id else ""
+            
+            # Solo agregar si hay usuario asignado (no incluir "Sin asignar")
+            if usuario_asignado and usuario_asignado != "Sin historia vinculada":
+                datos_usuarios.append({
+                    "Usuario": usuario_asignado,
+                    "Mes": mes_nombre,
+                    "Cantidad": 1
+                })
+        
+        if datos_usuarios:
+            df_usuarios = pd.DataFrame(datos_usuarios)
+            
+            # Crear pivot table
+            df_pivot_usuarios = df_usuarios.groupby(["Usuario", "Mes"]).size().reset_index(name="Cantidad")
+            df_pivot_usuarios = df_pivot_usuarios.pivot(index="Usuario", columns="Mes", values="Cantidad").fillna(0)
+            
+            # Asegurar que todos los meses estén presentes
+            meses_orden = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+                          "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+            for mes in meses_orden:
+                if mes not in df_pivot_usuarios.columns:
+                    df_pivot_usuarios[mes] = 0
+            
+            # Reordenar columnas
+            df_pivot_usuarios = df_pivot_usuarios[meses_orden]
+            
+            # Agregar columna de total
+            df_pivot_usuarios['Total'] = df_pivot_usuarios.sum(axis=1)
+            
+            # Mostrar tabla
+            st.dataframe(df_pivot_usuarios, use_container_width=True)
+            
+            # Estadísticas
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Bugs Asignados", len(datos_usuarios))
+            with col2:
+                st.metric("Usuarios Diferentes", len(df_pivot_usuarios.index))
+            with col3:
+                total_general = df_pivot_usuarios['Total'].sum()
+                st.metric("Total General", int(total_general))
+        else:
+            st.info("No se encontraron bugs internos para mostrar.")
+            
+    except Exception as e:
+        st.error(f"Error cargando bugs por usuario: {e}")
 
 #Historico postventas
 # === PESTAÑA HISTÓRICO POSTVENTA (CON FILTRO RN + UAT POR EPIC LINK + FIX PROMEDIO HS) ===
