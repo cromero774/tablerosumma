@@ -145,12 +145,7 @@
         "mes_entrega": "Octubre"
     },
     {
-        "rn": "ATI-2537",
-        "nombre": "[ASIENTOS PLANOS]",
-        "mes_entrega": "Agosto"
-    },
-    {
-        "rn": "ATI-2537",
+        "rn": "ATI-489",
         "nombre": "[CONTACTOS]",
         "mes_entrega": "Agosto"
     },
@@ -173,5 +168,20 @@
         "rn": "ATI-236",
         "nombre": "[PRODUCTOS]",
         "mes_entrega": "Mayo"
+    },
+    {
+        "rn": "REP-5815",
+        "nombre": "ENTREGA AL CLIENTE",
+        "mes_entrega": "Octubre"
+    },
+    {
+        "rn": "TAL-4077",
+        "nombre": "AUDITORIA",
+        "mes_entrega": "Noviembre"
+    },
+    {
+        "rn": "REP-5650",
+        "nombre": "FUNCIONALIDADES PENDIENTES 1",
+        "mes_entrega": "Noviembre"
     }
 ]

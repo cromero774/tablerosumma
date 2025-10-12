@@ -163,25 +163,26 @@ rns_relevantes = [epica["rn"] for epica in epicas_relevantes]
 with open(_data_path("accountid_to_name.json"), "r", encoding="utf-8") as f:
     accountid_to_name = json.load(f)
 
+# FORZAR RECARGA COMPLETA - ELIMINAR CACHE
+cache_file = cache_path('horas_unificadas', 'pkl')
+if os.path.exists(cache_file):
+    os.remove(cache_file)
+
+# Lógica original de carga y procesamiento de df
+hist_path = str(_data_path("horas_historicas.csv"))
+actual_path = str(_data_path("horas_con_proyecto.csv"))
+if os.path.exists(hist_path):
+    df_hist = pd.read_csv(hist_path)
+    df_actual = pd.read_csv(actual_path)
+    min_fecha_actual = pd.to_datetime(df_actual["Fecha"], errors="coerce").min()
+    df_hist["Fecha_dt"] = pd.to_datetime(df_hist["Fecha"], errors="coerce")
+    df_hist = df_hist[df_hist["Fecha_dt"] < min_fecha_actual]
+    df_hist = df_hist.drop(columns="Fecha_dt")
+    df = pd.concat([df_hist, df_actual], ignore_index=True)
+else:
+    df = pd.read_csv(actual_path)
+
 try:
-    if cache_actualizado('horas_unificadas'):
-        df = cargar_df_cache('horas_unificadas')
-    else:
-        # Lógica original de carga y procesamiento de df
-        hist_path = str(_data_path("horas_historicas.csv"))
-        actual_path = str(_data_path("horas_con_proyecto.csv"))
-        if os.path.exists(hist_path):
-            df_hist = pd.read_csv(hist_path)
-            df_actual = pd.read_csv(actual_path)
-            min_fecha_actual = pd.to_datetime(df_actual["Fecha"], errors="coerce").min()
-            df_hist["Fecha_dt"] = pd.to_datetime(df_hist["Fecha"], errors="coerce")
-            df_hist = df_hist[df_hist["Fecha_dt"] < min_fecha_actual]
-            df_hist = df_hist.drop(columns="Fecha_dt")
-            df = pd.concat([df_hist, df_actual], ignore_index=True)
-        else:
-            df = pd.read_csv(actual_path)
-        
-        guardar_df_cache(df, 'horas_unificadas')
     
     # Aplicar mapeo de account IDs a nombres SIEMPRE (incluso si viene del cache)
     df["Usuario"] = df["Usuario"].map(accountid_to_name).fillna(df["Usuario"])
@@ -3434,13 +3435,17 @@ if opcion == "Velocidad de devs":
     
     st.info("💡 **Cómo usar**: Selecciona las fechas del período que quieres evaluar")
     
-    # Inicializar session_state para filtros (julio, agosto, septiembre 2025)
+    # Inicializar session_state para filtros (últimos 3 meses incluyendo el mes actual)
     if "vel_fecha_inicio" not in st.session_state:
-        # Primer día de julio 2025
-        st.session_state["vel_fecha_inicio"] = pd.Timestamp("2025-07-01").date()
+        # Calcular dinámicamente: hace 2 meses desde el mes actual (para tener 3 meses en total)
+        hoy = datetime.now()
+        hace_dos_meses = hoy - pd.DateOffset(months=2)
+        st.session_state["vel_fecha_inicio"] = hace_dos_meses.replace(day=1).date()
     if "vel_fecha_fin" not in st.session_state:
-        # Último día de septiembre 2025
-        st.session_state["vel_fecha_fin"] = pd.Timestamp("2025-09-30").date()
+        # Último día del mes actual
+        hoy = datetime.now()
+        ultimo_dia_mes_actual = (hoy.replace(day=1) + pd.offsets.MonthEnd(0)).date()
+        st.session_state["vel_fecha_fin"] = ultimo_dia_mes_actual
     if "vel_proyecto_sel" not in st.session_state:
         st.session_state["vel_proyecto_sel"] = "Todos"
     
@@ -3569,8 +3574,6 @@ if opcion == "Velocidad de devs":
             print(f"🔍 VELOCIDAD DEBUG: Proyecto: {_proyecto_sel}")
         
         # Cargar historias con changelog
-        status_placeholder = st.empty()
-        status_placeholder.info("📊 Cargando historias desde Jira...")
         
         historias = []
         start_at = 0
@@ -3603,7 +3606,6 @@ if opcion == "Velocidad de devs":
             st.info("💡 **Sugerencia**: Verifica que el proyecto seleccionado tenga historias con puntos asignados.")
 
         # Cargar bugs
-        status_placeholder.info(f"🐛 Cargando bugs desde Jira... ({len(historias)} historias cargadas)")
         
         bugs = []
         start_at = 0
@@ -3647,7 +3649,6 @@ if opcion == "Velocidad de devs":
                 if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
                     print(f"⚠️ Error guardando cache: {e}")
             
-            status_placeholder.success(f"✅ Datos cargados y guardados en cache: {len(historias)} historias y {len(bugs)} bugs")
         else:
             if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
                 print(f"🔍 VELOCIDAD DEBUG: No se guarda en cache - datos insuficientes")
@@ -4389,21 +4390,6 @@ if opcion == "Velocidad de devs":
     # === PROTECCIÓN: Alertas visuales de calidad de datos ===
     col_alert1, col_alert2 = st.columns(2)
     
-    with col_alert1:
-        if len(historias) < 10:
-            st.warning(f"⚠️ **Pocas historias**: Solo {len(historias)} encontradas")
-        elif len(historias) < 20:
-            st.info(f"ℹ️ **Historias moderadas**: {len(historias)} encontradas")
-        else:
-            st.success(f"✅ **Historias suficientes**: {len(historias)} encontradas")
-    
-    with col_alert2:
-        if len(bugs) < 5:
-            st.warning(f"⚠️ **Pocos bugs**: Solo {len(bugs)} encontrados")
-        elif len(bugs) < 15:
-            st.info(f"ℹ️ **Bugs moderados**: {len(bugs)} encontrados")
-        else:
-            st.success(f"✅ **Bugs suficientes**: {len(bugs)} encontrados")
     
     # Procesar datos
     df_issues = procesar_historias(historias, accountid_to_name, name_to_acc)

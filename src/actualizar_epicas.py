@@ -32,12 +32,15 @@ def actualizar_epicas():
         {"rn": "ATI-3437", "nombre": "[ORDENES DE PAGO]", "mes_entrega":"Octubre"},
         {"rn": "ATI-629", "nombre": "[NOTA DE CREDITO]", "mes_entrega":"Octubre"},
         {"rn": "ATI-3", "nombre": "[FACTURA DE VENTA]", "mes_entrega":"Octubre"},
-        {"rn": "ATI-2537", "nombre": "[ASIENTOS PLANOS]", "mes_entrega":"Agosto"},
-        {"rn": "ATI-2537", "nombre": "[CONTACTOS]", "mes_entrega":"Agosto"},
+        {"rn": "ATI-489", "nombre": "[CONTACTOS]", "mes_entrega":"Agosto"},
         {"rn": "ATI-109", "nombre": "[REMITO]", "mes_entrega":"Julio"},
         {"rn": "ATI-1787", "nombre": "[FACTURA DE PROVEEDOR - IDA]", "mes_entrega":"Junio"},
         {"rn": "ATI-10", "nombre": "[ORDEN DE COMPRA]", "mes_entrega":"Junio"},
-        {"rn": "ATI-236", "nombre": "[PRODUCTOS]", "mes_entrega":"Mayo"}
+        {"rn": "ATI-236", "nombre": "[PRODUCTOS]", "mes_entrega":"Mayo"},
+        {"rn": "REP-5815", "nombre": "ENTREGA AL CLIENTE", "mes_entrega": "Octubre"},
+        {"rn": "TAL-4077", "nombre": "AUDITORIA", "mes_entrega": "Noviembre"},
+        {"rn": "REP-5650", "nombre": "FUNCIONALIDADES PENDIENTES 1", "mes_entrega": "Noviembre"}
+
 
     ]
 
