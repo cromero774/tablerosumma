@@ -193,7 +193,7 @@ except Exception as e:
 # ----------------------------------------------
 # Helper: carga de issues Jira con cache local JSON
 # ----------------------------------------------
-def cargar_issues_jira_cache(jql: str, fields: str, nombre_cache: str, max_horas: int = 6):
+def cargar_issues_jira_cache(jql: str, fields: str, nombre_cache: str, max_horas: int = 24):
     """Usa la sesión Jira ya configurada (jira._get_json) para traer issues con paginado
     y cachea el resultado en data/cache/<nombre_cache>.json. Evita dependencias de env.
     """
@@ -1193,7 +1193,7 @@ if opcion == "Desarrollo Postventas":
             try:
                 if os.path.exists(cache_file_subtareas):
                     mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_subtareas))
-                    if (datetime.now() - mtime) < timedelta(hours=24):
+                    if (datetime.now() - mtime) < timedelta(hours=48):
                         with open(cache_file_subtareas, 'rb') as f:
                             subtareas_cache = pickle.load(f)
             except Exception:
@@ -1352,7 +1352,7 @@ if opcion == "Entregables Postventas":
     try:
         if os.path.exists(cache_file_tal_entregable):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_tal_entregable))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_tal_entregable, 'rb') as f:
                     issues_tal = pickle.load(f)
             else:
@@ -1369,7 +1369,7 @@ if opcion == "Entregables Postventas":
     try:
         if os.path.exists(cache_file_rep_entregable):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_rep_entregable))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_rep_entregable, 'rb') as f:
                     issues_rep = pickle.load(f)
             else:
@@ -2376,7 +2376,9 @@ if opcion == "BUGS":
     # Consulta a Jira (incluye STATUS) y armado base
     # ----------------------------
     EPIC_FIELD = detectar_campo_epic_link()
-    jql = 'project = BUG AND created >= "2025-01-01"'
+    # Limitar a últimos 6 meses para optimizar (ajustable según necesidad)
+    fecha_limite_bugs = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+    jql = f'project = BUG AND created >= "{fecha_limite_bugs}"'
     fields = "key,created,priority,issuetype,issuelinks,summary,status" + (f",{EPIC_FIELD}" if EPIC_FIELD else "")
 
     try:
@@ -2393,7 +2395,7 @@ if opcion == "BUGS":
     try:
         if os.path.exists(cache_enlaces_file):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_enlaces_file))
-            if (datetime.now() - mtime) < timedelta(hours=12):  # Cache de 12h para enlaces
+            if (datetime.now() - mtime) < timedelta(hours=48):  # Cache de 48h para enlaces
                 with open(cache_enlaces_file, 'rb') as f:
                     cache_enlaces_data = pickle.load(f)
                     rows = cache_enlaces_data['rows']
@@ -2411,132 +2413,131 @@ if opcion == "BUGS":
 
     if not procesamiento_enlaces_cacheado:
         type_cache, links_cache, summary_cache = {}, {}, {}
-    rows = []
-    excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
-    
-    for it in issues:
-        f = it.get("fields") or {}
-        itype = ((f.get("issuetype") or {}).get("name") or "")
-        if not es_bug_type(itype):
-            continue
+        rows = []
+        excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
+        
+        for it in issues:
+            f = it.get("fields") or {}
+            itype = ((f.get("issuetype") or {}).get("name") or "")
+            if not es_bug_type(itype):
+                continue
 
-        created_dt = pd.to_datetime(f.get("created"), errors="coerce")
-        if pd.isna(created_dt):
-            continue
+            created_dt = pd.to_datetime(f.get("created"), errors="coerce")
+            if pd.isna(created_dt):
+                continue
 
-        prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
-        summary = f.get("summary") or ""
-        status_name = ((f.get("status") or {}).get("name") or "").strip()
+            prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
+            summary = f.get("summary") or ""
+            status_name = ((f.get("status") or {}).get("name") or "").strip()
 
-        epic_val = ""
-        if EPIC_FIELD:
-            v = f.get(EPIC_FIELD)
-            if isinstance(v, str):
-                epic_val = v.strip().upper()
-            elif isinstance(v, dict):
-                epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
+            epic_val = ""
+            if EPIC_FIELD:
+                v = f.get(EPIC_FIELD)
+                if isinstance(v, str):
+                    epic_val = v.strip().upper()
+                elif isinstance(v, dict):
+                    epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
 
-        direct_bug_keys, direct_story_keys = set(), set()
-        for lk in (f.get("issuelinks") or []):
-            for side in ("inwardIssue", "outwardIssue"):
-                other = lk.get(side)
-                if not other:
-                    continue
-                okey = (other.get("key") or "").upper()
-                ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
-                if not ot:
-                    ot = get_issue_type(okey, type_cache)
+            direct_bug_keys, direct_story_keys = set(), set()
+            for lk in (f.get("issuelinks") or []):
+                for side in ("inwardIssue", "outwardIssue"):
+                    other = lk.get(side)
+                    if not other:
+                        continue
+                    okey = (other.get("key") or "").upper()
+                    ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
+                    if not ot:
+                        ot = get_issue_type(okey, type_cache)
 
-                if es_bug_type(ot) or okey.startswith("BUG-"):
-                    direct_bug_keys.add(okey)
+                    if es_bug_type(ot) or okey.startswith("BUG-"):
+                        direct_bug_keys.add(okey)
 
-                ot_l = _strip(ot)
-                if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
-                    direct_story_keys.add(okey)
+                    ot_l = _strip(ot)
+                    if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
+                        direct_story_keys.add(okey)
 
-        tiene_bug = len(direct_bug_keys) > 0
-        tiene_hu  = len(direct_story_keys) > 0
+            tiene_bug = len(direct_bug_keys) > 0
+            tiene_hu  = len(direct_story_keys) > 0
 
-        tipo_final, proyecto = None, ""
+            tipo_final, proyecto = None, ""
 
-        if tiene_bug:
-            proyectos_via_bug = set()
-            for bkey in direct_bug_keys:
-                for lk2 in get_issue_links(bkey, links_cache):
-                    for side2 in ("inwardIssue", "outwardIssue"):
-                        other2 = lk2.get(side2)
-                        if not other2:
-                            continue
-                        k2 = (other2.get("key") or "").upper()
-                        t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
-                        if not t2:
-                            t2 = get_issue_type(k2, type_cache)
-                        t2_l = _strip(t2)
-                        if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
-                            pj = proyecto_por_prefijo_key(k2)
-                            if pj:
-                                proyectos_via_bug.add(pj)
-
-            if len(proyectos_via_bug) == 1:
-                proyecto = list(proyectos_via_bug)[0]
-                tipo_final = "Bug"
-            else:
-                proyectos_by_bugname = set()
+            if tiene_bug:
+                proyectos_via_bug = set()
                 for bkey in direct_bug_keys:
-                    sum_b = get_issue_summary(bkey, summary_cache)
-                    pj_b = proyecto_por_prefijo_summary(sum_b)
-                    if pj_b:
-                        proyectos_by_bugname.add(pj_b)
+                    for lk2 in get_issue_links(bkey, links_cache):
+                        for side2 in ("inwardIssue", "outwardIssue"):
+                            other2 = lk2.get(side2)
+                            if not other2:
+                                continue
+                            k2 = (other2.get("key") or "").upper()
+                            t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
+                            if not t2:
+                                t2 = get_issue_type(k2, type_cache)
+                            t2_l = _strip(t2)
+                            if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
+                                pj = proyecto_por_prefijo_key(k2)
+                                if pj:
+                                    proyectos_via_bug.add(pj)
 
-                if len(proyectos_by_bugname) == 1:
-                    proyecto = list(proyectos_by_bugname)[0]
+                if len(proyectos_via_bug) == 1:
+                    proyecto = list(proyectos_via_bug)[0]
                     tipo_final = "Bug"
                 else:
-                    pj_by_name = proyecto_por_prefijo_summary(summary)
-                    if pj_by_name:
-                        proyecto = pj_by_name
+                    proyectos_by_bugname = set()
+                    for bkey in direct_bug_keys:
+                        sum_b = get_issue_summary(bkey, summary_cache)
+                        pj_b = proyecto_por_prefijo_summary(sum_b)
+                        if pj_b:
+                            proyectos_by_bugname.add(pj_b)
+
+                    if len(proyectos_by_bugname) == 1:
+                        proyecto = list(proyectos_by_bugname)[0]
                         tipo_final = "Bug"
                     else:
-                        tipo_final = "Excluir"
+                        pj_by_name = proyecto_por_prefijo_summary(summary)
+                        if pj_by_name:
+                            proyecto = pj_by_name
+                            tipo_final = "Bug"
+                        else:
+                            tipo_final = "Excluir"
 
-        elif tiene_hu:
-            proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
-            proyectos_de_hu.discard("")
-            if len(proyectos_de_hu) == 1:
-                proyecto = list(proyectos_de_hu)[0]
-                tipo_final = "Mejora"
+            elif tiene_hu:
+                proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
+                proyectos_de_hu.discard("")
+                if len(proyectos_de_hu) == 1:
+                    proyecto = list(proyectos_de_hu)[0]
+                    tipo_final = "Mejora"
+                else:
+                    tipo_final = "Excluir"
             else:
-                tipo_final = "Excluir"
-        else:
-            pj_by_name = proyecto_por_prefijo_summary(summary)
-            if pj_by_name:
-                proyecto = pj_by_name
-                tipo_final = "Bug"
+                pj_by_name = proyecto_por_prefijo_summary(summary)
+                if pj_by_name:
+                    proyecto = pj_by_name
+                    tipo_final = "Bug"
+                else:
+                    tipo_final = "Excluir"
+
+            anio, mes = int(created_dt.year), int(created_dt.month)
+            anio_mes = f"{anio}-{mes:02d}"
+            mes_txt  = f"{MESES_ES[mes]} {anio}"
+
+            if tipo_final == "Excluir":
+                excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
             else:
-                tipo_final = "Excluir"
+                rows.append({
+                "Clave": it.get("key", ""),
+                "Creado": created_dt,
+                "AñoMes": anio_mes,
+                "Mes": mes_txt,
+                "Prioridad": prio,
+                "Proyecto": proyecto,
+                "Tipo": tipo_final,
+                "Summary": summary,
+                "Epic": epic_val,
+                "Status": status_name,
+            })
 
-        anio, mes = int(created_dt.year), int(created_dt.month)
-        anio_mes = f"{anio}-{mes:02d}"
-        mes_txt  = f"{MESES_ES[mes]} {anio}"
-
-        if tipo_final == "Excluir":
-            excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
-        else:
-            rows.append({
-            "Clave": it.get("key", ""),
-            "Creado": created_dt,
-            "AñoMes": anio_mes,
-            "Mes": mes_txt,
-            "Prioridad": prio,
-            "Proyecto": proyecto,
-            "Tipo": tipo_final,
-            "Summary": summary,
-            "Epic": epic_val,
-            "Status": status_name,
-        })
-
-    # Guardar cache de enlaces procesados (fuera del bucle)
-    if not procesamiento_enlaces_cacheado:
+        # Guardar cache de enlaces procesados (fuera del bucle, dentro del if)
         try:
             cache_enlaces_data = {
                 'rows': rows,
@@ -3148,7 +3149,7 @@ if opcion == "Histórico Postventa":
     try:
         if os.path.exists(cache_file_tal) and not st.session_state.historico_carga_completa:
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_tal))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_tal, 'rb') as f:
                     issues_tal = pickle.load(f)
             else:
@@ -3175,7 +3176,7 @@ if opcion == "Histórico Postventa":
     try:
         if os.path.exists(cache_file_rep) and not st.session_state.historico_carga_completa:
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_rep))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_rep, 'rb') as f:
                     issues_rep = pickle.load(f)
             else:
@@ -3278,7 +3279,7 @@ if opcion == "Histórico Postventa":
     try:
         if os.path.exists(cache_file_bugs_rep):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_rep))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_bugs_rep, 'rb') as f:
                     bugs_rep = pickle.load(f)
             else:
@@ -3297,7 +3298,7 @@ if opcion == "Histórico Postventa":
     try:
         if os.path.exists(cache_file_bugs_tal):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_tal))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_bugs_tal, 'rb') as f:
                     bugs_tal = pickle.load(f)
             else:
@@ -3326,7 +3327,7 @@ if opcion == "Histórico Postventa":
     try:
         if os.path.exists(cache_file_bugs_uat):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_uat))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_bugs_uat, 'rb') as f:
                     bugs_uat = pickle.load(f)
             else:
@@ -3376,7 +3377,7 @@ if opcion == "Histórico Postventa":
     try:
         if os.path.exists(cache_file_historico):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_historico))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_historico, 'rb') as f:
                     tabla_historico = pickle.load(f)
                     # Verificar si el cache tiene el campo DCR_% (nuevo campo)
@@ -3700,15 +3701,15 @@ if opcion == "Velocidad de devs":
     # === OPTIMIZACIÓN: Callbacks para evitar recargas innecesarias ===
     def on_fecha_inicio_change():
         st.session_state["vel_fecha_inicio"] = st.session_state["vel_fecha_inicio_input"]
-        st.session_state["force_refresh"] = True
+        # NO forzar refresh, solo rerun para aplicar filtros
         
     def on_fecha_fin_change():
         st.session_state["vel_fecha_fin"] = st.session_state["vel_fecha_fin_input"]
-        st.session_state["force_refresh"] = True
+        # NO forzar refresh, solo rerun para aplicar filtros
         
     def on_proyecto_change():
         st.session_state["vel_proyecto_sel"] = st.session_state["vel_proyecto_input"]
-        st.session_state["force_refresh"] = True
+        # NO forzar refresh al cambiar proyecto, filtrar en memoria
     
     with col_fecha1:
         fecha_inicio = st.date_input(
@@ -3778,14 +3779,14 @@ if opcion == "Velocidad de devs":
             return [], []
         
         # === CACHE PERSISTENTE EN ARCHIVO ===
-        cache_key = f"velocidad_data_{_proyecto_sel}_{_fecha_inicio}_{_fecha_fin}"
+        cache_key = f"velocidad_data_Todos_{_fecha_inicio}_{_fecha_fin}"
         cache_file = cache_path(cache_key, 'pkl')
         
         # Intentar cargar desde cache de archivo (válido por 24 horas)
         if not _force_refresh and os.path.exists(cache_file):
             try:
                 mtime = datetime.fromtimestamp(os.path.getmtime(cache_file))
-                if (datetime.now() - mtime) < timedelta(hours=24):
+                if (datetime.now() - mtime) < timedelta(hours=48):
                     with open(cache_file, 'rb') as f:
                         cache_data = pickle.load(f)
                         st.info(f"✅ Datos cargados desde cache ({len(cache_data['historias'])} historias, {len(cache_data['bugs'])} bugs)")
@@ -3797,15 +3798,10 @@ if opcion == "Velocidad de devs":
         # Si no hay cache válido, cargar desde Jira
         st.info("🔄 Cargando datos desde Jira... Esto puede tomar un momento...")
 
-        # Construir JQL para historias
-        if _proyecto_sel == "ATI":
-            proy_jql = "project = ATI"
-        elif _proyecto_sel == "Postventas":
-            proy_jql = "project in (REP, TAL)"
-        else:
-            proy_jql = "project in (REP, TAL, ATI)"
+        # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
+        proy_jql = "project in (REP, TAL, ATI)"
 
-        # Buscar TODAS las historias con puntos (sin filtro de fecha, se filtra por primera fecha de testing después)
+        # Buscar TODAS las historias con puntos (sin filtro de fecha)
         jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
         
         jql_bugs = f"{proy_jql} AND issuetype = Error"
@@ -3819,29 +3815,20 @@ if opcion == "Velocidad de devs":
             print(f"🔍 VELOCIDAD DEBUG: Período: {_fecha_inicio} a {_fecha_fin}")
             print(f"🔍 VELOCIDAD DEBUG: Proyecto: {_proyecto_sel}")
         
-        # Cargar historias con changelog
+        # Cargar historias con changelog (con filtro de fecha para optimizar)
         
         historias = []
         start_at = 0
         max_issues = 10000  # Sin límite de datos
         
         while True:
-            params = {"jql": jql_hist, "fields": FIELDS, "startAt": start_at, "maxResults": 100}
+            params = {"jql": jql_hist, "fields": FIELDS, "startAt": start_at, "maxResults": 100, "expand": "changelog"}
             data = _jira._get_json("search", params=params)
             batch = data.get("issues", [])
-            
-            # Enriquecer cada historia con changelog
-            for issue in batch:
-                try:
-                    endpoint = f"issue/{quote_plus(issue['key'])}?expand=changelog&fields={quote_plus(FIELDS)}"
-                    enriched_issue = _jira._get_json(endpoint)
-                    historias.append(enriched_issue)
-                except Exception as e:
-                    # Si falla el changelog, usar la issue sin enriquecer
-                    historias.append(issue)
+            historias.extend(batch)
             
             if len(batch) < 100 or len(historias) >= max_issues:
-                    break
+                break
             start_at += 100
 
         # === PROTECCIÓN: Validación de datos mínimos ===
@@ -4735,7 +4722,7 @@ if opcion == "Desarrollo ATI":
     try:
         if os.path.exists(cache_file_ati_desarrollo):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_ati_desarrollo))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_ati_desarrollo, 'rb') as f:
                     issues_ati = pickle.load(f)
             else:
@@ -4904,7 +4891,7 @@ if opcion == "Desarrollo ATI":
             try:
                 if os.path.exists(cache_file_subtareas):
                     mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_subtareas))
-                    if (datetime.now() - mtime) < timedelta(hours=24):
+                    if (datetime.now() - mtime) < timedelta(hours=48):
                         with open(cache_file_subtareas, 'rb') as f:
                             subtareas_cache = pickle.load(f)
             except Exception:
@@ -5014,7 +5001,7 @@ if opcion == "Entregables ATI":
     try:
         if os.path.exists(cache_file_ati_entregable):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_ati_entregable))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_ati_entregable, 'rb') as f:
                     issues_ati = pickle.load(f)
             else:
@@ -5508,7 +5495,7 @@ if opcion == "Histórico ATI":
     try:
         if os.path.exists(cache_file_ati):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_ati))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_ati, 'rb') as f:
                     issues_ati = pickle.load(f)
             else:
@@ -5599,7 +5586,7 @@ if opcion == "Histórico ATI":
     try:
         if os.path.exists(cache_file_bugs_ati):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_ati))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_bugs_ati, 'rb') as f:
                     bugs_ati = pickle.load(f)
             else:
@@ -5626,7 +5613,7 @@ if opcion == "Histórico ATI":
     try:
         if os.path.exists(cache_file_bugs_uat):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_uat))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_bugs_uat, 'rb') as f:
                     bugs_uat = pickle.load(f)
             else:
@@ -5674,7 +5661,7 @@ if opcion == "Histórico ATI":
     try:
         if os.path.exists(cache_file_historico):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_historico))
-            if (datetime.now() - mtime) < timedelta(hours=24):
+            if (datetime.now() - mtime) < timedelta(hours=48):
                 with open(cache_file_historico, 'rb') as f:
                     tabla_historico = pickle.load(f)
                     # Verificar si el cache tiene el campo DCR_% (nuevo campo)
