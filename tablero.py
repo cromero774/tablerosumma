@@ -371,6 +371,252 @@ opcion = st.session_state.opcion_actual
 # Mostrar la opción seleccionada actualmente
 st.sidebar.markdown(f"**Seleccionado:** {opcion}")
 
+# Configuración
+st.sidebar.markdown("---")
+with st.sidebar.expander("⚙️ Configuración", expanded=False):
+    # Inicializar tema en session state
+    if 'tema_seleccionado' not in st.session_state:
+        st.session_state.tema_seleccionado = "Oscuro"
+    
+    # Selector de tema
+    tema_actual = st.selectbox(
+        "Tema del tablero:",
+        ["Claro", "Oscuro"],
+        index=1 if st.session_state.tema_seleccionado == "Oscuro" else 0,
+        key="selector_tema"
+    )
+    
+    # Guardar tema seleccionado
+    st.session_state.tema_seleccionado = tema_actual
+
+# Aplicar CSS según el tema seleccionado
+if st.session_state.tema_seleccionado == "Claro":
+    st.markdown("""
+    <style>
+    /* Tema Claro - Profesional */
+    .stApp {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #ffffff;
+    }
+    
+    /* Eliminar franja negra superior */
+    .stApp > header {
+        background-color: transparent !important;
+    }
+    
+    .stApp > header > div {
+        background-color: transparent !important;
+    }
+    
+    /* Main container sin margen superior */
+    .main .block-container {
+        background: rgba(255, 255, 255, 0.98);
+        border-radius: 15px;
+        padding: 2rem;
+        margin: 0.5rem 1rem 1rem 1rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(10px);
+        max-width: none;
+    }
+    
+    /* Sidebar elegante */
+    .stSidebar {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-right: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    /* Texto de sidebar visible - FORZAR VISIBILIDAD */
+    .stSidebar * {
+        color: #2c3e50 !important;
+    }
+    
+    .stSidebar .stMarkdown {
+        color: #2c3e50 !important;
+    }
+    
+    .stSidebar h1, .stSidebar h2, .stSidebar h3 {
+        color: #2c3e50 !important;
+    }
+    
+    .stSidebar p, .stSidebar div, .stSidebar span {
+        color: #2c3e50 !important;
+    }
+    
+    /* Botones de sidebar elegantes */
+    .stSidebar .stButton > button {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: white !important;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .stSidebar .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        background: linear-gradient(45deg, #5a6fd8, #6a4190);
+    }
+    
+    /* Botones del contenido principal */
+    .main .stButton > button {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .main .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Selectbox elegante */
+    .stSelectbox > div > div {
+        background: white;
+        border: 2px solid #e1e5e9;
+        border-radius: 8px;
+        color: #2c3e50;
+    }
+    
+    /* Input fields elegantes */
+    .stTextInput > div > div > input {
+        background: white;
+        border: 2px solid #e1e5e9;
+        border-radius: 8px;
+        color: #2c3e50;
+    }
+    
+    .stNumberInput > div > div > input {
+        background: white;
+        border: 2px solid #e1e5e9;
+        border-radius: 8px;
+        color: #2c3e50;
+    }
+    
+    /* Títulos con mejor contraste */
+    .main h1, .main h2, .main h3 {
+        color: #2c3e50;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    }
+    
+    /* Texto del contenido */
+    .main .stMarkdown {
+        color: #2c3e50 !important;
+    }
+    
+    /* Tablas elegantes */
+    .stDataFrame {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        border: 1px solid #e1e5e9;
+    }
+    
+    /* Expanders elegantes */
+    .stSidebar .streamlit-expanderHeader {
+        background: rgba(255, 255, 255, 0.9);
+        color: #2c3e50 !important;
+        border-radius: 8px;
+        margin: 2px 0;
+        border: 1px solid #e1e5e9;
+    }
+    
+    .stSidebar .streamlit-expanderContent {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 8px;
+        margin: 2px 0;
+        border: 1px solid #e1e5e9;
+    }
+    
+    /* Checkbox elegante */
+    .stCheckbox > div > div > div > div {
+        background: white;
+        border: 2px solid #e1e5e9;
+        border-radius: 4px;
+    }
+    
+    /* Métricas elegantes */
+    .stMetric {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        border: 1px solid #e1e5e9;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <style>
+    /* Tema Oscuro - Elegante */
+    .stApp {
+        background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+        color: #ffffff;
+    }
+    
+    .main .block-container {
+        background: rgba(30, 30, 30, 0.9);
+        border-radius: 15px;
+        padding: 2rem;
+        margin: 1rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .stSidebar {
+        background: rgba(20, 20, 20, 0.9);
+        backdrop-filter: blur(10px);
+    }
+    
+    /* Botones elegantes en tema oscuro */
+    .stButton > button {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Selectbox elegante */
+    .stSelectbox > div > div {
+        background: #2a2a2a;
+        border: 2px solid #444;
+        border-radius: 8px;
+        color: white;
+    }
+    
+    /* Títulos con mejor contraste */
+    h1, h2, h3 {
+        color: #ffffff;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    }
+    
+    /* Tablas con fondo oscuro */
+    .stDataFrame {
+        background: #2a2a2a;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # === PÁGINA DE MENÚ ===
 if opcion == "Menú":
     # Centrar el contenido
