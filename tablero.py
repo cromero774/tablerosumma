@@ -1258,9 +1258,9 @@ if opcion == "Entregables Postventas":
         tabla_prioridad.append({
             "Épica": nombre_epica,
             "Mes entrega": mes_entrega,
-            "Avance": f"{porcentaje_avance} " + ("🟢" if porcentaje_num == 100 else "🟡" if porcentaje_num >= 50 else "🔴"),
-            "% En proceso": porcentaje_proceso,
-            "Pendientes": pendientes,
+            "% Con ok QA": f"{porcentaje_avance} " + ("🟢" if porcentaje_num == 100 else "🟡" if porcentaje_num >= 50 else "🔴"),
+            "% En desarrollo": porcentaje_proceso,
+            "Q de HU pendientes": pendientes,
             "Puntos totales": puntos_totales,
             "Historias": historias,
             "%_num": porcentaje_num
@@ -1280,7 +1280,7 @@ if opcion == "Entregables Postventas":
     # ---- ALERTA: solo para el mes más próximo con historias pendientes y sin 100% ----
     alerta_mes = ""
     for m in meses_orden:
-        mes_tiene_alerta = any((r["Mes entrega"] == m and r["Pendientes"] > 0 and r["%_num"] < 100) for r in tabla_incompletas)
+        mes_tiene_alerta = any((r["Mes entrega"] == m and r["Q de HU pendientes"] > 0 and r["%_num"] < 100) for r in tabla_incompletas)
         if mes_tiene_alerta:
             alerta_mes = m
             break
@@ -1290,7 +1290,7 @@ if opcion == "Entregables Postventas":
     if not df_tabla.empty:
         st.markdown("## Prioridades actuales")
         def gen_alerta(row):
-            if row["Mes entrega"] == alerta_mes and row["Pendientes"] > 0:
+            if row["Mes entrega"] == alerta_mes and row["Q de HU pendientes"] > 0:
                 return "⚠️ Entrega próxima con pendientes"
             else:
                 return ""
@@ -1319,8 +1319,8 @@ if opcion == "Entregables Postventas":
             return float(match.group(1)) if match else 0.0
         
         # Aplicar las funciones de extracción
-        avance_numerico = df_tabla["Avance"].apply(extraer_porcentaje_avance)
-        proceso_numerico = df_tabla["% En proceso"].apply(extraer_porcentaje_proceso)
+        avance_numerico = df_tabla["% Con ok QA"].apply(extraer_porcentaje_avance)
+        proceso_numerico = df_tabla["% En desarrollo"].apply(extraer_porcentaje_proceso)
         
         # Calcular %Faltante con formato y colores semáforo
         faltante_numerico = (100 - proceso_numerico - avance_numerico).round(1)
@@ -1337,7 +1337,7 @@ if opcion == "Entregables Postventas":
         df_tabla["%Faltante"] = faltante_numerico.apply(aplicar_color_semaforo)
         
         st.dataframe(
-            df_tabla[["Épica", "Mes entrega", "Avance", "% En proceso", "%Faltante", "Pendientes", "Puntos totales", "Alerta"]],
+            df_tabla[["Épica", "Mes entrega", "% Con ok QA", "% En desarrollo", "%Faltante", "Q de HU pendientes", "Puntos totales", "Alerta"]],
             hide_index=True,
             use_container_width=True
         )
@@ -1367,7 +1367,7 @@ if opcion == "Entregables Postventas":
 
         st.markdown("## RN entregado")
         st.dataframe(
-            df_completas[["Épica", "Mes entrega", "Avance", "% En proceso", "Pendientes", "Puntos totales", "Fecha de entrega"]],
+            df_completas[["Épica", "Mes entrega", "% Con ok QA", "% En desarrollo", "Q de HU pendientes", "Puntos totales", "Fecha de entrega"]],
             hide_index=True,
             use_container_width=True
         )
@@ -4568,26 +4568,41 @@ if opcion == "Desarrollo ATI":
 
     # ==== ALERTAS ====
     hoy = datetime.now().date()
-    alertas = []
+    alertas_vencidas = []
+    alertas_proximas = []
+
     for issue in issues:
-        if issue["fields"].get("duedate"):
+        estado = issue["fields"]["status"]["name"].strip().lower()
+        fecha_fin_str = issue["fields"].get("duedate", "")
+        asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
+        if estado == "en desarrollo" and fecha_fin_str:
             try:
-                duedate = datetime.strptime(issue["fields"]["duedate"], "%Y-%m-%d").date()
-                if duedate < hoy and issue["fields"]["status"]["name"].strip().lower() != ESTADO_LISTO_PARA_IMPLEMENTAR:
-                    alertas.append({
-                        "Clave": issue["key"],
-                        "Resumen": issue["fields"]["summary"],
-                        "Estado": issue["fields"]["status"]["name"],
-                        "Duedate": issue["fields"]["duedate"],
-                        "Días vencido": (hoy - duedate).days
-                    })
-            except ValueError:
+                fecha_fin = datetime.strptime(fecha_fin_str, "%Y-%m-%d").date()
+                dias_a_vencer = (fecha_fin - hoy).days
+                alerta_row = {
+                    "Clave": issue["key"],
+                    "Resumen": issue["fields"]["summary"],
+                    "Asignado": asignado,
+                    "Fecha de fin": fecha_fin.strftime("%d/%m/%Y"),
+                    "Estado": estado.capitalize()
+                }
+                if fecha_fin < hoy:
+                    alertas_vencidas.append(alerta_row)
+                elif 0 <= dias_a_vencer <= 2:
+                    alertas_proximas.append(alerta_row)
+            except Exception:
                 pass
 
-    if alertas:
-        st.warning(f"⚠️ **{len(alertas)} historias vencidas**")
-        df_alertas = pd.DataFrame(alertas)
-        st.dataframe(df_alertas, use_container_width=True)
+    if alertas_vencidas:
+        st.error("⚠️ Historias EN DESARROLLO con fecha de fin vencida:")
+        df_vencidas = pd.DataFrame(alertas_vencidas)
+        st.dataframe(df_vencidas, use_container_width=True, hide_index=True)
+    if alertas_proximas:
+        st.warning("⏳ Historias EN DESARROLLO que vencen en <= 2 días:")
+        df_proximas = pd.DataFrame(alertas_proximas)
+        st.dataframe(df_proximas, use_container_width=True, hide_index=True)
+    if not alertas_vencidas and not alertas_proximas:
+        st.success("No hay historias en desarrollo vencidas ni próximas a vencer.")
 
     # ==== FILTRADO DE ISSUES ====
     issues_filtradas = issues.copy()
@@ -4892,9 +4907,9 @@ if opcion == "Entregables ATI":
         tabla_prioridad.append({
             "Épica": nombre_epica,
             "Mes entrega": mes_entrega,
-            "Avance": f"{porcentaje_avance} " + ("🟢" if porcentaje_num == 100 else "🟡" if porcentaje_num >= 50 else "🔴"),
-            "% En proceso": porcentaje_proceso,
-            "Pendientes": pendientes,
+            "% Con ok QA": f"{porcentaje_avance} " + ("🟢" if porcentaje_num == 100 else "🟡" if porcentaje_num >= 50 else "🔴"),
+            "% En desarrollo": porcentaje_proceso,
+            "Q de HU pendientes": pendientes,
             "Puntos totales": puntos_totales,
             "Historias": historias,
             "%_num": porcentaje_num
@@ -4914,7 +4929,7 @@ if opcion == "Entregables ATI":
     # ---- ALERTA: solo para el mes más próximo con historias pendientes y sin 100% ----
     alerta_mes = ""
     for m in meses_orden:
-        mes_tiene_alerta = any((r["Mes entrega"] == m and r["Pendientes"] > 0 and r["%_num"] < 100) for r in tabla_incompletas)
+        mes_tiene_alerta = any((r["Mes entrega"] == m and r["Q de HU pendientes"] > 0 and r["%_num"] < 100) for r in tabla_incompletas)
         if mes_tiene_alerta:
             alerta_mes = m
             break
@@ -4924,7 +4939,7 @@ if opcion == "Entregables ATI":
     if not df_tabla.empty:
         st.markdown("## Prioridades actuales")
         def gen_alerta(row):
-            if row["Mes entrega"] == alerta_mes and row["Pendientes"] > 0:
+            if row["Mes entrega"] == alerta_mes and row["Q de HU pendientes"] > 0:
                 return "⚠️ Entrega próxima con pendientes"
             else:
                 return ""
@@ -4953,8 +4968,8 @@ if opcion == "Entregables ATI":
             return float(match.group(1)) if match else 0.0
         
         # Aplicar las funciones de extracción
-        avance_numerico = df_tabla["Avance"].apply(extraer_porcentaje_avance)
-        proceso_numerico = df_tabla["% En proceso"].apply(extraer_porcentaje_proceso)
+        avance_numerico = df_tabla["% Con ok QA"].apply(extraer_porcentaje_avance)
+        proceso_numerico = df_tabla["% En desarrollo"].apply(extraer_porcentaje_proceso)
         
         # Calcular %Faltante con formato y colores semáforo
         faltante_numerico = (100 - proceso_numerico - avance_numerico).round(1)
@@ -4971,7 +4986,7 @@ if opcion == "Entregables ATI":
         df_tabla["%Faltante"] = faltante_numerico.apply(aplicar_color_semaforo)
         
         st.dataframe(
-            df_tabla[["Épica", "Mes entrega", "Avance", "% En proceso", "%Faltante", "Pendientes", "Puntos totales", "Alerta"]],
+            df_tabla[["Épica", "Mes entrega", "% Con ok QA", "% En desarrollo", "%Faltante", "Q de HU pendientes", "Puntos totales", "Alerta"]],
             hide_index=True,
             use_container_width=True
         )
@@ -5081,7 +5096,7 @@ if opcion == "Entregables ATI":
         df_completas = pd.DataFrame(tabla_completas)
         st.markdown("## Entregas completadas")
         st.dataframe(
-            df_completas[["Épica", "Mes entrega", "Avance", "% En proceso", "Pendientes", "Puntos totales"]],
+            df_completas[["Épica", "Mes entrega", "% Con ok QA", "% En desarrollo", "Q de HU pendientes", "Puntos totales"]],
             hide_index=True,
             use_container_width=True
         )
