@@ -3682,6 +3682,9 @@ if opcion == "Velocidad de devs":
     
     st.info("💡 **Cómo usar**: Selecciona las fechas del período que quieres evaluar")
     
+    # Aclaración sobre la limitación de datos
+    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 3 meses (agosto-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+    
     # Inicializar session_state para filtros (últimos 3 meses incluyendo el mes actual)
     if "vel_fecha_inicio" not in st.session_state:
         # Calcular dinámicamente: hace 2 meses desde el mes actual (para tener 3 meses en total)
@@ -3801,13 +3804,13 @@ if opcion == "Velocidad de devs":
         # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
         proy_jql = "project in (REP, TAL, ATI)"
 
-        # Buscar TODAS las historias con puntos (sin filtro de fecha)
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
+        # Buscar historias con puntos de los últimos 3 meses (agosto, septiembre, octubre 2025)
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2025-08-01'"
         
         # Debug: mostrar el JQL que se está usando
         st.info(f"🔍 JQL usado: {jql_hist}")
         
-        jql_bugs = f"{proy_jql} AND issuetype = Error"
+        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2025-08-01'"
         
         FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
         
