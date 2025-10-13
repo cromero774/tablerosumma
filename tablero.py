@@ -2668,44 +2668,6 @@ if opcion == "BUGS":
     # ----------------------------
     # DESPLEGABLES POR MES
     # ----------------------------
-    for mes in meses_disp["Mes"]:
-        if mes == "(sin datos)":
-            continue
-            
-        bugs_mes = df_all[df_all["Mes"] == mes] if not df_all.empty else pd.DataFrame()
-        
-        if not bugs_mes.empty:
-            with st.expander(f"📅 {mes} - {len(bugs_mes)} bugs"):
-                # Mejoras
-                mejoras_mes = bugs_mes[bugs_mes["Tipo"] == "MEJORA"]
-                if not mejoras_mes.empty:
-                    st.write("**✅ Mejoras:**")
-                    for _, row in mejoras_mes.iterrows():
-                        st.write(f"• {row['Clave']}: {row['Summary']}")
-                
-                # Bugs Otras Funcionalidades
-                bugs_otras_mes = bugs_mes[bugs_mes["Tipo"] == "BUG_OTRAS"]
-                if not bugs_otras_mes.empty:
-                    st.write("**🐛 Bugs Otras Funcionalidades:**")
-                    for _, row in bugs_otras_mes.iterrows():
-                        st.write(f"• {row['Clave']}: {row['Summary']}")
-                
-                # Bugs de Entregables
-                bugs_entregables_mes = bugs_mes[bugs_mes["Tipo"] == "BUG_ENTREGABLE"]
-                if not bugs_entregables_mes.empty:
-                    st.write("**📦 Bugs de Entregables:**")
-                    for _, row in bugs_entregables_mes.iterrows():
-                        st.write(f"• {row['Clave']}: {row['Summary']}")
-                
-                # Bugs Bloqueantes
-                bugs_bloqueantes_mes = bugs_mes[bugs_mes["Tipo"] == "BLOQUEANTE"]
-                if not bugs_bloqueantes_mes.empty:
-                    st.write("**🚨 Bugs Bloqueantes:**")
-                    for _, row in bugs_bloqueantes_mes.iterrows():
-                        st.write(f"• {row['Clave']}: {row['Summary']}")
-
-
-    # ----------------------------
     # BUGS INTERNOS POR MES
     # ----------------------------
     st.subheader("🐛 Bugs Internos por Mes")
