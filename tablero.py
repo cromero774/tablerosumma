@@ -931,7 +931,7 @@ if opcion == "Desarrollo Postventas":
     import re
 
     # Aclaración sobre la limitación de datos
-    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 3 meses (agosto-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 6 meses (mayo-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
 
     def traer_todas_las_issues(jira, jql, fields, max_results=100):
         issues = []
@@ -975,9 +975,14 @@ if opcion == "Desarrollo Postventas":
     ESTADO_LISTA_PARA_DESARROLLAR = "lista para desarrollar"
 
     fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
-    # Optimización: cargar historias de los últimos 3 meses (agosto-octubre 2025)
-    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia AND created >= "2025-08-01"', fields)
-    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia AND created >= "2025-08-01"', fields)
+    # Optimización: cargar historias de los últimos 6 meses (mayo-octubre 2025)
+    st.info("🔄 Cargando historias de TAL...")
+    progress_bar = st.progress(0)
+    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia AND created >= "2025-05-01"', fields)
+    progress_bar.progress(0.5)
+    st.info("🔄 Cargando historias de REP...")
+    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia AND created >= "2025-05-01"', fields)
+    progress_bar.progress(1.0)
     issues = issues_tal + issues_rep
 
     # ---- FILTRO: excluir historias "MADRE" ----
@@ -1359,11 +1364,17 @@ if opcion == "Entregables Postventas":
                 with open(cache_file_tal_entregable, 'rb') as f:
                     issues_tal = pickle.load(f)
             else:
+                st.info("🔄 Cargando historias de TAL...")
+                progress_bar = st.progress(0)
                 issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+                progress_bar.progress(0.5)
                 with open(cache_file_tal_entregable, 'wb') as f:
                     pickle.dump(issues_tal, f)
         else:
+            st.info("🔄 Cargando historias de TAL...")
+            progress_bar = st.progress(0)
             issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+            progress_bar.progress(0.5)
             with open(cache_file_tal_entregable, 'wb') as f:
                 pickle.dump(issues_tal, f)
     except Exception:
@@ -1376,11 +1387,15 @@ if opcion == "Entregables Postventas":
                 with open(cache_file_rep_entregable, 'rb') as f:
                     issues_rep = pickle.load(f)
             else:
+                st.info("🔄 Cargando historias de REP...")
                 issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
+                progress_bar.progress(1.0)
                 with open(cache_file_rep_entregable, 'wb') as f:
                     pickle.dump(issues_rep, f)
         else:
+            st.info("🔄 Cargando historias de REP...")
             issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
+            progress_bar.progress(1.0)
             with open(cache_file_rep_entregable, 'wb') as f:
                 pickle.dump(issues_rep, f)
     except Exception:
@@ -1894,6 +1909,27 @@ if opcion == "BUGS":
     issues = []
     start_at = 0
     max_results = 100
+    progress_bar = st.progress(0)
+    total_issues = 0
+    
+    # Primero contar total de issues
+    while True:
+        try:
+            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            total_issues += len(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+        except Exception as e:
+            break
+    
+    st.info(f"📊 Total de bugs encontrados: {total_issues}")
+    
+    # Ahora cargar y enriquecer
+    start_at = 0
+    processed = 0
     
     while True:
         try:
@@ -1911,6 +1947,9 @@ if opcion == "BUGS":
                 except Exception as e:
                     # Si falla el changelog, usar la issue sin enriquecer
                     issues.append(issue)
+                
+                processed += 1
+                progress_bar.progress(processed / total_issues)
             
             if len(batch) < max_results:
                 break
@@ -3648,7 +3687,7 @@ if opcion == "Velocidad de devs":
     st.info("💡 **Cómo usar**: Selecciona las fechas del período que quieres evaluar")
     
     # Aclaración sobre la limitación de datos
-    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 3 meses (agosto-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 6 meses (mayo-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
     
     # Inicializar session_state para filtros (últimos 3 meses incluyendo el mes actual)
     if "vel_fecha_inicio" not in st.session_state:
@@ -3769,13 +3808,10 @@ if opcion == "Velocidad de devs":
         # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
         proy_jql = "project in (REP, TAL, ATI)"
 
-        # Buscar historias con puntos de los últimos 2 meses (septiembre, octubre 2025)
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2025-09-01'"
+        # Buscar historias con puntos de los últimos 6 meses (mayo-octubre 2025)
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2025-05-01'"
         
-        # Debug: mostrar el JQL que se está usando
-        st.info(f"🔍 JQL usado: {jql_hist}")
-        
-        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2025-08-01'"
+        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2025-05-01'"
         
         FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
         
@@ -3799,22 +3835,50 @@ if opcion == "Velocidad de devs":
                 break
             start_at += 100
         
-        # 2. Enriquecer cada historia con changelog individual
+        # 2. Enriquecer cada historia con changelog individual (con reintentos)
         historias = []
+        progress_bar = st.progress(0)
+        historias_sin_changelog = 0
         
         for i, historia in enumerate(historias_basicas):
-            try:
-                issue_key = historia.get("key")
-                if issue_key:
-                    # Llamada individual para obtener changelog
-                    changelog_endpoint = f'issue/{issue_key}?expand=changelog&fields={FIELDS}'
-                    enriched_issue = _jira._get_json(changelog_endpoint)
-                    historias.append(enriched_issue)
-                else:
-                    historias.append(historia)
-            except Exception as e:
-                # Si falla, usar la historia sin changelog
-                historias.append(historia)
+            issue_key = historia.get("key")
+            enriched_issue = None
+            
+            # Intentar obtener changelog con reintentos
+            for intento in range(3):  # Máximo 3 intentos
+                try:
+                    if issue_key:
+                        changelog_endpoint = f'issue/{issue_key}?expand=changelog&fields={FIELDS}'
+                        enriched_issue = _jira._get_json(changelog_endpoint)
+                        
+                        # Verificar que realmente tiene changelog
+                        changelog = enriched_issue.get("changelog", {})
+                        if changelog and changelog.get("histories"):
+                            break  # Éxito, salir del bucle de reintentos
+                        else:
+                            # Si no tiene changelog, intentar de nuevo
+                            if intento < 2:  # No es el último intento
+                                continue
+                    else:
+                        enriched_issue = historia
+                        break
+                        
+                except Exception as e:
+                    if intento < 2:  # No es el último intento
+                        continue  # Reintentar
+                    else:
+                        # Último intento falló, usar historia sin changelog
+                        enriched_issue = historia
+                        historias_sin_changelog += 1
+            
+            historias.append(enriched_issue)
+            
+            # Actualizar progreso
+            progress_bar.progress((i + 1) / len(historias_basicas))
+        
+        # Mostrar estadísticas
+        if historias_sin_changelog > 0:
+            st.warning(f"⚠️ {historias_sin_changelog} historias se guardaron sin changelog completo")
 
         # === PROTECCIÓN: Validación de datos mínimos ===
         if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
@@ -4671,7 +4735,7 @@ if opcion == "Desarrollo ATI":
     import re
 
     # Aclaración sobre la limitación de datos
-    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 3 meses (agosto-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 6 meses (mayo-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
 
     # Funciones duplicadas eliminadas
     
@@ -4725,15 +4789,21 @@ if opcion == "Desarrollo ATI":
                 with open(cache_file_ati_desarrollo, 'rb') as f:
                     issues_ati = pickle.load(f)
             else:
-                issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-08-01"', fields)
+                st.info("🔄 Cargando historias de ATI...")
+                progress_bar = st.progress(0)
+                issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-05-01"', fields)
+                progress_bar.progress(1.0)
                 with open(cache_file_ati_desarrollo, 'wb') as f:
                     pickle.dump(issues_ati, f)
         else:
-            issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-08-01"', fields)
+            st.info("🔄 Cargando historias de ATI...")
+            progress_bar = st.progress(0)
+            issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-05-01"', fields)
+            progress_bar.progress(1.0)
             with open(cache_file_ati_desarrollo, 'wb') as f:
                 pickle.dump(issues_ati, f)
     except Exception:
-        issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-08-01"', fields)
+        issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-05-01"', fields)
 
     issues = [_unwrap_issue(iss) for iss in issues_ati]
     issues_unicos = {}
