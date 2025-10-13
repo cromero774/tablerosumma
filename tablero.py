@@ -3804,6 +3804,9 @@ if opcion == "Velocidad de devs":
         # Buscar TODAS las historias con puntos (sin filtro de fecha)
         jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY)"
         
+        # Debug: mostrar el JQL que se está usando
+        st.info(f"🔍 JQL usado: {jql_hist}")
+        
         jql_bugs = f"{proy_jql} AND issuetype = Error"
         
         FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
@@ -3815,21 +3818,35 @@ if opcion == "Velocidad de devs":
             print(f"🔍 VELOCIDAD DEBUG: Período: {_fecha_inicio} a {_fecha_fin}")
             print(f"🔍 VELOCIDAD DEBUG: Proyecto: {_proyecto_sel}")
         
-        # Cargar historias con changelog (con filtro de fecha para optimizar)
-        
-        historias = []
+        # Cargar historias básicas y luego enriquecer con changelog individual
+        # 1. Cargar historias básicas (sin changelog)
+        historias_basicas = []
         start_at = 0
-        max_issues = 10000  # Sin límite de datos
-        
         while True:
-            params = {"jql": jql_hist, "fields": FIELDS, "startAt": start_at, "maxResults": 100, "expand": "changelog"}
-            data = _jira._get_json("search", params=params)
+            endpoint = f'search?jql={jql_hist}&fields={FIELDS}&startAt={start_at}&maxResults=100'
+            data = _jira._get_json(endpoint)
             batch = data.get("issues", [])
-            historias.extend(batch)
-            
-            if len(batch) < 100 or len(historias) >= max_issues:
+            historias_basicas.extend(batch)
+            if len(batch) < 100:
                 break
             start_at += 100
+        
+        # 2. Enriquecer cada historia con changelog individual
+        historias = []
+        
+        for i, historia in enumerate(historias_basicas):
+            try:
+                issue_key = historia.get("key")
+                if issue_key:
+                    # Llamada individual para obtener changelog
+                    changelog_endpoint = f'issue/{issue_key}?expand=changelog&fields={FIELDS}'
+                    enriched_issue = _jira._get_json(changelog_endpoint)
+                    historias.append(enriched_issue)
+                else:
+                    historias.append(historia)
+            except Exception as e:
+                # Si falla, usar la historia sin changelog
+                historias.append(historia)
 
         # === PROTECCIÓN: Validación de datos mínimos ===
         if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
@@ -3872,15 +3889,26 @@ if opcion == "Velocidad de devs":
             }
             st.session_state[cache_key_velocidad] = cache_data
             
-            # Guardar en archivo persistente
-            try:
-                with open(cache_file, 'wb') as f:
-                    pickle.dump(cache_data, f)
-                if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                    print(f"🔍 VELOCIDAD DEBUG: Datos guardados en cache de archivo - {len(historias)} historias, {len(bugs)} bugs")
-            except Exception as e:
-                if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                    print(f"⚠️ Error guardando cache: {e}")
+        # Guardar en archivo persistente
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(cache_data, f)
+            
+            # Verificar que el changelog se guardó correctamente
+            if historias:
+                primera_historia = historias[0]
+                changelog = primera_historia.get("changelog", {})
+                histories = changelog.get("histories", [])
+                if len(histories) > 0:
+                    pass  # Cache generado correctamente
+                else:
+                    st.warning(f"⚠️ Cache generado SIN changelog - esto puede causar problemas")
+            
+            if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
+                print(f"🔍 VELOCIDAD DEBUG: Datos guardados en cache de archivo - {len(historias)} historias, {len(bugs)} bugs")
+        except Exception as e:
+            if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
+                print(f"⚠️ Error guardando cache: {e}")
             
         else:
             if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
