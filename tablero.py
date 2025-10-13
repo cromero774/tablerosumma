@@ -930,6 +930,9 @@ if opcion == "Desarrollo Postventas":
     from datetime import datetime, timedelta
     import re
 
+    # Aclaración sobre la limitación de datos
+    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 3 meses (agosto-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+
     def traer_todas_las_issues(jira, jql, fields, max_results=100):
         issues = []
         start_at = 0
@@ -972,9 +975,9 @@ if opcion == "Desarrollo Postventas":
     ESTADO_LISTA_PARA_DESARROLLAR = "lista para desarrollar"
 
     fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
-    # Optimización: cargar TODAS las historias pero de forma más eficiente
-    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields)
+    # Optimización: cargar historias de los últimos 3 meses (agosto-octubre 2025)
+    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia AND created >= "2025-08-01"', fields)
+    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia AND created >= "2025-08-01"', fields)
     issues = issues_tal + issues_rep
 
     # ---- FILTRO: excluir historias "MADRE" ----
@@ -2099,7 +2102,7 @@ if opcion == "BUGS":
         df_mes = df[df["AñoMes"] == idx]
         
         # Crear expander para cada mes
-        expander_title = f"{mes_nombre} | Q Mensual: {int(row['Q_Mensual'])} | Q KINETIC: {int(row['Q_KINETIC'])} | Q MEJORA: {int(row['Q_MEJORA'])} | Q Bugs EVOLTIS: {int(row['Q_Bugs_EVOLTIS'])} | Q Bloqueantes: {int(row['Q_Bloqueantes'])} | % Bloqueantes: {'🟢' if row['%_Bloqueantes'] < 20 else '🔴'} {row['%_Bloqueantes']}%"
+        expander_title = f"{mes_nombre} | Q Mensual: {int(row['Q_Mensual'])} | Q KINETIC: {int(row['Q_KINETIC'])} | Q MEJORA: {int(row['Q_MEJORA'])} | Q Bugs EVOLTIS: {int(row['Q_Bugs_EVOLTIS'])} | Q Bloqueantes: {int(row['Q_Bloqueantes'])}"
         
         with st.expander(expander_title, expanded=False):
             # Mostrar bugs no cerrados si el cumplimiento no es 100%
@@ -2667,44 +2670,6 @@ if opcion == "BUGS":
 
     # ----------------------------
     # DESPLEGABLES POR MES
-    # ----------------------------
-    for mes in meses_disp["Mes"]:
-        if mes == "(sin datos)":
-            continue
-            
-        bugs_mes = df_all[df_all["Mes"] == mes] if not df_all.empty else pd.DataFrame()
-        
-        if not bugs_mes.empty:
-            with st.expander(f"📅 {mes} - {len(bugs_mes)} bugs"):
-                # Mejoras
-                mejoras_mes = bugs_mes[bugs_mes["Tipo"] == "MEJORA"]
-                if not mejoras_mes.empty:
-                    st.write("**✅ Mejoras:**")
-                    for _, row in mejoras_mes.iterrows():
-                        st.write(f"• {row['Clave']}: {row['Summary']}")
-                
-                # Bugs Otras Funcionalidades
-                bugs_otras_mes = bugs_mes[bugs_mes["Tipo"] == "BUG_OTRAS"]
-                if not bugs_otras_mes.empty:
-                    st.write("**🐛 Bugs Otras Funcionalidades:**")
-                    for _, row in bugs_otras_mes.iterrows():
-                        st.write(f"• {row['Clave']}: {row['Summary']}")
-                
-                # Bugs de Entregables
-                bugs_entregables_mes = bugs_mes[bugs_mes["Tipo"] == "BUG_ENTREGABLE"]
-                if not bugs_entregables_mes.empty:
-                    st.write("**📦 Bugs de Entregables:**")
-                    for _, row in bugs_entregables_mes.iterrows():
-                        st.write(f"• {row['Clave']}: {row['Summary']}")
-                
-                # Bugs Bloqueantes
-                bugs_bloqueantes_mes = bugs_mes[bugs_mes["Tipo"] == "BLOQUEANTE"]
-                if not bugs_bloqueantes_mes.empty:
-                    st.write("**🚨 Bugs Bloqueantes:**")
-                    for _, row in bugs_bloqueantes_mes.iterrows():
-                        st.write(f"• {row['Clave']}: {row['Summary']}")
-
-
     # ----------------------------
     # BUGS INTERNOS POR MES
     # ----------------------------
@@ -3804,8 +3769,8 @@ if opcion == "Velocidad de devs":
         # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
         proy_jql = "project in (REP, TAL, ATI)"
 
-        # Buscar historias con puntos de los últimos 3 meses (agosto, septiembre, octubre 2025)
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2025-08-01'"
+        # Buscar historias con puntos de los últimos 2 meses (septiembre, octubre 2025)
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2025-09-01'"
         
         # Debug: mostrar el JQL que se está usando
         st.info(f"🔍 JQL usado: {jql_hist}")
@@ -4705,6 +4670,9 @@ if opcion == "Desarrollo ATI":
     from datetime import datetime, timedelta
     import re
 
+    # Aclaración sobre la limitación de datos
+    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 3 meses (agosto-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+
     # Funciones duplicadas eliminadas
     
     def traer_todas_las_issues(jira, jql, fields, max_results=100):
@@ -4757,15 +4725,15 @@ if opcion == "Desarrollo ATI":
                 with open(cache_file_ati_desarrollo, 'rb') as f:
                     issues_ati = pickle.load(f)
             else:
-                issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+                issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-08-01"', fields)
                 with open(cache_file_ati_desarrollo, 'wb') as f:
                     pickle.dump(issues_ati, f)
         else:
-            issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+            issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-08-01"', fields)
             with open(cache_file_ati_desarrollo, 'wb') as f:
                 pickle.dump(issues_ati, f)
     except Exception:
-        issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia', fields)
+        issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-08-01"', fields)
 
     issues = [_unwrap_issue(iss) for iss in issues_ati]
     issues_unicos = {}
