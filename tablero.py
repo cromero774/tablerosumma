@@ -2099,7 +2099,7 @@ if opcion == "BUGS":
         df_mes = df[df["AñoMes"] == idx]
         
         # Crear expander para cada mes
-        expander_title = f"{mes_nombre} | Q Mensual: {int(row['Q_Mensual'])} | Q KINETIC: {int(row['Q_KINETIC'])} | Q MEJORA: {int(row['Q_MEJORA'])} | Q Bugs EVOLTIS: {int(row['Q_Bugs_EVOLTIS'])} | Q Bloqueantes: {int(row['Q_Bloqueantes'])} | % Bloqueantes: {'🟢' if row['%_Bloqueantes'] < 20 else '🔴'} {row['%_Bloqueantes']}%"
+        expander_title = f"{mes_nombre} | Q Mensual: {int(row['Q_Mensual'])} | Q KINETIC: {int(row['Q_KINETIC'])} | Q MEJORA: {int(row['Q_MEJORA'])} | Q Bugs EVOLTIS: {int(row['Q_Bugs_EVOLTIS'])} | Q Bloqueantes: {int(row['Q_Bloqueantes'])}"
         
         with st.expander(expander_title, expanded=False):
             # Mostrar bugs no cerrados si el cumplimiento no es 100%
