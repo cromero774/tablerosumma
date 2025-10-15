@@ -931,7 +931,7 @@ if opcion == "Desarrollo Postventas":
     import re
 
     # Aclaración sobre la limitación de datos
-    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 6 meses (mayo-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+    st.info("📊 **Datos disponibles**: Esta pestaña muestra datos desde enero 2024 en adelante.")
 
     def traer_todas_las_issues(jira, jql, fields, max_results=100):
         issues = []
@@ -3687,7 +3687,7 @@ if opcion == "Velocidad de devs":
     st.info("💡 **Cómo usar**: Selecciona las fechas del período que quieres evaluar")
     
     # Aclaración sobre la limitación de datos
-    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 6 meses (mayo-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+    st.info("📊 **Datos disponibles**: Esta pestaña muestra datos desde enero 2024 en adelante.")
     
     # Inicializar session_state para filtros (últimos 3 meses incluyendo el mes actual)
     if "vel_fecha_inicio" not in st.session_state:
@@ -3808,10 +3808,10 @@ if opcion == "Velocidad de devs":
         # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
         proy_jql = "project in (REP, TAL, ATI)"
 
-        # Buscar historias con puntos de los últimos 6 meses (mayo-octubre 2025)
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2025-05-01'"
+        # Buscar historias con puntos desde enero 2024
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2024-01-01'"
         
-        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2025-05-01'"
+        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2024-01-01'"
         
         FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
         
@@ -4735,7 +4735,7 @@ if opcion == "Desarrollo ATI":
     import re
 
     # Aclaración sobre la limitación de datos
-    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 6 meses (mayo-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+    st.info("📊 **Datos disponibles**: Esta pestaña muestra datos desde enero 2024 en adelante.")
 
     # Funciones duplicadas eliminadas
     
