@@ -183,9 +183,9 @@ else:
     df = pd.read_csv(actual_path)
 
 try:
-
+    
     # Aplicar mapeo de account IDs a nombres SIEMPRE (incluso si viene del cache)
-df["Usuario"] = df["Usuario"].map(accountid_to_name).fillna(df["Usuario"])
+    df["Usuario"] = df["Usuario"].map(accountid_to_name).fillna(df["Usuario"])
 except Exception as e:
     st.error(f"Error cargando datos principales: {e}")
     raise
@@ -1223,9 +1223,9 @@ if opcion == "Desarrollo Postventas":
                         if st_key in subtareas_cache:
                             st_status = subtareas_cache[st_key]
                         else:
-                        try:
-                            st_info = jira._get_json(f'issue/{st_key}?fields=status')
-                            st_status = st_info["fields"]["status"]["name"]
+                            try:
+                                st_info = jira._get_json(f'issue/{st_key}?fields=status')
+                                st_status = st_info["fields"]["status"]["name"]
                                 subtareas_cache[st_key] = st_status  # Guardar en cache
                             except Exception:
                                 st_status = "Unknown"
@@ -1366,7 +1366,7 @@ if opcion == "Entregables Postventas":
             else:
                 st.info("🔄 Cargando historias de TAL...")
                 progress_bar = st.progress(0)
-    issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
+                issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
                 progress_bar.progress(0.5)
                 with open(cache_file_tal_entregable, 'wb') as f:
                     pickle.dump(issues_tal, f)
@@ -1399,7 +1399,7 @@ if opcion == "Entregables Postventas":
             with open(cache_file_rep_entregable, 'wb') as f:
                 pickle.dump(issues_rep, f)
     except Exception:
-    issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
+        issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
 
     if proyecto_seleccionado == "Todos":
         issues = issues_tal + issues_rep
@@ -1901,14 +1901,14 @@ if opcion == "BUGS":
         st.stop()
     
     # JQL y campos
-        jql = 'project = BUG AND created >= "2025-01-01"'
-        fields = "key,created,priority,issuetype,summary,status,labels,parent,customfield_10016"
-        
+    jql = 'project = BUG AND created >= "2025-01-01"'
+    fields = "key,created,priority,issuetype,summary,status,labels,parent,customfield_10016"
+    
     # Cargar issues con changelog para calcular tiempos
-        st.info("🔄 Cargando bugs desde Jira...")
+    st.info("🔄 Cargando bugs desde Jira...")
     issues = []
-        start_at = 0
-        max_results = 100
+    start_at = 0
+    max_results = 100
     progress_bar = st.progress(0)
     total_issues = 0
     
@@ -1931,32 +1931,32 @@ if opcion == "BUGS":
     start_at = 0
     processed = 0
     
-        while True:
-            try:
-                endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
-                data = jira._get_json(endpoint)
-                batch = data.get("issues", [])
-                
-                # Enriquecer cada issue con changelog
-                for issue in batch:
-                    try:
-                        issue_key = issue.get("key", "")
-                        changelog_endpoint = f'issue/{issue_key}?expand=changelog&fields={fields}'
-                        enriched_issue = jira._get_json(changelog_endpoint)
-                        issues.append(enriched_issue)
-                    except Exception as e:
-                        # Si falla el changelog, usar la issue sin enriquecer
-                        issues.append(issue)
+    while True:
+        try:
+            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
+            data = jira._get_json(endpoint)
+            batch = data.get("issues", [])
+            
+            # Enriquecer cada issue con changelog
+            for issue in batch:
+                try:
+                    issue_key = issue.get("key", "")
+                    changelog_endpoint = f'issue/{issue_key}?expand=changelog&fields={fields}'
+                    enriched_issue = jira._get_json(changelog_endpoint)
+                    issues.append(enriched_issue)
+                except Exception as e:
+                    # Si falla el changelog, usar la issue sin enriquecer
+                    issues.append(issue)
                 
                 processed += 1
                 progress_bar.progress(processed / total_issues)
-                
-                if len(batch) < max_results:
-                    break
-                start_at += max_results
-            except Exception as e:
-                st.error(f"❌ Error cargando datos: {e}")
+            
+            if len(batch) < max_results:
                 break
+            start_at += max_results
+        except Exception as e:
+            st.error(f"❌ Error cargando datos: {e}")
+            break
     
     if not issues:
         st.warning("⚠️ No se encontraron bugs")
@@ -2454,130 +2454,130 @@ if opcion == "BUGS":
         procesamiento_enlaces_cacheado = False
 
     if not procesamiento_enlaces_cacheado:
-    type_cache, links_cache, summary_cache = {}, {}, {}
-    rows = []
-    excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
+        type_cache, links_cache, summary_cache = {}, {}, {}
+        rows = []
+        excluidos = []   # dicts: {"Clave","AñoMes","Mes"}
+        
+        for it in issues:
+            f = it.get("fields") or {}
+            itype = ((f.get("issuetype") or {}).get("name") or "")
+            if not es_bug_type(itype):
+                continue
 
-    for it in issues:
-        f = it.get("fields") or {}
-        itype = ((f.get("issuetype") or {}).get("name") or "")
-        if not es_bug_type(itype):
-            continue
+            created_dt = pd.to_datetime(f.get("created"), errors="coerce")
+            if pd.isna(created_dt):
+                continue
 
-        created_dt = pd.to_datetime(f.get("created"), errors="coerce")
-        if pd.isna(created_dt):
-            continue
+            prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
+            summary = f.get("summary") or ""
+            status_name = ((f.get("status") or {}).get("name") or "").strip()
 
-        prio = normalizar_prioridad((f.get("priority") or {}).get("name"))
-        summary = f.get("summary") or ""
-        status_name = ((f.get("status") or {}).get("name") or "").strip()
+            epic_val = ""
+            if EPIC_FIELD:
+                v = f.get(EPIC_FIELD)
+                if isinstance(v, str):
+                    epic_val = v.strip().upper()
+                elif isinstance(v, dict):
+                    epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
 
-        epic_val = ""
-        if EPIC_FIELD:
-            v = f.get(EPIC_FIELD)
-            if isinstance(v, str):
-                epic_val = v.strip().upper()
-            elif isinstance(v, dict):
-                epic_val = ((v.get("key") or v.get("id") or "") or "").upper()
+            direct_bug_keys, direct_story_keys = set(), set()
+            for lk in (f.get("issuelinks") or []):
+                for side in ("inwardIssue", "outwardIssue"):
+                    other = lk.get(side)
+                    if not other:
+                        continue
+                    okey = (other.get("key") or "").upper()
+                    ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
+                    if not ot:
+                        ot = get_issue_type(okey, type_cache)
 
-        direct_bug_keys, direct_story_keys = set(), set()
-        for lk in (f.get("issuelinks") or []):
-            for side in ("inwardIssue", "outwardIssue"):
-                other = lk.get(side)
-                if not other:
-                    continue
-                okey = (other.get("key") or "").upper()
-                ot = ((other.get("fields") or {}).get("issuetype") or {}).get("name")
-                if not ot:
-                    ot = get_issue_type(okey, type_cache)
+                    if es_bug_type(ot) or okey.startswith("BUG-"):
+                        direct_bug_keys.add(okey)
 
-                if es_bug_type(ot) or okey.startswith("BUG-"):
-                    direct_bug_keys.add(okey)
+                    ot_l = _strip(ot)
+                    if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
+                        direct_story_keys.add(okey)
 
-                ot_l = _strip(ot)
-                if ("story" in ot_l) or ("historia" in ot_l) or proyecto_por_prefijo_key(okey):
-                    direct_story_keys.add(okey)
+            tiene_bug = len(direct_bug_keys) > 0
+            tiene_hu  = len(direct_story_keys) > 0
 
-        tiene_bug = len(direct_bug_keys) > 0
-        tiene_hu  = len(direct_story_keys) > 0
+            tipo_final, proyecto = None, ""
 
-        tipo_final, proyecto = None, ""
-
-        if tiene_bug:
-            proyectos_via_bug = set()
-            for bkey in direct_bug_keys:
-                for lk2 in get_issue_links(bkey, links_cache):
-                    for side2 in ("inwardIssue", "outwardIssue"):
-                        other2 = lk2.get(side2)
-                        if not other2:
-                            continue
-                        k2 = (other2.get("key") or "").upper()
-                        t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
-                        if not t2:
-                            t2 = get_issue_type(k2, type_cache)
-                        t2_l = _strip(t2)
-                        if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
-                            pj = proyecto_por_prefijo_key(k2)
-                            if pj:
-                                proyectos_via_bug.add(pj)
-
-            if len(proyectos_via_bug) == 1:
-                proyecto = list(proyectos_via_bug)[0]
-                tipo_final = "Bug"
-            else:
-                proyectos_by_bugname = set()
+            if tiene_bug:
+                proyectos_via_bug = set()
                 for bkey in direct_bug_keys:
-                    sum_b = get_issue_summary(bkey, summary_cache)
-                    pj_b = proyecto_por_prefijo_summary(sum_b)
-                    if pj_b:
-                        proyectos_by_bugname.add(pj_b)
+                    for lk2 in get_issue_links(bkey, links_cache):
+                        for side2 in ("inwardIssue", "outwardIssue"):
+                            other2 = lk2.get(side2)
+                            if not other2:
+                                continue
+                            k2 = (other2.get("key") or "").upper()
+                            t2 = ((other2.get("fields") or {}).get("issuetype") or {}).get("name")
+                            if not t2:
+                                t2 = get_issue_type(k2, type_cache)
+                            t2_l = _strip(t2)
+                            if ("story" in t2_l) or ("historia" in t2_l) or proyecto_por_prefijo_key(k2):
+                                pj = proyecto_por_prefijo_key(k2)
+                                if pj:
+                                    proyectos_via_bug.add(pj)
 
-                if len(proyectos_by_bugname) == 1:
-                    proyecto = list(proyectos_by_bugname)[0]
+                if len(proyectos_via_bug) == 1:
+                    proyecto = list(proyectos_via_bug)[0]
                     tipo_final = "Bug"
                 else:
-                    pj_by_name = proyecto_por_prefijo_summary(summary)
-                    if pj_by_name:
-                        proyecto = pj_by_name
+                    proyectos_by_bugname = set()
+                    for bkey in direct_bug_keys:
+                        sum_b = get_issue_summary(bkey, summary_cache)
+                        pj_b = proyecto_por_prefijo_summary(sum_b)
+                        if pj_b:
+                            proyectos_by_bugname.add(pj_b)
+
+                    if len(proyectos_by_bugname) == 1:
+                        proyecto = list(proyectos_by_bugname)[0]
                         tipo_final = "Bug"
                     else:
-                        tipo_final = "Excluir"
+                        pj_by_name = proyecto_por_prefijo_summary(summary)
+                        if pj_by_name:
+                            proyecto = pj_by_name
+                            tipo_final = "Bug"
+                        else:
+                            tipo_final = "Excluir"
 
-        elif tiene_hu:
-            proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
-            proyectos_de_hu.discard("")
-            if len(proyectos_de_hu) == 1:
-                proyecto = list(proyectos_de_hu)[0]
-                tipo_final = "Mejora"
+            elif tiene_hu:
+                proyectos_de_hu = {proyecto_por_prefijo_key(k) for k in direct_story_keys}
+                proyectos_de_hu.discard("")
+                if len(proyectos_de_hu) == 1:
+                    proyecto = list(proyectos_de_hu)[0]
+                    tipo_final = "Mejora"
+                else:
+                    tipo_final = "Excluir"
             else:
-                tipo_final = "Excluir"
-        else:
-            pj_by_name = proyecto_por_prefijo_summary(summary)
-            if pj_by_name:
-                proyecto = pj_by_name
-                tipo_final = "Bug"
+                pj_by_name = proyecto_por_prefijo_summary(summary)
+                if pj_by_name:
+                    proyecto = pj_by_name
+                    tipo_final = "Bug"
+                else:
+                    tipo_final = "Excluir"
+
+            anio, mes = int(created_dt.year), int(created_dt.month)
+            anio_mes = f"{anio}-{mes:02d}"
+            mes_txt  = f"{MESES_ES[mes]} {anio}"
+
+            if tipo_final == "Excluir":
+                excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
             else:
-                tipo_final = "Excluir"
-
-        anio, mes = int(created_dt.year), int(created_dt.month)
-        anio_mes = f"{anio}-{mes:02d}"
-        mes_txt  = f"{MESES_ES[mes]} {anio}"
-
-        if tipo_final == "Excluir":
-            excluidos.append({"Clave": it.get("key",""), "AñoMes": anio_mes, "Mes": mes_txt})
-        else:
-        rows.append({
-            "Clave": it.get("key", ""),
-            "Creado": created_dt,
-            "AñoMes": anio_mes,
-            "Mes": mes_txt,
-            "Prioridad": prio,
-            "Proyecto": proyecto,
-            "Tipo": tipo_final,
-            "Summary": summary,
-            "Epic": epic_val,
-            "Status": status_name,
-        })
+                rows.append({
+                "Clave": it.get("key", ""),
+                "Creado": created_dt,
+                "AñoMes": anio_mes,
+                "Mes": mes_txt,
+                "Prioridad": prio,
+                "Proyecto": proyecto,
+                "Tipo": tipo_final,
+                "Summary": summary,
+                "Epic": epic_val,
+                "Status": status_name,
+            })
 
         # Guardar cache de enlaces procesados (fuera del bucle, dentro del if)
         try:
@@ -2760,7 +2760,7 @@ if opcion == "BUGS":
             # Modificar JQL para filtrar por mes específico
             if 'created >= "2025-01-01"' in jql:
                 jql_mes = jql.replace('created >= "2025-01-01"', f'created >= "{inicio}" AND created < "{fin}"')
-    else:
+            else:
                 # Si no tiene el filtro de fecha, agregarlo
                 jql_mes = f'{jql} AND created >= "{inicio}" AND created < "{fin}"'
             start_at = 0
@@ -2852,7 +2852,7 @@ if opcion == "BUGS":
                 st.metric("ATI Total", len(bugs_ati_internos))
             with col4:
                 st.metric("Total General", len(bugs_tal_internos) + len(bugs_rep_internos) + len(bugs_ati_internos))
-    else:
+        else:
             st.info("No se encontraron bugs internos para mostrar.")
             
     except Exception as e:
@@ -3407,62 +3407,62 @@ if opcion == "Histórico Postventa":
         # Filtrar solo épicas de postventas (REP y TAL), excluir ATI
         epicas_postventas = [e for e in epicas_relevantes if e["rn"].startswith(("REP-", "TAL-"))]
         for epica_rn in epicas_postventas:
-        nombre_epica = epica_rn.get("nombre", "")
-        mes_entrega = epica_rn.get("mes_entrega", "")
-        epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
+            nombre_epica = epica_rn.get("nombre", "")
+            mes_entrega = epica_rn.get("mes_entrega", "")
+            epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
 
-        if epic_match:
-            data = epicas[epic_match]
-            historias = data["Historias"]
-            total = len(historias)
-            listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
-            porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
-            puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+            if epic_match:
+                data = epicas[epic_match]
+                historias = data["Historias"]
+                total = len(historias)
+                listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+                porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
+                puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
 
-            # Bugs asociados (REP/TAL) + promedio hs
-            hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
-            bugs_keys_rep_tal, bugs_hrs = [], []
-            for hu in hu_keys:
-                info = mapa_bugs_hu.get(hu)
-                if not info:
-                    continue
-                bugs_keys_rep_tal.extend(info.get("bugs", []))
-                bugs_hrs.extend(info.get("hrs", []))
-            uniq_bugs_rep_tal = sorted(set(bugs_keys_rep_tal))
-            bugs_cnt_rep_tal = len(uniq_bugs_rep_tal)
-            prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
+                # Bugs asociados (REP/TAL) + promedio hs
+                hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
+                bugs_keys_rep_tal, bugs_hrs = [], []
+                for hu in hu_keys:
+                    info = mapa_bugs_hu.get(hu)
+                    if not info:
+                        continue
+                    bugs_keys_rep_tal.extend(info.get("bugs", []))
+                    bugs_hrs.extend(info.get("hrs", []))
+                uniq_bugs_rep_tal = sorted(set(bugs_keys_rep_tal))
+                bugs_cnt_rep_tal = len(uniq_bugs_rep_tal)
+                prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
 
-            # UAT por RN (solo Epic Link)
-            candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
-            uat_keys = set()
-            for ek in candidate_epic_keys:
-                uat_keys |= epic_to_bugs_uat.get(ek, set())
-            uniq_bugs_uat = sorted(uat_keys)
-            bugs_cnt_uat = len(uniq_bugs_uat)
+                # UAT por RN (solo Epic Link)
+                candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
+                uat_keys = set()
+                for ek in candidate_epic_keys:
+                    uat_keys |= epic_to_bugs_uat.get(ek, set())
+                uniq_bugs_uat = sorted(uat_keys)
+                bugs_cnt_uat = len(uniq_bugs_uat)
                 
                 # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
                 total_bugs = bugs_cnt_rep_tal + bugs_cnt_uat
                 dcr = round((bugs_cnt_rep_tal / total_bugs * 100), 1) if total_bugs > 0 else 0.0
                     
-        else:
-            historias = []
-            porcentaje_num = 0
-            puntos_totales = 0
-            uniq_bugs_rep_tal, bugs_cnt_rep_tal, prom_hrs = [], 0, None
-            uniq_bugs_uat, bugs_cnt_uat = [], 0
+            else:
+                historias = []
+                porcentaje_num = 0
+                puntos_totales = 0
+                uniq_bugs_rep_tal, bugs_cnt_rep_tal, prom_hrs = [], 0, None
+                uniq_bugs_uat, bugs_cnt_uat = [], 0
                 dcr = 0.0  # Sin datos, DCR = 0
 
-        tabla_historico.append({
-            "Épica": nombre_epica,
-            "Mes entrega": mes_entrega,
-            "%_num": porcentaje_num,
-            "Historias": historias,
-            "Puntos totales": puntos_totales,
-            "Bugs_asociados": bugs_cnt_rep_tal,
-            "Bugs_asociados_claves": ", ".join(uniq_bugs_rep_tal),
-            "Promedio_resolucion_bugs_hs": prom_hrs,
-            "Bugs_pruebas_UAT": bugs_cnt_uat,
-            "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
+            tabla_historico.append({
+                "Épica": nombre_epica,
+                "Mes entrega": mes_entrega,
+                "%_num": porcentaje_num,
+                "Historias": historias,
+                "Puntos totales": puntos_totales,
+                "Bugs_asociados": bugs_cnt_rep_tal,
+                "Bugs_asociados_claves": ", ".join(uniq_bugs_rep_tal),
+                "Promedio_resolucion_bugs_hs": prom_hrs,
+                "Bugs_pruebas_UAT": bugs_cnt_uat,
+                "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
                 "DCR_%": dcr,
             })
         
@@ -3686,8 +3686,8 @@ if opcion == "Velocidad de devs":
     
     st.info("💡 **Cómo usar**: Selecciona las fechas del período que quieres evaluar")
     
-    # Aclaración sobre la carga de datos
-    st.info("📊 **Datos disponibles**: Esta pestaña muestra datos desde enero 2024 en adelante.")
+    # Aclaración sobre la limitación de datos
+    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 6 meses (mayo-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
     
     # Inicializar session_state para filtros (últimos 3 meses incluyendo el mes actual)
     if "vel_fecha_inicio" not in st.session_state:
@@ -3766,8 +3766,8 @@ if opcion == "Velocidad de devs":
         for cache_file in cache_files:
             try:
                 os.remove(cache_file)
-                    except Exception:
-                        pass
+            except Exception:
+                pass
         
         # Limpiar session state
         keys_to_clear = [k for k in st.session_state.keys() if k.startswith("velocidad_cache")]
@@ -3776,166 +3776,6 @@ if opcion == "Velocidad de devs":
         
         st.success("✅ Cache de velocidad limpiado completamente. Recargando...")
         st.rerun()
-
-    # ==========================
-    #   FUNCIONES: PRE-CÁLCULOS
-    # ==========================
-    
-    def generar_pre_calculos_velocidad(historias, bugs):
-        """Genera pre-cálculos para optimizar la visualización"""
-        print("🔄 Generando pre-cálculos de velocidad...")
-        
-        # 1. Procesar historias para obtener datos básicos
-        df_historias = procesar_historias_para_pre_calculos(historias)
-        
-        # 2. Generar ranking mensual pre-calculado
-        ranking_mensual = calcular_ranking_mensual_pre_calculado(df_historias)
-        
-        # 3. Generar puntos por usuario pre-calculado
-        puntos_por_usuario = calcular_puntos_por_usuario_pre_calculado(df_historias)
-        
-        # 4. Generar objetivos cumplidos pre-calculado
-        objetivos_cumplidos = calcular_objetivos_pre_calculado(df_historias)
-        
-        # 5. Generar métricas de bugs pre-calculadas
-        bugs_metrics = calcular_metrics_bugs_pre_calculado(bugs)
-        
-        pre_calculos = {
-            'ranking_mensual': ranking_mensual,
-            'puntos_por_usuario': puntos_por_usuario,
-            'objetivos_cumplidos': objetivos_cumplidos,
-            'bugs_metrics': bugs_metrics,
-            'fecha_generacion': datetime.now().isoformat(),
-            'version': '2.0'
-        }
-        
-        print("✅ Pre-cálculos generados exitosamente")
-        return pre_calculos
-    
-    def procesar_historias_para_pre_calculos(historias):
-        """Procesa historias para pre-cálculos de forma optimizada"""
-        rows = []
-        
-        for iss in historias:
-            f = iss.get("fields", {}) or {}
-            
-            # Obtener datos básicos
-            key = iss.get("key", "")
-            pts = _get_points_from_fields(f)
-            
-            if pts <= 0:
-                continue
-            
-            # Buscar owner al momento de testing
-            owner_name, owner_id, first_dt = _owner_al_momento_testing(iss, {}, {})
-            
-            if pd.notna(first_dt) and owner_name and owner_id:
-                rows.append({
-                    "Issue": key,
-                    "Puntos": pts,
-                    "Usuario_nombre": owner_name,
-                    "Mes": _mes_label(_mes_start(first_dt)),
-                    "AñoMes": first_dt.strftime("%Y-%m"),
-                    "Proyecto": f.get("project", {}).get("key", ""),
-                    "Fecha_Testing": first_dt
-                })
-        
-        return pd.DataFrame(rows)
-    
-    def calcular_ranking_mensual_pre_calculado(df_historias):
-        """Calcula ranking mensual pre-calculado"""
-        if df_historias.empty:
-            return {}
-        
-        ranking = {}
-        
-        for mes in df_historias['AñoMes'].unique():
-            df_mes = df_historias[df_historias['AñoMes'] == mes]
-            
-            # Calcular puntos por usuario en el mes
-            puntos_usuario = df_mes.groupby('Usuario_nombre')['Puntos'].sum().sort_values(ascending=False)
-            
-            ranking[mes] = puntos_usuario.to_dict()
-        
-        return ranking
-    
-    def calcular_puntos_por_usuario_pre_calculado(df_historias):
-        """Calcula puntos por usuario pre-calculado"""
-        if df_historias.empty:
-            return {}
-        
-        puntos_usuario = {}
-        
-        for usuario in df_historias['Usuario_nombre'].unique():
-            df_usuario = df_historias[df_historias['Usuario_nombre'] == usuario]
-            puntos_mes = df_usuario.groupby('AñoMes')['Puntos'].sum().to_dict()
-            puntos_usuario[usuario] = puntos_mes
-        
-        return puntos_usuario
-    
-    def calcular_objetivos_pre_calculado(df_historias):
-        """Calcula objetivos cumplidos pre-calculado"""
-        if df_historias.empty:
-            return {}
-        
-        objetivos = {}
-        
-        for usuario in df_historias['Usuario_nombre'].unique():
-            df_usuario = df_historias[df_historias['Usuario_nombre'] == usuario]
-            
-            # Contar meses con puntos > 0
-            meses_con_puntos = df_usuario[df_usuario['Puntos'] > 0]['AñoMes'].nunique()
-            total_meses = df_usuario['AñoMes'].nunique()
-            
-            objetivos[usuario] = {
-                'meses_con_puntos': meses_con_puntos,
-                'total_meses': total_meses,
-                'porcentaje_cumplimiento': (meses_con_puntos / total_meses * 100) if total_meses > 0 else 0
-            }
-        
-        return objetivos
-    
-    def calcular_metrics_bugs_pre_calculado(bugs):
-        """Calcula métricas de bugs pre-calculadas"""
-        if not bugs:
-            return {}
-        
-        # Procesar bugs básico
-        bugs_data = []
-        for bug in bugs:
-            f = bug.get("fields", {}) or {}
-            created = f.get("created", "")
-            
-            if created:
-                try:
-                    fecha = pd.to_datetime(created)
-                    bugs_data.append({
-                        'key': bug.get("key", ""),
-                        'created': fecha,
-                        'año_mes': fecha.strftime("%Y-%m"),
-                        'status': f.get("status", {}).get("name", ""),
-                        'priority': f.get("priority", {}).get("name", "")
-                    })
-                except:
-                    continue
-        
-        if not bugs_data:
-            return {}
-        
-        df_bugs = pd.DataFrame(bugs_data)
-        
-        # Calcular métricas por mes
-        bugs_por_mes = {}
-        for mes in df_bugs['año_mes'].unique():
-            df_mes = df_bugs[df_bugs['año_mes'] == mes]
-            
-            bugs_por_mes[mes] = {
-                'total': len(df_mes),
-                'cerrados': len(df_mes[df_mes['status'].str.contains('cerrado|closed|done', case=False, na=False)]),
-                'alta_prioridad': len(df_mes[df_mes['priority'].str.contains('alta|high', case=False, na=False)])
-            }
-        
-        return bugs_por_mes
 
     # ==========================
     #   FUNCIÓN: CARGAR DATOS DE JIRA
@@ -3956,16 +3796,7 @@ if opcion == "Velocidad de devs":
                 if (datetime.now() - mtime) < timedelta(hours=48):
                     with open(cache_file, 'rb') as f:
                         cache_data = pickle.load(f)
-                        
-                        # Verificar si tiene pre-cálculos
-                        if 'pre_calculos' in cache_data:
-                            st.info(f"✅ Datos cargados desde cache con pre-cálculos ({len(cache_data['historias'])} historias, {len(cache_data['bugs'])} bugs)")
-                            # Guardar pre-cálculos en session_state para uso rápido
-                            st.session_state['velocidad_pre_calculos'] = cache_data['pre_calculos']
-                        else:
                         st.info(f"✅ Datos cargados desde cache ({len(cache_data['historias'])} historias, {len(cache_data['bugs'])} bugs)")
-                            st.warning("⚠️ Cache sin pre-cálculos. Se generarán en la próxima actualización.")
-                        
                         return cache_data['historias'], cache_data['bugs']
             except Exception as e:
                 if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
@@ -3975,12 +3806,12 @@ if opcion == "Velocidad de devs":
         st.info("🔄 Cargando datos desde Jira... Esto puede tomar un momento...")
 
         # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
-            proy_jql = "project in (REP, TAL, ATI)"
+        proy_jql = "project in (REP, TAL, ATI)"
 
-        # Buscar historias con puntos desde 2024
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2024-01-01'"
+        # Buscar historias con puntos de los últimos 6 meses (mayo-octubre 2025)
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2025-05-01'"
         
-        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2024-01-01'"
+        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2025-05-01'"
         
         FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
         
@@ -4030,7 +3861,7 @@ if opcion == "Velocidad de devs":
                                 continue
                     else:
                         enriched_issue = historia
-                    break
+                        break
                         
                 except Exception as e:
                     if intento < 2:  # No es el último intento
@@ -4090,20 +3921,10 @@ if opcion == "Velocidad de devs":
             }
             st.session_state[cache_key_velocidad] = cache_data
             
-        # Generar pre-cálculos si hay datos suficientes
-        if len(historias) >= 5:
-            st.info("🔄 Generando pre-cálculos para optimización...")
-            pre_calculos = generar_pre_calculos_velocidad(historias, bugs)
-            cache_data['pre_calculos'] = pre_calculos
-            st.session_state['velocidad_pre_calculos'] = pre_calculos
-            st.success("✅ Pre-cálculos generados exitosamente")
-        else:
-            st.warning("⚠️ Datos insuficientes para generar pre-cálculos")
-            
-            # Guardar en archivo persistente
-            try:
-                with open(cache_file, 'wb') as f:
-                    pickle.dump(cache_data, f)
+        # Guardar en archivo persistente
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(cache_data, f)
             
             # Verificar que el changelog se guardó correctamente
             if historias:
@@ -4115,14 +3936,13 @@ if opcion == "Velocidad de devs":
                 else:
                     st.warning(f"⚠️ Cache generado SIN changelog - esto puede causar problemas")
             
-                if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                    print(f"🔍 VELOCIDAD DEBUG: Datos guardados en cache de archivo - {len(historias)} historias, {len(bugs)} bugs")
-            except Exception as e:
-                if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                    print(f"⚠️ Error guardando cache: {e}")
-                
+            if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
+                print(f"🔍 VELOCIDAD DEBUG: Datos guardados en cache de archivo - {len(historias)} historias, {len(bugs)} bugs")
+        except Exception as e:
+            if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
+                print(f"⚠️ Error guardando cache: {e}")
             
-                    else:
+        else:
             if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
                 print(f"🔍 VELOCIDAD DEBUG: No se guarda en cache - datos insuficientes")
         
@@ -4133,25 +3953,25 @@ if opcion == "Velocidad de devs":
     # ==========================
     
     def procesar_historias(historias, accountid_to_name, name_to_acc):
-    rows_issues = []
+        rows_issues = []
         
         for iss in historias:
-        f = iss.get("fields", {}) or {}
-        itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
-        if itype != "historia":
-            continue
+            f = iss.get("fields", {}) or {}
+            itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
+            if itype != "historia":
+                continue
             
-        proj_key = _norm((f.get("project") or {}).get("key"))
-        if not _proy_ok(proj_key, proyecto_sel):
-            continue
+            proj_key = _norm((f.get("project") or {}).get("key"))
+            if not _proy_ok(proj_key, proyecto_sel):
+                continue
             
-        key = iss.get("key", "")
-        pts = _get_points_from_fields(f)
+            key = iss.get("key", "")
+            pts = _get_points_from_fields(f)
             
             # Buscar owner al momento de testing
             owner_name, owner_id, first_dt = _owner_al_momento_testing(iss, accountid_to_name, name_to_acc)
             
-        if pd.notna(first_dt) and pts > 0 and owner_name and owner_id:
+            if pd.notna(first_dt) and pts > 0 and owner_name and owner_id:
                 rows_issues.append({
                     "Issue": key,
                     "Puntos": pts,
@@ -4190,8 +4010,8 @@ if opcion == "Velocidad de devs":
     # ==========================
     
     def procesar_bugs(bugs, historias_por_dev):
-    bug_rows = []
-    bugs_extra_rows = []
+        bug_rows = []
+        bugs_extra_rows = []
 
         bugs_filtrados_por_tipo = 0
         bugs_filtrados_por_proyecto = 0
@@ -4203,20 +4023,20 @@ if opcion == "Velocidad de devs":
         estados_bugs_unicos = set()
         
         for iss in bugs:
-        f = iss.get("fields", {}) or {}
-        itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
-        if itype != "error":
+            f = iss.get("fields", {}) or {}
+            itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
+            if itype != "error":
                 bugs_filtrados_por_tipo += 1
-            continue
+                continue
 
-        bug_key = iss.get("key", "")
-        bug_proj = _norm((f.get("project") or {}).get("key"))
+            bug_key = iss.get("key", "")
+            bug_proj = _norm((f.get("project") or {}).get("key"))
 
             if not _proy_ok(bug_proj, proyecto_sel):
                 bugs_filtrados_por_proyecto += 1
                 continue
 
-        estado_bug = _norm((f.get("status", {}) or {}).get("name")).lower()
+            estado_bug = _norm((f.get("status", {}) or {}).get("name")).lower()
             estados_bugs_unicos.add(estado_bug)
             
             # Estados válidos más amplios para bugs (incluyendo estados en español)
@@ -4225,31 +4045,31 @@ if opcion == "Velocidad de devs":
                 bugs_filtrados_por_estado += 1
                 continue
             
-        fecha_cierre = pd.to_datetime(f.get("statuscategorychangedate", ""), errors="coerce")
+            fecha_cierre = pd.to_datetime(f.get("statuscategorychangedate", ""), errors="coerce")
             if pd.isna(fecha_cierre):
                 bugs_filtrados_por_fecha += 1
                 continue
 
             bug_mes_cierre = _mes_label(_mes_start(fecha_cierre))
-        assg = f.get("assignee") or {}
-        bug_assignee_id = assg.get("accountId")
-        bug_assignee_nm = _norm(accountid_to_name.get(bug_assignee_id) or assg.get("displayName"))
+            assg = f.get("assignee") or {}
+            bug_assignee_id = assg.get("accountId")
+            bug_assignee_nm = _norm(accountid_to_name.get(bug_assignee_id) or assg.get("displayName"))
 
             if not bug_assignee_nm:
                 bugs_filtrados_por_asignado += 1
                 continue
             
             # Buscar si es bug extra (vinculado a HU del dev)
-        candidate_hus = set()
-        parent_key = (f.get("parent") or {}).get("key", "")
-        if parent_key:
-            candidate_hus.add(parent_key)
-        for link in (f.get("issuelinks") or []):
-            for side in ("inwardIssue", "outwardIssue"):
-                lk = link.get(side) or {}
-                k = lk.get("key")
-                if k:
-                    candidate_hus.add(k)
+            candidate_hus = set()
+            parent_key = (f.get("parent") or {}).get("key", "")
+            if parent_key:
+                candidate_hus.add(parent_key)
+            for link in (f.get("issuelinks") or []):
+                for side in ("inwardIssue", "outwardIssue"):
+                    lk = link.get(side) or {}
+                    k = lk.get("key")
+                    if k:
+                        candidate_hus.add(k)
 
             # Determinar si es bug extra o bug normal
             # Bug extra: NO vinculado a ninguna historia del MISMO desarrollador
@@ -4267,7 +4087,7 @@ if opcion == "Velocidad de devs":
                     "Mes": bug_mes_cierre,
                     "Proyecto": bug_proj,
                 })
-    else:
+            else:
                 # Bug normal: no vinculado a historia del dev
                 bug_rows.append({
                     "Issue": bug_key,
@@ -4284,13 +4104,13 @@ if opcion == "Velocidad de devs":
     
     def agregar_por_usuario_mes(df_issues, bug_rows, bugs_extra_rows, df_horas_sum):
         # Puntos por usuario/mes
-    if not df_issues.empty:
+        if not df_issues.empty:
             df_puntos = df_issues.groupby(["Usuario_nombre", "Mes"], as_index=False).agg(
                 Puntos=("Puntos", "sum"),
                 Claves=("Issue", lambda x: ", ".join(sorted(set(k for k in x if k)))),
-        )
-    else:
-        df_puntos = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Puntos", "Claves"])
+            )
+        else:
+            df_puntos = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Puntos", "Claves"])
 
         # Bugs por usuario/mes
         if bug_rows:
@@ -4313,7 +4133,7 @@ if opcion == "Velocidad de devs":
             df_bugs_extra = pd.DataFrame(columns=["Usuario_nombre", "Mes", "Bugs_resueltos_extra", "Bugs_extra_claves"])
         
         # Crear base unificada
-    df_puntos["_Mes_dt_aux"] = pd.to_datetime(df_puntos["Mes"], format="%B %Y", errors="coerce")
+        df_puntos["_Mes_dt_aux"] = pd.to_datetime(df_puntos["Mes"], format="%B %Y", errors="coerce")
         
         # Convertir accountids a nombres legibles en df_horas_sum para el merge
         df_horas_sum_legible = df_horas_sum.copy()
@@ -4322,30 +4142,30 @@ if opcion == "Velocidad de devs":
         )
         
         base_horas = df_horas_sum_legible[["Usuario_nombre", "Mes_dt"]].drop_duplicates() if "Mes_dt" in df_horas_sum_legible.columns else pd.DataFrame(columns=["Usuario_nombre","Mes_dt"])
-    base_puntos = df_puntos[["Usuario_nombre", "_Mes_dt_aux"]].rename(columns={"_Mes_dt_aux":"Mes_dt"}).drop_duplicates()
-    df_base = pd.concat([base_horas, base_puntos], ignore_index=True).dropna(subset=["Mes_dt"]).drop_duplicates()
-    df_base["Mes"] = df_base["Mes_dt"].dt.strftime("%B %Y")
+        base_puntos = df_puntos[["Usuario_nombre", "_Mes_dt_aux"]].rename(columns={"_Mes_dt_aux":"Mes_dt"}).drop_duplicates()
+        df_base = pd.concat([base_horas, base_puntos], ignore_index=True).dropna(subset=["Mes_dt"]).drop_duplicates()
+        df_base["Mes"] = df_base["Mes_dt"].dt.strftime("%B %Y")
 
         # Merge todos los datos
         df_merge = df_base.merge(df_horas_sum_legible[["Usuario_nombre","Mes_dt","Horas"]], on=["Usuario_nombre","Mes_dt"], how="left")
         
         # Merge con puntos
-    df_merge = df_merge.merge(df_puntos[["Usuario_nombre","Mes","Puntos","Claves"]], on=["Usuario_nombre","Mes"], how="left")
+        df_merge = df_merge.merge(df_puntos[["Usuario_nombre","Mes","Puntos","Claves"]], on=["Usuario_nombre","Mes"], how="left")
 
         # Merge con bugs
         df_merge = df_merge.merge(df_bugs, on=["Usuario_nombre", "Mes"], how="left")
         df_merge = df_merge.merge(df_bugs_extra, on=["Usuario_nombre", "Mes"], how="left")
 
         # Llenar valores faltantes
-    for col, fill in [("Horas", 0.0), ("Puntos", 0.0), ("Bugs", 0), ("Bugs_resueltos_extra", 0)]:
-        if col in df_merge.columns:
-            df_merge[col] = df_merge[col].fillna(fill)
-    for col in ["Claves", "Bugs_claves", "Bugs_extra_claves"]:
-        if col in df_merge.columns:
-            df_merge[col] = df_merge[col].fillna("").astype(str)
+        for col, fill in [("Horas", 0.0), ("Puntos", 0.0), ("Bugs", 0), ("Bugs_resueltos_extra", 0)]:
+            if col in df_merge.columns:
+                df_merge[col] = df_merge[col].fillna(fill)
+        for col in ["Claves", "Bugs_claves", "Bugs_extra_claves"]:
+            if col in df_merge.columns:
+                df_merge[col] = df_merge[col].fillna("").astype(str)
 
         # Calcular velocidad (usando 80% de las horas)
-    df_merge["Velocidad"] = df_merge.apply(
+        df_merge["Velocidad"] = df_merge.apply(
             lambda r: round((r["Horas"] * 0.8) / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
         )
         
@@ -4373,12 +4193,12 @@ if opcion == "Velocidad de devs":
     # ==========================
     
     def calcular_metricas_finales(df_filtrado):
-    def calcular_nota_final(r):
-        p = float(r.get("Puntos", 0.0))
-        h = float(r.get("Horas", 0.0))
-        b = int(r.get("Bugs", 0))
-        v = float(r.get("Velocidad", 0.0))
-        bex = int(r.get("Bugs_resueltos_extra", 0))
+        def calcular_nota_final(r):
+            p = float(r.get("Puntos", 0.0))
+            h = float(r.get("Horas", 0.0))
+            b = int(r.get("Bugs", 0))
+            v = float(r.get("Velocidad", 0.0))
+            bex = int(r.get("Bugs_resueltos_extra", 0))
 
             if p <= 0: 
                 return 0.0
@@ -4411,29 +4231,29 @@ if opcion == "Velocidad de devs":
                 sb = 0.80
 
             # Calcular puntuación de velocidad
-        if v <= 5: sv = 1.10
-        elif 6 <= v <= 7: sv = 1.05
-        elif abs(v - 8.0) < 1e-9: sv = 1.00
-        elif 8 < v <= 10: sv = 0.95
-        elif 10 < v <= 12: sv = 0.90
-        else: sv = 0.80
+            if v <= 5: sv = 1.10
+            elif 6 <= v <= 7: sv = 1.05
+            elif abs(v - 8.0) < 1e-9: sv = 1.00
+            elif 8 < v <= 10: sv = 0.95
+            elif 10 < v <= 12: sv = 0.90
+            else: sv = 0.80
 
             # Calcular puntuación base
-        base = (sp * 0.40) + (sh * 0.25) + (sv * 0.25) + (sb * 0.10)
+            base = (sp * 0.40) + (sh * 0.25) + (sv * 0.25) + (sb * 0.10)
 
             # Calcular bonus por bugs extra
-        if 1 <= bex <= 5: bonus = 0.02
-        elif 6 <= bex <= 10: bonus = 0.03
-        elif bex > 10: bonus = 0.05
-        else: bonus = 0.0
+            if 1 <= bex <= 5: bonus = 0.02
+            elif 6 <= bex <= 10: bonus = 0.03
+            elif bex > 10: bonus = 0.05
+            else: bonus = 0.0
 
-        return round((base + bonus) * 100, 2)
+            return round((base + bonus) * 100, 2)
 
         if not df_filtrado.empty:
             df_filtrado["Nota_final"] = df_filtrado.apply(calcular_nota_final, axis=1)
             # Agregar columna Mes_label para el gráfico
             df_filtrado["Mes_label"] = df_filtrado["Mes_dt"].apply(_mes_label)
-    else:
+        else:
             df_filtrado["Nota_final"] = pd.Series(dtype=float)
             df_filtrado["Mes_label"] = pd.Series(dtype=str)
 
@@ -4447,7 +4267,7 @@ if opcion == "Velocidad de devs":
         """Calcula los usuarios válidos que tienen puntos"""
         df_final = df_final.copy()
         df_final["Usuario_nombre"] = df_final["Usuario_nombre"].apply(_norm)
-    users_with_points = set(
+        users_with_points = set(
             df_final.loc[df_final["Puntos"] > 0, "Usuario_nombre"].dropna().astype(str)
         )
         return sorted(list(allowed_names & users_with_points))
@@ -4479,9 +4299,6 @@ if opcion == "Velocidad de devs":
         # === OPTIMIZACIÓN: Usar on_change para evitar recargas ===
         def on_usuario_change():
             st.session_state["vel_usuario_actual"] = st.session_state["vel_usuario"]
-        
-        # Guardar usuario anterior para detectar cambios
-        usuario_anterior = st.session_state.get("vel_usuario_anterior", "Todos")
             
         usuario_sel = st.selectbox(
             "Seleccioná usuario", ["Todos"] + usuarios_validos, 
@@ -4489,16 +4306,6 @@ if opcion == "Velocidad de devs":
             key="vel_usuario",
             on_change=on_usuario_change
         )
-        
-        # Mostrar barra de progreso si cambió el usuario
-        if usuario_sel != usuario_anterior:
-            st.session_state["vel_usuario_anterior"] = usuario_sel
-            with st.spinner('🔄 Filtrando datos...'):
-                progress_bar = st.progress(0)
-                import time
-                progress_bar.progress(0.5)
-                time.sleep(0.15)
-                progress_bar.progress(1.0)
         
         # Guardar la selección actual
         st.session_state["vel_usuario_actual"] = usuario_sel
@@ -4570,7 +4377,7 @@ if opcion == "Velocidad de devs":
         """Calcula el ranking de desarrolladores"""
         df_rank_src = df_final[df_final["Usuario_nombre"].isin(usuarios_validos)].copy()
         
-    if df_rank_src.empty:
+        if df_rank_src.empty:
             return pd.DataFrame(columns=[
                 "Usuario_nombre", "Promedio_puntos", "Promedio_horas", "Promedio_velocidad", 
                 "Promedio_bugs", "Promedio_bugs_extra", "Nota_final", "Meses_con_nota_0", "Total_meses"
@@ -4780,309 +4587,13 @@ if opcion == "Velocidad de devs":
         st.markdown("**Objetivo:** ≤8 horas/punto (línea roja punteada)")
 
     # ==========================
-    #   FUNCIONES: OPTIMIZACIÓN CON PRE-CÁLCULOS
-    # ==========================
-    
-    def _usar_pre_calculos_para_acelerar(df_final, pre_calculos, usuario_sel, allowed_names):
-        """Usa pre-cálculos para acelerar pero mantiene la interfaz original"""
-        
-        # Obtener datos pre-calculados
-        ranking_mensual = pre_calculos.get('ranking_mensual', {})
-        puntos_por_usuario = pre_calculos.get('puntos_por_usuario', {})
-        objetivos_cumplidos = pre_calculos.get('objetivos_cumplidos', {})
-        
-        # Usar los datos pre-calculados para acelerar los cálculos originales
-        # pero mantener exactamente la misma interfaz
-        
-        # 1. Calcular usuarios válidos (usando pre-cálculos si es posible)
-        usuarios_validos = set()
-        for mes_data in ranking_mensual.values():
-            usuarios_validos.update(mes_data.keys())
-        
-        # Filtrar por allowed_names
-        usuarios_validos = [u for u in usuarios_validos if u in allowed_names]
-        
-        if not usuarios_validos:
-            st.warning("⚠️ No hay usuarios válidos en el período seleccionado")
-            return
-        
-        # 2. Usar el método original pero con datos pre-calculados
-        # Esto mantiene la interfaz exactamente igual
-        _mostrar_ranking_y_historico_original(df_final, usuario_sel, allowed_names, pre_calculos)
-    
-    def _mostrar_ranking_y_historico_original(df_final, usuario_sel, allowed_names, pre_calculos=None):
-        """Muestra ranking e histórico usando la interfaz original pero optimizada"""
-        
-        # Usar el código original pero acelerado con pre-cálculos
-        # Mantener exactamente la misma apariencia
-        
-        # 1. Calcular usuarios válidos
-        usuarios_validos = _calcular_usuarios_validos(df_final, allowed_names)
-        
-        # 2. Mostrar selector de usuario (igual que antes)
-        if usuario_sel not in usuarios_validos:
-            usuario_sel = "Todos"
-        
-        usuario_seleccionado = st.selectbox(
-            "Seleccioná usuario", 
-            ["Todos"] + sorted(usuarios_validos),
-            index=0 if usuario_sel == "Todos" else sorted(usuarios_validos).index(usuario_sel) + 1,
-            key="vel_usuario_sel"
-        )
-        
-        # 3. Mostrar cards de objetivos (igual que antes)
-        _mostrar_cards_objetivos()
-        
-        # 4. Calcular ranking (usando pre-cálculos si están disponibles)
-        if pre_calculos and 'ranking_mensual' in pre_calculos:
-            # Usar pre-cálculos para acelerar
-            df_ranking_completo = _calcular_ranking_con_pre_calculos(df_final, pre_calculos, usuario_seleccionado)
-        else:
-            # Método original
-            df_ranking_completo = _calcular_ranking_completo(df_final, usuario_seleccionado)
-        
-        # 5. Mostrar tabla de ranking (igual que antes)
-        _mostrar_tabla_ranking(df_ranking_completo, usuario_seleccionado)
-        
-        # 6. Mostrar gráfico (igual que antes)
-        _mostrar_grafico_ranking(df_ranking_completo, usuario_seleccionado)
-        
-        # 7. Mostrar histórico (igual que antes)
-        _mostrar_historico_velocidad(df_final, usuario_seleccionado)
-    
-    def _calcular_ranking_con_pre_calculos(df_final, pre_calculos, usuario_sel):
-        """Calcula ranking usando pre-cálculos para acelerar"""
-        # Usar los datos pre-calculados para acelerar el cálculo
-        # pero mantener la misma estructura de datos
-        
-        ranking_mensual = pre_calculos.get('ranking_mensual', {})
-        
-        # Convertir pre-cálculos al formato original
-        ranking_data = []
-        for mes, usuarios_puntos in ranking_mensual.items():
-            for usuario, puntos in usuarios_puntos.items():
-                ranking_data.append({
-                    "Usuario_nombre": usuario,
-                    "Mes": mes,
-                    "Puntos": puntos
-                })
-        
-        if not ranking_data:
-            return pd.DataFrame()
-        
-        df_ranking = pd.DataFrame(ranking_data)
-        
-        # Filtrar por usuario si no es "Todos"
-        if usuario_sel != "Todos":
-            df_ranking = df_ranking[df_ranking["Usuario_nombre"] == usuario_sel]
-        
-        # Calcular promedios y métricas (igual que el método original)
-        return _calcular_metricas_ranking(df_ranking)
-    
-    def _calcular_metricas_ranking(df_ranking):
-        """Calcula métricas del ranking (igual que el método original)"""
-        if df_ranking.empty:
-            return pd.DataFrame()
-        
-        # Agrupar por usuario y calcular promedios
-        metricas = df_ranking.groupby('Usuario_nombre').agg({
-            'Puntos': 'mean'
-        }).reset_index()
-        
-        # Agregar columnas adicionales (simplificado para mantener compatibilidad)
-        metricas['Promedio_horas'] = 0
-        metricas['Promedio_velocidad'] = 0
-        metricas['Promedio_bugs'] = 0
-        metricas['Promedio_bugs_extra'] = 0
-        metricas['Promedio_nota_final'] = metricas['Puntos'] * 4  # Simplificado
-        
-        return metricas
-    
-    # ==========================
-    #   FUNCIONES: VISUALIZACIÓN CON PRE-CÁLCULOS (DEPRECADAS)
-    # ==========================
-    
-    def mostrar_ranking_pre_calculado(pre_calculos, usuario_sel):
-        """Muestra ranking usando datos pre-calculados"""
-        ranking_mensual = pre_calculos.get('ranking_mensual', {})
-        objetivos_cumplidos = pre_calculos.get('objetivos_cumplidos', {})
-        
-        if not ranking_mensual:
-            st.warning("⚠️ No hay datos de ranking pre-calculados")
-            return
-        
-        # Mostrar selector de usuario
-        usuarios_disponibles = set()
-        for mes_data in ranking_mensual.values():
-            usuarios_disponibles.update(mes_data.keys())
-        
-        usuarios_lista = sorted(list(usuarios_disponibles))
-        if not usuarios_lista:
-            st.warning("⚠️ No hay usuarios disponibles")
-            return
-        
-        # Mantener selección actual si es válida
-        if usuario_sel not in usuarios_lista:
-            usuario_sel = "Todos"
-        
-        usuario_seleccionado = st.selectbox(
-            "Seleccioná usuario", 
-            ["Todos"] + usuarios_lista,
-            index=0 if usuario_sel == "Todos" else usuarios_lista.index(usuario_sel) + 1,
-            key="vel_usuario_precalc"
-        )
-        
-        # Mostrar cards de objetivos
-        _mostrar_cards_objetivos_pre_calculado(objetivos_cumplidos)
-        
-        # Mostrar ranking
-        _mostrar_ranking_tabla_pre_calculado(ranking_mensual, usuario_seleccionado)
-        
-        # Mostrar gráfico
-        _mostrar_grafico_ranking_pre_calculado(ranking_mensual, usuario_seleccionado)
-    
-    def mostrar_historico_pre_calculado(pre_calculos, usuario_sel):
-        """Muestra histórico usando datos pre-calculados"""
-        puntos_por_usuario = pre_calculos.get('puntos_por_usuario', {})
-        
-        if not puntos_por_usuario:
-            st.warning("⚠️ No hay datos de histórico pre-calculados")
-            return
-        
-        if usuario_sel == "Todos" or usuario_sel not in puntos_por_usuario:
-            st.info("ℹ️ Selecciona un usuario específico para ver su histórico")
-            return
-        
-        # Mostrar histórico del usuario
-        datos_usuario = puntos_por_usuario[usuario_sel]
-        
-        if not datos_usuario:
-            st.warning(f"⚠️ No hay datos para {usuario_sel}")
-            return
-        
-        # Crear DataFrame para el gráfico
-        df_hist = pd.DataFrame([
-            {"Mes": mes, "Puntos": puntos}
-            for mes, puntos in datos_usuario.items()
-        ])
-        
-        if not df_hist.empty:
-            _mostrar_grafico_velocidad_mensual(df_hist, usuario_sel)
-    
-    def _mostrar_cards_objetivos_pre_calculado(objetivos_cumplidos):
-        """Muestra cards de objetivos usando pre-cálculos"""
-        st.subheader("🎯 Objetivos y Ponderaciones")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("📊 Objetivo Principal", "8 horas/punto", "≤8h/p")
-        
-        with col2:
-            st.metric("🎯 Ponderación Bugs", "20%", "Crítico")
-        
-        with col3:
-            st.metric("⚡ Ponderación Velocidad", "80%", "Principal")
-        
-        # Mostrar estadísticas de cumplimiento si hay datos
-        if objetivos_cumplidos:
-            st.subheader("📈 Estadísticas de Cumplimiento")
-            
-            cumplimiento_data = []
-            for usuario, stats in objetivos_cumplidos.items():
-                cumplimiento_data.append({
-                    "Usuario": usuario,
-                    "Meses con Puntos": stats['meses_con_puntos'],
-                    "Total Meses": stats['total_meses'],
-                    "% Cumplimiento": f"{stats['porcentaje_cumplimiento']:.1f}%"
-                })
-            
-            if cumplimiento_data:
-                df_cumplimiento = pd.DataFrame(cumplimiento_data)
-                st.dataframe(df_cumplimiento, use_container_width=True)
-    
-    def _mostrar_ranking_tabla_pre_calculado(ranking_mensual, usuario_sel):
-        """Muestra tabla de ranking usando pre-cálculos"""
-        st.subheader("🏆 Ranking de Desarrolladores")
-        
-        # Crear DataFrame de ranking
-        ranking_data = []
-        
-        for mes, usuarios_puntos in ranking_mensual.items():
-            for usuario, puntos in usuarios_puntos.items():
-                ranking_data.append({
-                    "Mes": mes,
-                    "Usuario": usuario,
-                    "Puntos": puntos
-                })
-        
-        if not ranking_data:
-            st.warning("⚠️ No hay datos de ranking disponibles")
-            return
-        
-        df_ranking = pd.DataFrame(ranking_data)
-        
-        # Filtrar por usuario si no es "Todos"
-        if usuario_sel != "Todos":
-            df_ranking = df_ranking[df_ranking["Usuario"] == usuario_sel]
-        
-        # Mostrar tabla
-        st.dataframe(df_ranking, use_container_width=True)
-    
-    def _mostrar_grafico_ranking_pre_calculado(ranking_mensual, usuario_sel):
-        """Muestra gráfico de ranking usando pre-cálculos"""
-        if not ranking_mensual:
-            return
-        
-        # Crear datos para el gráfico
-        chart_data = []
-        
-        for mes, usuarios_puntos in ranking_mensual.items():
-            for usuario, puntos in usuarios_puntos.items():
-                if usuario_sel == "Todos" or usuario == usuario_sel:
-                    chart_data.append({
-                        "Mes": mes,
-                        "Usuario": usuario,
-                        "Puntos": puntos
-                    })
-        
-        if not chart_data:
-            return
-        
-        df_chart = pd.DataFrame(chart_data)
-        
-        # Crear gráfico con Altair
-        chart = alt.Chart(df_chart).mark_bar().encode(
-            x='Mes:O',
-            y='Puntos:Q',
-            color='Usuario:N',
-            tooltip=['Mes', 'Usuario', 'Puntos']
-        ).properties(
-            width=600,
-            height=400,
-            title=f'Puntos por Mes - {usuario_sel}'
-        )
-        
-        st.altair_chart(chart, use_container_width=True)
-
-    # ==========================
     #   FUNCIÓN: MOSTRAR RANKING Y HISTÓRICO
     # ==========================
     
     def mostrar_ranking_y_historico(df_final, usuario_sel, allowed_names):
         """Función principal refactorizada para mostrar ranking y histórico"""
         
-        # === OPTIMIZACIÓN: Usar pre-cálculos si están disponibles ===
-        if 'velocidad_pre_calculos' in st.session_state:
-            pre_calculos = st.session_state['velocidad_pre_calculos']
-            st.info("⚡ Usando pre-cálculos para visualización instantánea")
-            
-            # Usar pre-cálculos para acelerar los cálculos originales
-            # pero mantener la interfaz exactamente igual
-            _usar_pre_calculos_para_acelerar(df_final, pre_calculos, usuario_sel, allowed_names)
-            return
-        
-        # === FALLBACK: Cache de cálculos pesados (método original) ===
+        # === OPTIMIZACIÓN: Cache de cálculos pesados ===
         cache_key_calculos = f"calculos_velocidad_{len(df_final)}_{hash(str(allowed_names))}"
         
         # Verificar si ya tenemos los cálculos en cache
@@ -5117,7 +4628,7 @@ if opcion == "Velocidad de devs":
             st.info("No hay usuarios con puntos en la ventana seleccionada.")
         else:
             # 5. Filtrar por usuario si no es "Todos" (rápido, solo filtro)
-    if usuario_sel != "Todos":
+            if usuario_sel != "Todos":
                 df_ranking = df_ranking_completo[df_ranking_completo["Usuario_nombre"] == usuario_sel]
                 
                 # Mostrar alerta si el usuario tiene meses con nota 0
@@ -5673,7 +5184,7 @@ if opcion == "Entregables ATI":
             color_proc = "🟢" if porcentaje_proceso_num == 100 else "🟡" if porcentaje_proceso_num >= 50 else "🔴"
             porcentaje_proceso = f"{porcentaje_proceso_num:.1f}% {color_proc}"
             puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
-    else:
+        else:
             historias = []
             pendientes = 0
             en_proceso = 0
@@ -5719,7 +5230,7 @@ if opcion == "Entregables ATI":
             if row["Mes entrega"] == alerta_mes and row["Q de HU pendientes"] > 0:
                 return "⚠️ Entrega próxima con pendientes"
             else:
-                    return ""
+                return ""
         df_tabla["Alerta"] = df_tabla.apply(gen_alerta, axis=1)
         
         # Calcular %Faltante = 100% - %En proceso - %Avance
@@ -5872,9 +5383,9 @@ if opcion == "Entregables ATI":
     if tabla_completas:
         df_completas = pd.DataFrame(tabla_completas)
         st.markdown("## Entregas completadas")
-            st.dataframe(
+        st.dataframe(
             df_completas[["Épica", "Mes entrega", "% Con ok QA", "% En desarrollo", "Q de HU pendientes", "Puntos totales"]],
-                hide_index=True,
+            hide_index=True,
             use_container_width=True
         )
 
@@ -6417,7 +5928,7 @@ if opcion == "Histórico ATI":
                         f"{asignado} | <b>Puntos:</b> {h['Puntos']}",
                         unsafe_allow_html=True,
                     )
-        else:
+            else:
                 st.markdown("*Sin historias cargadas*", unsafe_allow_html=True)
 
 
