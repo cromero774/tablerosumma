@@ -1,0 +1,43 @@
+name: Actualizar Cache del Tablero
+
+on:
+  schedule:
+    # Ejecutar todos los días a las 2:00 AM UTC (11:00 PM Argentina)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Permitir ejecución manual
+
+jobs:
+  update-cache:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+      
+    - name: Configurar Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install streamlit pandas requests python-dotenv
+        
+    - name: Configurar variables de entorno
+      run: |
+        echo "JIRA_URL=${{ secrets.JIRA_URL }}" >> .env
+        echo "JIRA_USER=${{ secrets.JIRA_USER }}" >> .env
+        echo "JIRA_TOKEN=${{ secrets.JIRA_TOKEN }}" >> .env
+        
+    - name: Ejecutar script de actualización
+      run: |
+        python scripts/update_cache.py
+        
+    - name: Commit y push cambios
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/cache/
+        git diff --staged --quiet || git commit -m "🤖 Actualización automática de cache - $(date)"
+        git push

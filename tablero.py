@@ -3686,8 +3686,8 @@ if opcion == "Velocidad de devs":
     
     st.info("💡 **Cómo usar**: Selecciona las fechas del período que quieres evaluar")
     
-    # Aclaración sobre la limitación de datos
-    st.warning("⚠️ **Nota importante**: Esta pestaña muestra datos de los últimos 6 meses (mayo-octubre 2025). Se está trabajando para mejorar el rendimiento y cargar más datos históricos.")
+    # Aclaración sobre la carga de datos
+    st.info("📊 **Datos disponibles**: Esta pestaña muestra datos desde enero 2024 en adelante.")
     
     # Inicializar session_state para filtros (últimos 3 meses incluyendo el mes actual)
     if "vel_fecha_inicio" not in st.session_state:
@@ -3778,6 +3778,166 @@ if opcion == "Velocidad de devs":
         st.rerun()
 
     # ==========================
+    #   FUNCIONES: PRE-CÁLCULOS
+    # ==========================
+    
+    def generar_pre_calculos_velocidad(historias, bugs):
+        """Genera pre-cálculos para optimizar la visualización"""
+        print("🔄 Generando pre-cálculos de velocidad...")
+        
+        # 1. Procesar historias para obtener datos básicos
+        df_historias = procesar_historias_para_pre_calculos(historias)
+        
+        # 2. Generar ranking mensual pre-calculado
+        ranking_mensual = calcular_ranking_mensual_pre_calculado(df_historias)
+        
+        # 3. Generar puntos por usuario pre-calculado
+        puntos_por_usuario = calcular_puntos_por_usuario_pre_calculado(df_historias)
+        
+        # 4. Generar objetivos cumplidos pre-calculado
+        objetivos_cumplidos = calcular_objetivos_pre_calculado(df_historias)
+        
+        # 5. Generar métricas de bugs pre-calculadas
+        bugs_metrics = calcular_metrics_bugs_pre_calculado(bugs)
+        
+        pre_calculos = {
+            'ranking_mensual': ranking_mensual,
+            'puntos_por_usuario': puntos_por_usuario,
+            'objetivos_cumplidos': objetivos_cumplidos,
+            'bugs_metrics': bugs_metrics,
+            'fecha_generacion': datetime.now().isoformat(),
+            'version': '2.0'
+        }
+        
+        print("✅ Pre-cálculos generados exitosamente")
+        return pre_calculos
+    
+    def procesar_historias_para_pre_calculos(historias):
+        """Procesa historias para pre-cálculos de forma optimizada"""
+        rows = []
+        
+        for iss in historias:
+            f = iss.get("fields", {}) or {}
+            
+            # Obtener datos básicos
+            key = iss.get("key", "")
+            pts = _get_points_from_fields(f)
+            
+            if pts <= 0:
+                continue
+            
+            # Buscar owner al momento de testing
+            owner_name, owner_id, first_dt = _owner_al_momento_testing(iss, {}, {})
+            
+            if pd.notna(first_dt) and owner_name and owner_id:
+                rows.append({
+                    "Issue": key,
+                    "Puntos": pts,
+                    "Usuario_nombre": owner_name,
+                    "Mes": _mes_label(_mes_start(first_dt)),
+                    "AñoMes": first_dt.strftime("%Y-%m"),
+                    "Proyecto": f.get("project", {}).get("key", ""),
+                    "Fecha_Testing": first_dt
+                })
+        
+        return pd.DataFrame(rows)
+    
+    def calcular_ranking_mensual_pre_calculado(df_historias):
+        """Calcula ranking mensual pre-calculado"""
+        if df_historias.empty:
+            return {}
+        
+        ranking = {}
+        
+        for mes in df_historias['AñoMes'].unique():
+            df_mes = df_historias[df_historias['AñoMes'] == mes]
+            
+            # Calcular puntos por usuario en el mes
+            puntos_usuario = df_mes.groupby('Usuario_nombre')['Puntos'].sum().sort_values(ascending=False)
+            
+            ranking[mes] = puntos_usuario.to_dict()
+        
+        return ranking
+    
+    def calcular_puntos_por_usuario_pre_calculado(df_historias):
+        """Calcula puntos por usuario pre-calculado"""
+        if df_historias.empty:
+            return {}
+        
+        puntos_usuario = {}
+        
+        for usuario in df_historias['Usuario_nombre'].unique():
+            df_usuario = df_historias[df_historias['Usuario_nombre'] == usuario]
+            puntos_mes = df_usuario.groupby('AñoMes')['Puntos'].sum().to_dict()
+            puntos_usuario[usuario] = puntos_mes
+        
+        return puntos_usuario
+    
+    def calcular_objetivos_pre_calculado(df_historias):
+        """Calcula objetivos cumplidos pre-calculado"""
+        if df_historias.empty:
+            return {}
+        
+        objetivos = {}
+        
+        for usuario in df_historias['Usuario_nombre'].unique():
+            df_usuario = df_historias[df_historias['Usuario_nombre'] == usuario]
+            
+            # Contar meses con puntos > 0
+            meses_con_puntos = df_usuario[df_usuario['Puntos'] > 0]['AñoMes'].nunique()
+            total_meses = df_usuario['AñoMes'].nunique()
+            
+            objetivos[usuario] = {
+                'meses_con_puntos': meses_con_puntos,
+                'total_meses': total_meses,
+                'porcentaje_cumplimiento': (meses_con_puntos / total_meses * 100) if total_meses > 0 else 0
+            }
+        
+        return objetivos
+    
+    def calcular_metrics_bugs_pre_calculado(bugs):
+        """Calcula métricas de bugs pre-calculadas"""
+        if not bugs:
+            return {}
+        
+        # Procesar bugs básico
+        bugs_data = []
+        for bug in bugs:
+            f = bug.get("fields", {}) or {}
+            created = f.get("created", "")
+            
+            if created:
+                try:
+                    fecha = pd.to_datetime(created)
+                    bugs_data.append({
+                        'key': bug.get("key", ""),
+                        'created': fecha,
+                        'año_mes': fecha.strftime("%Y-%m"),
+                        'status': f.get("status", {}).get("name", ""),
+                        'priority': f.get("priority", {}).get("name", "")
+                    })
+                except:
+                    continue
+        
+        if not bugs_data:
+            return {}
+        
+        df_bugs = pd.DataFrame(bugs_data)
+        
+        # Calcular métricas por mes
+        bugs_por_mes = {}
+        for mes in df_bugs['año_mes'].unique():
+            df_mes = df_bugs[df_bugs['año_mes'] == mes]
+            
+            bugs_por_mes[mes] = {
+                'total': len(df_mes),
+                'cerrados': len(df_mes[df_mes['status'].str.contains('cerrado|closed|done', case=False, na=False)]),
+                'alta_prioridad': len(df_mes[df_mes['priority'].str.contains('alta|high', case=False, na=False)])
+            }
+        
+        return bugs_por_mes
+    
+    # ==========================
     #   FUNCIÓN: CARGAR DATOS DE JIRA
     # ==========================
     
@@ -3796,7 +3956,16 @@ if opcion == "Velocidad de devs":
                 if (datetime.now() - mtime) < timedelta(hours=48):
                     with open(cache_file, 'rb') as f:
                         cache_data = pickle.load(f)
-                        st.info(f"✅ Datos cargados desde cache ({len(cache_data['historias'])} historias, {len(cache_data['bugs'])} bugs)")
+                        
+                        # Verificar si tiene pre-cálculos
+                        if 'pre_calculos' in cache_data:
+                            st.info(f"✅ Datos cargados desde cache con pre-cálculos ({len(cache_data['historias'])} historias, {len(cache_data['bugs'])} bugs)")
+                            # Guardar pre-cálculos en session_state para uso rápido
+                            st.session_state['velocidad_pre_calculos'] = cache_data['pre_calculos']
+                        else:
+                            st.info(f"✅ Datos cargados desde cache ({len(cache_data['historias'])} historias, {len(cache_data['bugs'])} bugs)")
+                            st.warning("⚠️ Cache sin pre-cálculos. Se generarán en la próxima actualización.")
+                        
                         return cache_data['historias'], cache_data['bugs']
             except Exception as e:
                 if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
@@ -3808,10 +3977,10 @@ if opcion == "Velocidad de devs":
         # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
         proy_jql = "project in (REP, TAL, ATI)"
 
-        # Buscar historias con puntos de los últimos 6 meses (mayo-octubre 2025)
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2025-05-01'"
+        # Buscar historias con puntos desde 2024
+        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2024-01-01'"
         
-        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2025-05-01'"
+        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2024-01-01'"
         
         FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
         
@@ -3921,6 +4090,16 @@ if opcion == "Velocidad de devs":
             }
             st.session_state[cache_key_velocidad] = cache_data
             
+        # Generar pre-cálculos si hay datos suficientes
+        if len(historias) >= 5:
+            st.info("🔄 Generando pre-cálculos para optimización...")
+            pre_calculos = generar_pre_calculos_velocidad(historias, bugs)
+            cache_data['pre_calculos'] = pre_calculos
+            st.session_state['velocidad_pre_calculos'] = pre_calculos
+            st.success("✅ Pre-cálculos generados exitosamente")
+        else:
+            st.warning("⚠️ Datos insuficientes para generar pre-cálculos")
+        
         # Guardar en archivo persistente
         try:
             with open(cache_file, 'wb') as f:
@@ -3941,6 +4120,7 @@ if opcion == "Velocidad de devs":
         except Exception as e:
             if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
                 print(f"⚠️ Error guardando cache: {e}")
+                
             
         else:
             if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
@@ -4299,6 +4479,9 @@ if opcion == "Velocidad de devs":
         # === OPTIMIZACIÓN: Usar on_change para evitar recargas ===
         def on_usuario_change():
             st.session_state["vel_usuario_actual"] = st.session_state["vel_usuario"]
+        
+        # Guardar usuario anterior para detectar cambios
+        usuario_anterior = st.session_state.get("vel_usuario_anterior", "Todos")
             
         usuario_sel = st.selectbox(
             "Seleccioná usuario", ["Todos"] + usuarios_validos, 
@@ -4306,6 +4489,16 @@ if opcion == "Velocidad de devs":
             key="vel_usuario",
             on_change=on_usuario_change
         )
+        
+        # Mostrar barra de progreso si cambió el usuario
+        if usuario_sel != usuario_anterior:
+            st.session_state["vel_usuario_anterior"] = usuario_sel
+            with st.spinner('🔄 Filtrando datos...'):
+                progress_bar = st.progress(0)
+                import time
+                progress_bar.progress(0.5)
+                time.sleep(0.15)
+                progress_bar.progress(1.0)
         
         # Guardar la selección actual
         st.session_state["vel_usuario_actual"] = usuario_sel
@@ -4587,13 +4780,190 @@ if opcion == "Velocidad de devs":
         st.markdown("**Objetivo:** ≤8 horas/punto (línea roja punteada)")
 
     # ==========================
+    #   FUNCIONES: VISUALIZACIÓN CON PRE-CÁLCULOS
+    # ==========================
+    
+    def mostrar_ranking_pre_calculado(pre_calculos, usuario_sel):
+        """Muestra ranking usando datos pre-calculados"""
+        ranking_mensual = pre_calculos.get('ranking_mensual', {})
+        objetivos_cumplidos = pre_calculos.get('objetivos_cumplidos', {})
+        
+        if not ranking_mensual:
+            st.warning("⚠️ No hay datos de ranking pre-calculados")
+            return
+        
+        # Mostrar selector de usuario
+        usuarios_disponibles = set()
+        for mes_data in ranking_mensual.values():
+            usuarios_disponibles.update(mes_data.keys())
+        
+        usuarios_lista = sorted(list(usuarios_disponibles))
+        if not usuarios_lista:
+            st.warning("⚠️ No hay usuarios disponibles")
+            return
+        
+        # Mantener selección actual si es válida
+        if usuario_sel not in usuarios_lista:
+            usuario_sel = "Todos"
+        
+        usuario_seleccionado = st.selectbox(
+            "Seleccioná usuario", 
+            ["Todos"] + usuarios_lista,
+            index=0 if usuario_sel == "Todos" else usuarios_lista.index(usuario_sel) + 1,
+            key="vel_usuario_precalc"
+        )
+        
+        # Mostrar cards de objetivos
+        _mostrar_cards_objetivos_pre_calculado(objetivos_cumplidos)
+        
+        # Mostrar ranking
+        _mostrar_ranking_tabla_pre_calculado(ranking_mensual, usuario_seleccionado)
+        
+        # Mostrar gráfico
+        _mostrar_grafico_ranking_pre_calculado(ranking_mensual, usuario_seleccionado)
+    
+    def mostrar_historico_pre_calculado(pre_calculos, usuario_sel):
+        """Muestra histórico usando datos pre-calculados"""
+        puntos_por_usuario = pre_calculos.get('puntos_por_usuario', {})
+        
+        if not puntos_por_usuario:
+            st.warning("⚠️ No hay datos de histórico pre-calculados")
+            return
+        
+        if usuario_sel == "Todos" or usuario_sel not in puntos_por_usuario:
+            st.info("ℹ️ Selecciona un usuario específico para ver su histórico")
+            return
+        
+        # Mostrar histórico del usuario
+        datos_usuario = puntos_por_usuario[usuario_sel]
+        
+        if not datos_usuario:
+            st.warning(f"⚠️ No hay datos para {usuario_sel}")
+            return
+        
+        # Crear DataFrame para el gráfico
+        df_hist = pd.DataFrame([
+            {"Mes": mes, "Puntos": puntos}
+            for mes, puntos in datos_usuario.items()
+        ])
+        
+        if not df_hist.empty:
+            _mostrar_grafico_velocidad_mensual(df_hist, usuario_sel)
+    
+    def _mostrar_cards_objetivos_pre_calculado(objetivos_cumplidos):
+        """Muestra cards de objetivos usando pre-cálculos"""
+        st.subheader("🎯 Objetivos y Ponderaciones")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("📊 Objetivo Principal", "8 horas/punto", "≤8h/p")
+        
+        with col2:
+            st.metric("🎯 Ponderación Bugs", "20%", "Crítico")
+        
+        with col3:
+            st.metric("⚡ Ponderación Velocidad", "80%", "Principal")
+        
+        # Mostrar estadísticas de cumplimiento si hay datos
+        if objetivos_cumplidos:
+            st.subheader("📈 Estadísticas de Cumplimiento")
+            
+            cumplimiento_data = []
+            for usuario, stats in objetivos_cumplidos.items():
+                cumplimiento_data.append({
+                    "Usuario": usuario,
+                    "Meses con Puntos": stats['meses_con_puntos'],
+                    "Total Meses": stats['total_meses'],
+                    "% Cumplimiento": f"{stats['porcentaje_cumplimiento']:.1f}%"
+                })
+            
+            if cumplimiento_data:
+                df_cumplimiento = pd.DataFrame(cumplimiento_data)
+                st.dataframe(df_cumplimiento, use_container_width=True)
+    
+    def _mostrar_ranking_tabla_pre_calculado(ranking_mensual, usuario_sel):
+        """Muestra tabla de ranking usando pre-cálculos"""
+        st.subheader("🏆 Ranking de Desarrolladores")
+        
+        # Crear DataFrame de ranking
+        ranking_data = []
+        
+        for mes, usuarios_puntos in ranking_mensual.items():
+            for usuario, puntos in usuarios_puntos.items():
+                ranking_data.append({
+                    "Mes": mes,
+                    "Usuario": usuario,
+                    "Puntos": puntos
+                })
+        
+        if not ranking_data:
+            st.warning("⚠️ No hay datos de ranking disponibles")
+            return
+        
+        df_ranking = pd.DataFrame(ranking_data)
+        
+        # Filtrar por usuario si no es "Todos"
+        if usuario_sel != "Todos":
+            df_ranking = df_ranking[df_ranking["Usuario"] == usuario_sel]
+        
+        # Mostrar tabla
+        st.dataframe(df_ranking, use_container_width=True)
+    
+    def _mostrar_grafico_ranking_pre_calculado(ranking_mensual, usuario_sel):
+        """Muestra gráfico de ranking usando pre-cálculos"""
+        if not ranking_mensual:
+            return
+        
+        # Crear datos para el gráfico
+        chart_data = []
+        
+        for mes, usuarios_puntos in ranking_mensual.items():
+            for usuario, puntos in usuarios_puntos.items():
+                if usuario_sel == "Todos" or usuario == usuario_sel:
+                    chart_data.append({
+                        "Mes": mes,
+                        "Usuario": usuario,
+                        "Puntos": puntos
+                    })
+        
+        if not chart_data:
+            return
+        
+        df_chart = pd.DataFrame(chart_data)
+        
+        # Crear gráfico con Altair
+        chart = alt.Chart(df_chart).mark_bar().encode(
+            x='Mes:O',
+            y='Puntos:Q',
+            color='Usuario:N',
+            tooltip=['Mes', 'Usuario', 'Puntos']
+        ).properties(
+            width=600,
+            height=400,
+            title=f'Puntos por Mes - {usuario_sel}'
+        )
+        
+        st.altair_chart(chart, use_container_width=True)
+    
+    # ==========================
     #   FUNCIÓN: MOSTRAR RANKING Y HISTÓRICO
     # ==========================
     
     def mostrar_ranking_y_historico(df_final, usuario_sel, allowed_names):
         """Función principal refactorizada para mostrar ranking y histórico"""
         
-        # === OPTIMIZACIÓN: Cache de cálculos pesados ===
+        # === OPTIMIZACIÓN: Usar pre-cálculos si están disponibles ===
+        if 'velocidad_pre_calculos' in st.session_state:
+            pre_calculos = st.session_state['velocidad_pre_calculos']
+            st.info("⚡ Usando pre-cálculos para visualización instantánea")
+            
+            # Usar datos pre-calculados
+            mostrar_ranking_pre_calculado(pre_calculos, usuario_sel)
+            mostrar_historico_pre_calculado(pre_calculos, usuario_sel)
+            return
+        
+        # === FALLBACK: Cache de cálculos pesados (método original) ===
         cache_key_calculos = f"calculos_velocidad_{len(df_final)}_{hash(str(allowed_names))}"
         
         # Verificar si ya tenemos los cálculos en cache
