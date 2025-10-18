@@ -5,7 +5,7 @@ Pestaña de Horas Postventas
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils.configuracion import MAPEO_TEM, PROYECTOS_POSTVENTA
+from src.utils.configuracion import MAPEO_TEM, PROYECTOS_POSTVENTA
 
 def mostrar_horas_postventas(df):
     """Mostrar la pestaña de Horas Postventas"""

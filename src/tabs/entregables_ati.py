@@ -10,8 +10,8 @@ import re
 import os
 import pickle
 from datetime import datetime, timedelta
-from jira_conexion import get_jira
-from utils.configuracion import cache_path, cargar_epicas_relevantes
+from src.jira_conexion import get_jira
+from src.utils.configuracion import cache_path, cargar_epicas_relevantes
 
 def mostrar_entregables_ati(epicas_relevantes, issues_jira):
     """Mostrar la pestaña de Entregables ATI"""

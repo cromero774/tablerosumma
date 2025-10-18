@@ -12,8 +12,8 @@ import os
 import time
 import pickle
 from datetime import datetime, timedelta, date
-from jira_conexion import get_jira
-from utils.configuracion import cache_path, cargar_epicas_relevantes
+from src.jira_conexion import get_jira
+from src.utils.configuracion import cache_path, cargar_epicas_relevantes
 
 def mostrar_bugs(epicas_relevantes, issues_jira):
     """Mostrar la pestaña de BUGS"""
