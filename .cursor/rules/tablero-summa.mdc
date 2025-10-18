@@ -1,0 +1,45 @@
+# REGLAS DE NEGOCIO DEL TABLERO SUMMA
+
+## 📊 CONFIGURACIÓN GENERAL
+
+### Mapeos de Proyectos:
+MAPEO_TEM = {
+    "TEM-1": ("CORE-TECH", "TECH LAB - INTERNO"),
+    "TEM-2": ("CORE-TECH", "TECH LAB - INTERNO"),
+    "TEM-5": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - ESCRITURA RF POSVENTA"),
+    "TEM-7": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - DESARROLLO MODULO REPUESTOS"),
+    "TEM-8": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - DESARROLLO ATI"),
+    "TEM-9": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - DESARROLLO MODULO TALLER"),
+    "TEM-28": ("CORE-TECH", "TECH LAB - INTERNO"),
+    "TEM-30": ("MP-MAIPU-SUMMA", "MAIPU - SUMMA - ESCRITURA RF ATI"),
+}
+
+PROYECTOS_POSTVENTA = ["TALLER - MAIPÚ -", "REPUESTOS MAIPU", "AFUS", "TECH LAB - INTERNO"]
+PROYECTOS_ATI = ["AFUs ATI", "TECH LAB - INTERNO"]
+
+## PESTAÑAS Y SUS REGLAS:
+
+### POSTVENTAS (4 pestañas):
+1. Horas Postventas: Análisis de horas por usuario y proyecto
+2. Desarrollo Postventas: Solo últimos 6 meses (mayo-octubre 2025)
+3. Entregables Postventas: Gestión de épicas por mes de entrega
+4. Histórico Postventa: Análisis histórico de rendimiento
+
+### ATI (4 pestañas):
+5. Horas ATI: Análisis específico para ATI
+6. Desarrollo ATI: Seguimiento específico ATI
+7. Entregables ATI: Gestión específica ATI
+8. Histórico ATI: Análisis histórico ATI
+
+### OTRAS (3 pestañas):
+9. BUGS: Gestión y seguimiento de bugs
+10. Velocidad de devs: CRÍTICO - NUNCA reducir datos (max_issues y max_bugs = 10000)
+11. Gantt: Vista de cronograma
+
+## REGLAS TÉCNICAS:
+- Cache de 24 horas para issues de Jira
+- Usuarios BOTH: ven todas sus filas (ATI + POST + INTERNO)
+- Usuarios solo ATI: ven filas ATI + INTERNO
+- Usuarios solo POSTVENTA: ven filas POSTVENTA + INTERNO
+- Feriados argentinos 2025 incluidos en cálculos
+- Alertas para TEM no mapeadas
