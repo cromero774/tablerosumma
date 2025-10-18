@@ -70,14 +70,12 @@ def mostrar_desarrollo_ati(issues_jira):
                 with open(cache_file_ati_desarrollo, 'rb') as f:
                     issues_ati = pickle.load(f)
             else:
-                st.info("🔄 Cargando historias de ATI...")
                 progress_bar = st.progress(0)
                 issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-05-01"', fields)
                 progress_bar.progress(1.0)
                 with open(cache_file_ati_desarrollo, 'wb') as f:
                     pickle.dump(issues_ati, f)
         else:
-            st.info("🔄 Cargando historias de ATI...")
             progress_bar = st.progress(0)
             issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-05-01"', fields)
             progress_bar.progress(1.0)

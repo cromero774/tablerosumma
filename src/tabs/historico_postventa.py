@@ -511,7 +511,7 @@ def mostrar_historico_postventa(df):
     
     # Mostrar información sobre datos limitados en primera carga
     if not tabla_historico:
-        st.info("🔄 Cargando datos limitados para primera carga rápida...")
+        st.info("No hay datos históricos disponibles.")
     else:
         if st.session_state.historico_carga_completa:
             st.caption("✅ **Carga completa**: Mostrando TODOS los datos disponibles.")

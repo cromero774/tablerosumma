@@ -96,14 +96,12 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
                 with open(cache_file_tal_entregable, 'rb') as f:
                     issues_tal = pickle.load(f)
             else:
-                st.info("🔄 Cargando historias de TAL...")
                 progress_bar = st.progress(0)
                 issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
                 progress_bar.progress(0.5)
                 with open(cache_file_tal_entregable, 'wb') as f:
                     pickle.dump(issues_tal, f)
         else:
-            st.info("🔄 Cargando historias de TAL...")
             progress_bar = st.progress(0)
             issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
             progress_bar.progress(0.5)
@@ -119,13 +117,11 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
                 with open(cache_file_rep_entregable, 'rb') as f:
                     issues_rep = pickle.load(f)
             else:
-                st.info("🔄 Cargando historias de REP...")
                 issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
                 progress_bar.progress(1.0)
                 with open(cache_file_rep_entregable, 'wb') as f:
                     pickle.dump(issues_rep, f)
         else:
-            st.info("🔄 Cargando historias de REP...")
             issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
             progress_bar.progress(1.0)
             with open(cache_file_rep_entregable, 'wb') as f:

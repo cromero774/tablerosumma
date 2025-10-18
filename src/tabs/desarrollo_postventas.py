@@ -66,11 +66,9 @@ def mostrar_desarrollo_postventas(issues_jira):
     fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
     
     # Cargar historias SIN límite de 6 meses (eliminado según solicitud)
-    st.info("🔄 Cargando historias de TAL...")
     progress_bar = st.progress(0)
     issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields)
     progress_bar.progress(0.5)
-    st.info("🔄 Cargando historias de REP...")
     issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields)
     progress_bar.progress(1.0)
     issues = issues_tal + issues_rep
