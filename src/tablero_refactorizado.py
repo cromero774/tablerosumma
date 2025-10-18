@@ -171,9 +171,9 @@ def mostrar_contenido(opcion, df, epicas_relevantes, issues_jira):
     elif opcion == "Histórico ATI":
         mostrar_historico_ati(epicas_relevantes, issues_jira)
     elif opcion == "BUGS":
-        mostrar_bugs(issues_jira)
+        mostrar_bugs(epicas_relevantes, issues_jira)
     elif opcion == "Velocidad de devs":
-        mostrar_velocidad_devs(issues_jira)
+        mostrar_velocidad_devs(df, issues_jira)
     elif opcion == "Gantt":
         mostrar_gantt(issues_jira)
 
