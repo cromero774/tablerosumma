@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 import re
 import os
 import pickle
-from jira_conexion import get_jira
-from utils.configuracion import cache_path
+from src.jira_conexion import get_jira
+from src.utils.configuracion import cache_path
 
 def traer_todas_las_issues(jira, jql, fields, max_results=100):
     """Función para traer todas las issues de Jira con paginación"""

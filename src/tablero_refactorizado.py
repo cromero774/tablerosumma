@@ -13,25 +13,25 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # Importar módulos existentes
-from jira_conexion import get_jira
-from tempo_conexion import tempo_get
-from cache_datos import cargar_df_cache, guardar_df_cache, cargar_json_cache, guardar_json_cache
+from src.jira_conexion import get_jira
+from src.tempo_conexion import tempo_get
+from src.cache_datos import cargar_df_cache, guardar_df_cache, cargar_json_cache, guardar_json_cache
 
 # Importar pestañas
-from tabs.horas_postventas import mostrar_horas_postventas
-from tabs.desarrollo_postventas import mostrar_desarrollo_postventas
-from tabs.entregables_postventas import mostrar_entregables_postventas
-from tabs.historico_postventa import mostrar_historico_postventa
-from tabs.horas_ati import mostrar_horas_ati
-from tabs.desarrollo_ati import mostrar_desarrollo_ati
-from tabs.entregables_ati import mostrar_entregables_ati
-from tabs.historico_ati import mostrar_historico_ati
-from tabs.bugs import mostrar_bugs
-from tabs.velocidad_devs import mostrar_velocidad_devs
-from tabs.gantt import mostrar_gantt
+from src.tabs.horas_postventas import mostrar_horas_postventas
+from src.tabs.desarrollo_postventas import mostrar_desarrollo_postventas
+from src.tabs.entregables_postventas import mostrar_entregables_postventas
+from src.tabs.historico_postventa import mostrar_historico_postventa
+from src.tabs.horas_ati import mostrar_horas_ati
+from src.tabs.desarrollo_ati import mostrar_desarrollo_ati
+from src.tabs.entregables_ati import mostrar_entregables_ati
+from src.tabs.historico_ati import mostrar_historico_ati
+from src.tabs.bugs import mostrar_bugs
+from src.tabs.velocidad_devs import mostrar_velocidad_devs
+from src.tabs.gantt import mostrar_gantt
 
 # Importar utilidades
-from utils.configuracion import (
+from src.utils.configuracion import (
     MAPEO_TEM, RESUMEN_A_PROYECTO, PROYECTOS_POSTVENTA, PROYECTOS_ATI,
     cargar_epicas_relevantes, cargar_datos_historicos, cargar_issues_jira_cache,
     cargar_datos_principales, configurar_sidebar, aplicar_estilos_css

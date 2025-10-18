@@ -5,7 +5,7 @@ Pestaña de Horas ATI
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils.configuracion import MAPEO_TEM, PROYECTOS_ATI
+from src.utils.configuracion import MAPEO_TEM, PROYECTOS_ATI
 
 def mostrar_horas_ati(df):
     """Mostrar la pestaña de Horas ATI"""

@@ -6,7 +6,7 @@ import os
 import json
 import pandas as pd
 from datetime import datetime, timedelta
-from cache_datos import cargar_df_cache, guardar_df_cache, cargar_json_cache, guardar_json_cache
+from src.cache_datos import cargar_df_cache, guardar_df_cache, cargar_json_cache, guardar_json_cache
 
 # Mapeos de proyectos
 MAPEO_TEM = {
