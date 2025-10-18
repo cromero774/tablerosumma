@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, date
 from jira_conexion import get_jira
 from utils.configuracion import cache_path, cargar_epicas_relevantes
 
-def mostrar_bugs(issues_jira):
+def mostrar_bugs(epicas_relevantes, issues_jira):
     """Mostrar la pestaña de BUGS"""
     
     st.header("🐛 Bugs - Análisis por Mes")
