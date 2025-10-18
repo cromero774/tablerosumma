@@ -454,7 +454,7 @@ def mostrar_historico_ati(epicas_relevantes, issues_jira):
     
     # Mostrar información sobre datos limitados en primera carga
     if not tabla_historico:
-        st.info("🔄 Cargando datos limitados para primera carga rápida...")
+        st.info("No hay datos históricos disponibles.")
     else:
         st.caption("ℹ️ **Primera carga optimizada**: Mostrando datos más recientes. Usa 'Actualizar' para datos completos.")
     

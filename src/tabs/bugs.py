@@ -170,7 +170,6 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
     fields = "key,created,priority,issuetype,summary,status,labels,parent,customfield_10016"
     
     # Cargar issues con changelog para calcular tiempos
-    st.info("🔄 Cargando bugs desde Jira...")
     issues = []
     start_at = 0
     max_results = 100
@@ -192,7 +191,6 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
         except Exception as e:
             break
     
-    st.info(f"📊 Total de bugs encontrados: {total_issues}")
     
     # Ahora cargar y enriquecer
     start_at = 0

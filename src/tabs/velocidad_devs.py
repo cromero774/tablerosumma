@@ -91,10 +91,6 @@ def mostrar_velocidad_devs(df, issues_jira):
     #   UI: SELECTOR DE FECHAS
     # ==========================
     
-    st.info("💡 **Cómo usar**: Selecciona las fechas del período que quieres evaluar")
-    
-    # Aclaración sobre los datos disponibles
-    st.info("📊 **Datos disponibles**: Esta pestaña muestra datos desde enero 2024 en adelante.")
     
     # Inicializar session_state para filtros (últimos 3 meses incluyendo el mes actual)
     if "vel_fecha_inicio" not in st.session_state:
@@ -202,14 +198,12 @@ def mostrar_velocidad_devs(df, issues_jira):
                 if (datetime.now() - mtime) < timedelta(hours=48):
                     with open(cache_file, 'rb') as f:
                         cache_data = pickle.load(f)
-                        st.info(f"✅ Datos cargados desde cache ({len(cache_data['historias'])} historias, {len(cache_data['bugs'])} bugs)")
                         return cache_data['historias'], cache_data['bugs']
             except Exception as e:
                 if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
                     print(f"⚠️ Error cargando cache: {e}")
         
         # Si no hay cache válido, cargar desde Jira
-        st.info("🔄 Cargando datos desde Jira... Esto puede tomar un momento...")
 
         # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
         proy_jql = "project in (REP, TAL, ATI)"
@@ -222,11 +216,6 @@ def mostrar_velocidad_devs(df, issues_jira):
         FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
         
         # === PROTECCIÓN: Logs de monitoreo (solo en desarrollo) ===
-        if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-            print(f"🔍 VELOCIDAD DEBUG: JQL historias: {jql_hist}")
-            print(f"🔍 VELOCIDAD DEBUG: JQL bugs: {jql_bugs}")
-            print(f"🔍 VELOCIDAD DEBUG: Período: {_fecha_inicio} a {_fecha_fin}")
-            print(f"🔍 VELOCIDAD DEBUG: Proyecto: {_proyecto_sel}")
         
         # Cargar historias básicas y luego enriquecer con changelog individual
         # 1. Cargar historias básicas (sin changelog)
@@ -283,15 +272,8 @@ def mostrar_velocidad_devs(df, issues_jira):
             progress_bar.progress((i + 1) / len(historias_basicas))
         
         # Mostrar estadísticas
-        if historias_sin_changelog > 0:
-            st.warning(f"⚠️ {historias_sin_changelog} historias se guardaron sin changelog completo")
 
         # === PROTECCIÓN: Validación de datos mínimos ===
-        if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-            print(f"🔍 VELOCIDAD DEBUG: Historias encontradas: {len(historias)}")
-        if len(historias) < 5:  # Mínimo esperado
-            st.warning(f"⚠️ **ALERTA**: Solo se encontraron {len(historias)} historias. Esto puede indicar un problema con el JQL o los datos de Jira.")
-            st.info("💡 **Sugerencia**: Verifica que el proyecto seleccionado tenga historias con puntos asignados.")
 
         # Cargar bugs
         
@@ -309,11 +291,6 @@ def mostrar_velocidad_devs(df, issues_jira):
             start_at += 100
         
         # === PROTECCIÓN: Validación de bugs ===
-        if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-            print(f"🔍 VELOCIDAD DEBUG: Bugs encontrados: {len(bugs)}")
-        if len(bugs) < 1:  # Mínimo esperado
-            st.warning(f"⚠️ **ALERTA**: No se encontraron bugs. Esto puede indicar un problema con el JQL de bugs.")
-            st.info("💡 **Sugerencia**: Verifica que el proyecto seleccionado tenga bugs reportados.")
         
         # === PROTECCIÓN: Guardar en cache si los datos son válidos ===
         if len(historias) >= 5:  # Solo cachear si hay datos suficientes
@@ -339,18 +316,9 @@ def mostrar_velocidad_devs(df, issues_jira):
                     histories = changelog.get("histories", [])
                     if len(histories) > 0:
                         pass  # Cache generado correctamente
-                    else:
-                        st.warning(f"⚠️ Cache generado SIN changelog - esto puede causar problemas")
                 
-                if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                    print(f"🔍 VELOCIDAD DEBUG: Datos guardados en cache de archivo - {len(historias)} historias, {len(bugs)} bugs")
             except Exception as e:
-                if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                    print(f"⚠️ Error guardando cache: {e}")
-        
-        else:
-            if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                print(f"🔍 VELOCIDAD DEBUG: No se guarda en cache - datos insuficientes")
+                pass
         
         return historias, bugs
 
@@ -1006,8 +974,6 @@ def mostrar_velocidad_devs(df, issues_jira):
         if cache_key_calculos in st.session_state:
             usuarios_validos = st.session_state[cache_key_calculos]["usuarios_validos"]
             df_ranking_completo = st.session_state[cache_key_calculos]["df_ranking"]
-            if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                print(f"🔍 VELOCIDAD DEBUG: Usando cálculos del cache")
         else:
             # 1. Calcular usuarios válidos
             usuarios_validos = _calcular_usuarios_validos(df_final, allowed_names)
@@ -1021,8 +987,6 @@ def mostrar_velocidad_devs(df, issues_jira):
                 "usuarios_validos": usuarios_validos,
                 "df_ranking": df_ranking_completo
             }
-            if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                print(f"🔍 VELOCIDAD DEBUG: Cálculos guardados en cache")
         
         # 2. Mostrar selector de usuario (rápido, solo filtro)
         usuario_sel = _mostrar_selector_usuario(usuarios_validos)
@@ -1069,14 +1033,10 @@ def mostrar_velocidad_devs(df, issues_jira):
     if (not force_refresh and 
         cache_key_velocidad in st.session_state and 
         len(st.session_state[cache_key_velocidad].get("historias", [])) >= 5):
-        if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-            print(f"🔍 VELOCIDAD DEBUG: Usando datos del cache...")
         cache_data = st.session_state[cache_key_velocidad]
         historias = cache_data.get("historias", [])
         bugs = cache_data.get("bugs", [])
     else:
-        if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-            print(f"🔍 VELOCIDAD DEBUG: Cargando datos desde Jira...")
         historias, bugs = cargar_datos_velocidad(
             get_jira(), fecha_inicio.strftime("%Y-%m-%d"), fecha_fin.strftime("%Y-%m-%d"), 
             proyecto_sel, force_refresh
