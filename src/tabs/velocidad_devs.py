@@ -17,8 +17,8 @@ from src.utils.configuracion import cache_path, cargar_epicas_relevantes
 def mostrar_velocidad_devs(df, issues_jira):
     """Mostrar la pestaña de Velocidad de devs"""
     
-    st.header("🔥 Velocidad de devs - RAMA LOCAL")
-    st.caption("📊 **Métricas de productividad de desarrolladores - VERSIÓN LOCAL**")
+    st.header("🔥 Velocidad de devs - RAMA LOCAL - CAMBIO EXTRA")
+    st.caption("📊 **Métricas de productividad de desarrolladores - VERSIÓN LOCAL - CAMBIO EXTRA**")
 
     # ==========================
     #   FUNCIONES MODULARES
