@@ -13,6 +13,7 @@ import altair as alt
 from datetime import datetime, timedelta
 from src.jira_conexion import get_jira
 from src.utils.configuracion import cache_path, cargar_epicas_relevantes
+from src.utils.database_helper import DatabaseHelper
 
 def mostrar_velocidad_devs(df, issues_jira):
     """Mostrar la pestaña de Velocidad de devs"""
@@ -184,143 +185,27 @@ def mostrar_velocidad_devs(df, issues_jira):
     # ==========================
     
     def cargar_datos_velocidad(_jira, _fecha_inicio, _fecha_fin, _proyecto_sel, _force_refresh):
-        if _jira is None:
+        """
+        Cargar datos de velocidad desde la base de datos SQLite
+        Mantiene el mismo formato de salida que la versión anterior para compatibilidad
+        """
+        try:
+            # Inicializar helper de base de datos
+            db = DatabaseHelper()
+            db.conectar()
+            
+            # Cargar datos desde la base (sin filtros de fechas - se filtra por fecha de testing)
+            historias = db.obtener_historias_con_transiciones(["REP", "TAL", "ATI"])
+            bugs = db.obtener_bugs_con_cierre(["REP", "TAL", "ATI"])
+            
+            # Cerrar conexión
+            db.cerrar()
+            
+            return historias, bugs
+            
+        except Exception as e:
+            st.error(f"❌ Error cargando datos desde la base de datos: {e}")
             return [], []
-        
-        # === CACHE PERSISTENTE EN ARCHIVO ===
-        cache_key = f"velocidad_data_Todos_{_fecha_inicio}_{_fecha_fin}"
-        cache_file = cache_path(cache_key, 'pkl')
-        
-        # Intentar cargar desde cache de archivo (válido por 24 horas)
-        if not _force_refresh and os.path.exists(cache_file):
-            try:
-                mtime = datetime.fromtimestamp(os.path.getmtime(cache_file))
-                if (datetime.now() - mtime) < timedelta(hours=48):
-                    with open(cache_file, 'rb') as f:
-                        cache_data = pickle.load(f)
-                        return cache_data['historias'], cache_data['bugs']
-            except Exception as e:
-                if os.getenv("DEBUG_VELOCIDAD", "false").lower() == "true":
-                    print(f"⚠️ Error cargando cache: {e}")
-        
-        # Si no hay cache válido, cargar desde Jira
-
-        # SIEMPRE cargar TODOS los proyectos (se filtrará después en memoria)
-        proy_jql = "project in (REP, TAL, ATI)"
-
-        # Buscar historias con puntos desde enero 2024
-        jql_hist = f"{proy_jql} AND issuetype = Historia AND (cf[10026] is not EMPTY OR cf[10016] is not EMPTY OR 'Story Points' is not EMPTY) AND created >= '2024-01-01'"
-        
-        jql_bugs = f"{proy_jql} AND issuetype = Error AND created >= '2024-01-01'"
-        
-        FIELDS = "key,summary,status,project,issuetype,assignee,customfield_10026,customfield_10016,storyPoints,statuscategorychangedate,parent,issuelinks,created,updated"
-        
-        # === PROTECCIÓN: Logs de monitoreo (solo en desarrollo) ===
-        
-        # Cargar historias básicas y luego enriquecer con changelog individual
-        # 1. Cargar historias básicas (sin changelog)
-        historias_basicas = []
-        start_at = 0
-        while True:
-            endpoint = f'search?jql={jql_hist}&fields={FIELDS}&startAt={start_at}&maxResults=100'
-            data = _jira._get_json(endpoint)
-            batch = data.get("issues", [])
-            historias_basicas.extend(batch)
-            if len(batch) < 100:
-                break
-            start_at += 100
-        
-        # 2. Enriquecer cada historia con changelog individual (con reintentos)
-        historias = []
-        progress_bar = st.progress(0)
-        historias_sin_changelog = 0
-        
-        for i, historia in enumerate(historias_basicas):
-            issue_key = historia.get("key")
-            enriched_issue = None
-            
-            # Intentar obtener changelog con reintentos
-            for intento in range(3):  # Máximo 3 intentos
-                try:
-                    if issue_key:
-                        changelog_endpoint = f'issue/{issue_key}?expand=changelog&fields={FIELDS}'
-                        enriched_issue = _jira._get_json(changelog_endpoint)
-                        
-                        # Verificar que realmente tiene changelog
-                        changelog = enriched_issue.get("changelog", {})
-                        if changelog and changelog.get("histories"):
-                            break  # Éxito, salir del bucle de reintentos
-                        else:
-                            # Si no tiene changelog, intentar de nuevo
-                            if intento < 2:  # No es el último intento
-                                continue
-                    else:
-                        enriched_issue = historia
-                        break
-                        
-                except Exception as e:
-                    if intento < 2:  # No es el último intento
-                        continue  # Reintentar
-                    else:
-                        # Último intento falló, usar historia sin changelog
-                        enriched_issue = historia
-                        historias_sin_changelog += 1
-            
-            historias.append(enriched_issue)
-            
-            # Actualizar progreso
-            progress_bar.progress((i + 1) / len(historias_basicas))
-        
-        # Mostrar estadísticas
-
-        # === PROTECCIÓN: Validación de datos mínimos ===
-
-        # Cargar bugs
-        
-        bugs = []
-        start_at = 0
-        max_bugs = 10000  # Sin límite de datos
-        
-        while True:
-            params = {"jql": jql_bugs, "fields": FIELDS, "startAt": start_at, "maxResults": 100}
-            data = _jira._get_json("search", params=params)
-            batch = data.get("issues", [])
-            bugs.extend(batch)
-            if len(batch) < 100 or len(bugs) >= max_bugs:
-                break
-            start_at += 100
-        
-        # === PROTECCIÓN: Validación de bugs ===
-        
-        # === PROTECCIÓN: Guardar en cache si los datos son válidos ===
-        if len(historias) >= 5:  # Solo cachear si hay datos suficientes
-            cache_data = {
-                "historias": historias,
-                "bugs": bugs,
-                "timestamp": pd.Timestamp.now(),
-                "proyecto": _proyecto_sel,
-                "fecha_inicio": _fecha_inicio,
-                "fecha_fin": _fecha_fin
-            }
-            st.session_state[cache_key_velocidad] = cache_data
-            
-            # Guardar en archivo persistente
-            try:
-                with open(cache_file, 'wb') as f:
-                    pickle.dump(cache_data, f)
-                
-                # Verificar que el changelog se guardó correctamente
-                if historias:
-                    primera_historia = historias[0]
-                    changelog = primera_historia.get("changelog", {})
-                    histories = changelog.get("histories", [])
-                    if len(histories) > 0:
-                        pass  # Cache generado correctamente
-                
-            except Exception as e:
-                pass
-        
-        return historias, bugs
 
     # ==========================
     #   FUNCIÓN: PROCESAR HISTORIAS
@@ -393,9 +278,6 @@ def mostrar_velocidad_devs(df, issues_jira):
         bugs_filtrados_por_fecha = 0
         bugs_filtrados_por_asignado = 0
         
-        # Debug: recopilar todos los estados únicos de bugs
-        estados_bugs_unicos = set()
-        
         for iss in bugs:
             f = iss.get("fields", {}) or {}
             itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
@@ -411,7 +293,6 @@ def mostrar_velocidad_devs(df, issues_jira):
                 continue
 
             estado_bug = _norm((f.get("status", {}) or {}).get("name")).lower()
-            estados_bugs_unicos.add(estado_bug)
             
             # Estados válidos más amplios para bugs (incluyendo estados en español)
             estados_validos = ("resolved", "closed", "done", "cerrado", "resuelto", "hecho", "completado", "finalizado", "terminado", "aprobado", "hecha")
@@ -657,8 +538,14 @@ def mostrar_velocidad_devs(df, issues_jira):
         # Verificar si la lista de usuarios cambió
         usuarios_cache = st.session_state.get(cache_key_usuarios, [])
         if usuarios_cache != usuarios_validos:
-            # Lista de usuarios cambió, resetear selección
-            usuario_actual = "Todos"
+            # Lista de usuarios cambió, PERO mantener el usuario seleccionado si sigue siendo válido
+            usuario_anterior = st.session_state.get("vel_usuario_actual", "Todos")
+            if usuario_anterior in ["Todos"] + usuarios_validos:
+                # El usuario anterior sigue siendo válido, mantenerlo
+                usuario_actual = usuario_anterior
+            else:
+                # El usuario anterior ya no es válido, resetear a "Todos"
+                usuario_actual = "Todos"
             st.session_state[cache_key_usuarios] = usuarios_validos.copy()
         
         if usuario_actual not in ["Todos"] + usuarios_validos:

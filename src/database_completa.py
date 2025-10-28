@@ -333,7 +333,7 @@ class TableroDatabase:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_assignee ON issues(assignee_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_epic ON issues(epic_link)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_changelog_issue ON changelog(issue_key)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_transitions_issue ON issue_transitions(issue_key)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_worklogs_issue ON worklogs(issue_key)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_worklogs_author ON worklogs(author_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_worklogs_date ON worklogs(start_date)")
@@ -449,9 +449,9 @@ class TableroDatabase:
                     fields = "key,issuetype,created,customfield_10016,summary,status,priority,labels,issuelinks"
                     issues = self._traer_todas_las_issues(jira, jql, fields, max_results=5000)
                 else:
-                    # Proyectos normales - historias y bugs SIN CHANGELOG (se carga después)
+                    # Proyectos normales - historias Y errors SIN CHANGELOG (se carga después)
                     # INCLUYENDO subtasks para cálculo de porcentaje de avance
-                    jql = f'project = {proyecto} AND issuetype in (Historia, Bug, Task) ORDER BY updated DESC'
+                    jql = f'project = {proyecto} AND (issuetype = Historia OR issuetype = Error) ORDER BY created DESC'
                     fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated,created,resolutiondate,priority,labels,fixVersions,issuelinks,customfield_10021,subtasks"
                     issues = self._traer_todas_las_issues(jira, jql, fields, max_results=5000)
                 
@@ -460,6 +460,7 @@ class TableroDatabase:
                     continue
                 
                 cursor = self.conn.cursor()
+                print(f"    📥 Insertando {len(issues)} issues de {proyecto} en la base de datos...")
                 for issue in issues:
                     fields_data = issue.get('fields', {})
                 
@@ -524,6 +525,10 @@ class TableroDatabase:
                         proyecto_logico
                     ))
                 
+                # Commit de las issues ANTES de procesar changelog
+                self.conn.commit()
+                print(f"    ✅ {len(issues)} issues de {proyecto} insertadas en la base de datos")
+                
                 # Procesar changelog para calcular métricas temporales (POR LOTES)
                 print(f"    🔄 Procesando changelog para métricas temporales (POR LOTES) del proyecto {proyecto}...")
                 print(f"    ⚠️  Esto puede tomar varios minutos - procesando {len(issues)} issues del proyecto {proyecto}...")
@@ -533,8 +538,9 @@ class TableroDatabase:
                 print(f"    🔄 Procesando transiciones de estado del proyecto {proyecto}...")
                 self._procesar_transiciones(issues, len(issues))
                 
+                # Commit final de transiciones
                 self.conn.commit()
-                print(f"    ✅ {len(issues)} issues de {proyecto} sincronizados con changelog")
+                print(f"    ✅ {len(issues)} issues de {proyecto} sincronizados con changelog y transiciones")
         
         except Exception as e:
             print(f"❌ Error sincronizando issues: {e}")
@@ -542,18 +548,24 @@ class TableroDatabase:
     def _traer_todas_las_issues(self, jira, jql, fields, max_results=5000):
         """Traer todas las issues usando la misma lógica del tablero"""
         print(f"    🔄 Cargando issues básicas (sin changelog)...")
-        issues, start_at = [], 0
+        issues = []
         batch_size = 100  # Jira tiene límite máximo de 100 por request
         
-        # Calcular progreso estimado
-        total_batches = (max_results + batch_size - 1) // batch_size
+        # Convertir fields de string a lista si es necesario
+        if isinstance(fields, str):
+            fields_list = [f.strip() for f in fields.split(",") if f.strip()]
+        else:
+            fields_list = fields
+        
+        batch_num = 0
+        token = None
         
         while len(issues) < max_results:
-            batch_num = (start_at // batch_size) + 1
-            progress_pct = min(100, (batch_num / total_batches) * 100)
+            batch_num += 1
             
-            endpoint = f'search/jql?jql={jql}&fields={fields}&startAt={start_at}&maxResults={batch_size}'
-            data = jira._get(endpoint)
+            # Llamar a search_jql directamente
+            data = jira.search_jql(jql=jql, fields=fields_list, max_results=batch_size, next_page_token=token)
+            
             batch = data.get("issues", [])
             
             if not batch:  # No hay más issues
@@ -562,13 +574,16 @@ class TableroDatabase:
                 
             issues.extend(batch)
             
-            # Si el lote es menor que batch_size, no hay más páginas
-            if len(batch) < batch_size:
+            # Obtener el token para la siguiente página
+            token = data.get("nextPageToken")
+            
+            progress_pct = min(100, (len(issues) / max_results) * 100)
+            print(f"    📊 Cargadas {len(issues)} issues... ({progress_pct:.1f}% - Lote {batch_num})")
+            
+            # Si no hay más páginas
+            if not token:
                 print(f"    📊 Último lote recibido (total issues: {len(issues)})")
                 break
-                
-            start_at += batch_size
-            print(f"    📊 Cargadas {len(issues)} issues... ({progress_pct:.1f}% - Lote {batch_num}/{total_batches})")
             
         print(f"    ✅ Total issues básicas cargadas: {len(issues)}")
         return issues
@@ -586,8 +601,10 @@ class TableroDatabase:
             batch_num = (start_at // batch_size) + 1
             progress_pct = min(100, (batch_num / total_batches) * 100)
             
-            endpoint = f'search/jql?jql={jql}&fields={fields}&startAt={start_at}&maxResults={batch_size}&expand=changelog'
-            data = jira._get(endpoint)
+            # Note: changelog se descarga lote por lote, no en esta función
+            # Esta función NO se usa actualmente, se usa _traer_todas_las_issues + procesar changelog por lotes
+            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={batch_size}&expand=changelog'
+            data = jira._get_json(endpoint)
             batch = data.get("issues", [])
             
             if not batch:  # No hay más issues
@@ -684,6 +701,9 @@ class TableroDatabase:
                 if pd.isna(transition_date):
                     continue
                 
+                # Convertir Timestamp a string para SQLite
+                transition_date_str = transition_date.strftime('%Y-%m-%d %H:%M:%S')
+                
                 author = hist.get('author', {})
                 changed_by = author.get('displayName', '') if author else ''
                 
@@ -704,7 +724,7 @@ class TableroDatabase:
                                     issue_key, from_status, to_status, transition_date,
                                     is_testing, is_progress, is_done, changed_by
                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (issue_key, from_status, to_status, transition_date,
+                            """, (issue_key, from_status, to_status, transition_date_str,
                                   is_testing, is_progress, is_done, changed_by))
                         except Exception as e:
                             print(f"        ⚠️ Error insertando transición para {issue_key}: {e}")
@@ -732,6 +752,9 @@ class TableroDatabase:
                     # Obtener changelog individual para esta issue
                     changelog_data = self.obtener_changelog_issue(jira, issue_key)
                     if changelog_data:
+                        # AGREGAR EL CHANGELOG A LA ISSUE para que _procesar_transiciones pueda usarlo
+                        issue['changelog'] = changelog_data.get('changelog', {})
+                        
                         # Calcular tiempos de estado desde changelog
                         tiempo_resolucion, tiempo_en_progreso = self._calcular_tiempos_desde_changelog_completo(changelog_data)
                         
@@ -920,7 +943,7 @@ class TableroDatabase:
         cursor = self.conn.cursor()
         cursor.execute("""
             SELECT COUNT(*) FROM issues 
-            WHERE parent_key = ? AND issuetype = 'Bug'
+            WHERE parent_key = ? AND issuetype = 'Error'
         """, (issue_key,))
         return cursor.fetchone()[0] or 0
     
@@ -1165,7 +1188,7 @@ class TableroDatabase:
                 SELECT COUNT(*) as total,
                        SUM(CASE WHEN status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as resueltos
                 FROM issues 
-                WHERE epic_link = ? AND issuetype = 'Bug'
+                WHERE epic_link = ? AND issuetype = 'Error'
             """, (rn,))
             
             bug_result = cursor.fetchone()
@@ -1237,7 +1260,7 @@ class TableroDatabase:
             cursor.execute("""
                 SELECT COUNT(*) as total,
                        SUM(CASE WHEN status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as completados,
-                       SUM(CASE WHEN issuetype = 'Bug' AND status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as bugs_resueltos
+                       SUM(CASE WHEN issuetype = 'Error' AND status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as bugs_resueltos
                 FROM issues 
                 WHERE assignee_id = ?
             """, (account_id,))
@@ -1292,8 +1315,8 @@ class TableroDatabase:
             cursor.execute("""
                 SELECT COUNT(*) as total,
                        SUM(CASE WHEN status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as completados,
-                       SUM(CASE WHEN issuetype = 'Bug' THEN 1 ELSE 0 END) as total_bugs,
-                       SUM(CASE WHEN issuetype = 'Bug' AND status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as bugs_cerrados
+                       SUM(CASE WHEN issuetype = 'Error' THEN 1 ELSE 0 END) as total_bugs,
+                       SUM(CASE WHEN issuetype = 'Error' AND status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as bugs_cerrados
                 FROM issues 
                 WHERE project = ?
             """, (proyecto,))
