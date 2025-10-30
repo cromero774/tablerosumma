@@ -14,6 +14,7 @@ import pickle
 from datetime import datetime, timedelta, date
 from src.jira_conexion import get_jira
 from src.utils.configuracion import cache_path, cargar_epicas_relevantes
+from src.utils.database_helper import DatabaseHelper
 
 def mostrar_bugs(epicas_relevantes, issues_jira):
     """Mostrar la pestaña de BUGS"""
@@ -66,92 +67,107 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
         try:
             changelog = issue.get("changelog", {})
             histories = changelog.get("histories", [])
-            
             if not histories:
                 return "N/A", "N/A"
-            
-            # Buscar fechas clave
-            fecha_salida_to_do = None
-            fecha_entrada_validacion_qa = None
-            fecha_entrada_aprobado_qa = None
-            
+
+            # Utilidades de normalización
+            def _norm_upper_no_accents(s):
+                try:
+                    return unicodedata.normalize('NFKD', str(s)).encode('ASCII', 'ignore').decode('ASCII').upper().strip()
+                except Exception:
+                    return str(s or "").upper().strip()
+
+            iniciales = {"TO DO", "POR HACER"}
+            objetivo_validacion = "EN VALIDACION QA"
+            objetivo_aprobado = "APROBADO POR QA"
+
+            # Colecciones de eventos para soportar múltiples ciclos
+            salidas_iniciales = []
+            entradas_validacion = []
+            entradas_aprobado = []
+
             for history in histories:
                 created = pd.to_datetime(history.get("created", ""), errors="coerce")
                 if pd.isna(created):
                     continue
-                
-                for item in history.get("items", []):
-                    if item.get("field") == "status":
-                        from_status = item.get("fromString", "").strip()
-                        to_status = item.get("toString", "").strip()
-                        
-                        # Capturar salida de estado inicial (primera vez que sale de estado inicial)
-                        if from_status in ["To Do", "Por Hacer"] and fecha_salida_to_do is None:
-                            fecha_salida_to_do = created
-                        
-                        # Capturar entrada a "EN VALIDACIÓN QA" (primera vez)
-                        if to_status == "EN VALIDACIÓN QA" and fecha_entrada_validacion_qa is None:
-                            fecha_entrada_validacion_qa = created
-                        
-                        # Capturar entrada a "APROBADO POR QA" (primera vez)
-                        if to_status == "APROBADO POR QA" and fecha_entrada_aprobado_qa is None:
-                            fecha_entrada_aprobado_qa = created
-            
-            # Calcular días laborables (excluyendo sábados, domingos y feriados)
+                for item in history.get("items", []) or []:
+                    if item.get("field") != "status":
+                        continue
+                    from_status = _norm_upper_no_accents(item.get("fromString", ""))
+                    to_status = _norm_upper_no_accents(item.get("toString", ""))
+
+                    # Registrar TODAS las salidas reales de estados iniciales (evitando rebotes entre iniciales)
+                    if from_status in iniciales:
+                        if not (from_status == "POR HACER" and to_status == "TO DO") and not (from_status == "TO DO" and to_status == "POR HACER"):
+                            salidas_iniciales.append(created)
+
+                    # Registrar TODAS las entradas a objetivos QA
+                    if to_status == objetivo_validacion:
+                        entradas_validacion.append(created)
+                    if to_status == objetivo_aprobado:
+                        entradas_aprobado.append(created)
+
+            # Días laborables contando el mismo día si es hábil (mismo día = 1 si hábil)
             def calcular_dias_laborables(fecha_inicio, fecha_fin):
                 if pd.isna(fecha_inicio) or pd.isna(fecha_fin):
                     return 0
-                
-                dias = 0
-                fecha_actual = fecha_inicio.date()
-                fecha_final = fecha_fin.date()
-                
-                # Lista de feriados (Argentina 2025 - ajustar según necesidad)
                 feriados = [
-                    date(2025, 1, 1),   # Año Nuevo
-                    date(2025, 2, 24),  # Carnaval
-                    date(2025, 2, 25),  # Carnaval
-                    date(2025, 3, 24),  # Día de la Memoria
-                    date(2025, 4, 2),   # Día del Veterano
-                    date(2025, 4, 18),  # Viernes Santo
-                    date(2025, 5, 1),   # Día del Trabajador
-                    date(2025, 5, 25),  # Día de la Revolución de Mayo
-                    date(2025, 6, 16),  # Día de la Bandera
-                    date(2025, 6, 20),  # Paso a la Inmortalidad del Gral. Güemes
-                    date(2025, 7, 9),   # Día de la Independencia
-                    date(2025, 8, 17),  # Paso a la Inmortalidad del Gral. San Martín
-                    date(2025, 10, 12), # Día del Respeto a la Diversidad Cultural
-                    date(2025, 11, 24), # Día de la Soberanía Nacional
-                    date(2025, 12, 8),  # Inmaculada Concepción de María
-                    date(2025, 12, 25), # Navidad
+                    date(2025, 1, 1),
+                    date(2025, 2, 24),
+                    date(2025, 2, 25),
+                    date(2025, 3, 24),
+                    date(2025, 4, 2),
+                    date(2025, 4, 18),
+                    date(2025, 5, 1),
+                    date(2025, 5, 25),
+                    date(2025, 6, 20),
+                    date(2025, 6, 16),
+                    date(2025, 7, 9),
+                    date(2025, 8, 17),
+                    date(2025, 10, 12),
+                    date(2025, 11, 24),
+                    date(2025, 12, 8),
+                    date(2025, 12, 25),
                 ]
-                
-                while fecha_actual <= fecha_final:
-                    # Excluir sábados (5), domingos (6) y feriados
-                    if fecha_actual.weekday() < 5 and fecha_actual not in feriados:
+                ini = fecha_inicio.date() if hasattr(fecha_inicio, 'date') else fecha_inicio
+                fin = fecha_fin.date() if hasattr(fecha_fin, 'date') else fecha_fin
+                if ini > fin:
+                    return 0
+                dias = 0
+                actual = ini  # incluir día de inicio si es hábil
+                while actual <= fin:
+                    if actual.weekday() < 5 and actual not in feriados:
                         dias += 1
-                    fecha_actual += timedelta(days=1)
-                
+                    actual += timedelta(days=1)
                 return dias
-            
-            # Calcular los dos períodos solicitados
-            # 1. De "To Do" a "EN VALIDACIÓN QA"
-            if fecha_salida_to_do and fecha_entrada_validacion_qa:
-                dias_to_qa = calcular_dias_laborables(fecha_salida_to_do, fecha_entrada_validacion_qa)
-                resultado_to_qa = f"{dias_to_qa}d" if dias_to_qa > 0 else "N/A"
+
+            # Seleccionar ÚLTIMO ciclo válido: última entrada y su salida previa más cercana
+            salida_para_validacion = None
+            entrada_validacion = max(entradas_validacion) if entradas_validacion else None
+            if entrada_validacion and salidas_iniciales:
+                salida_para_validacion = max([s for s in salidas_iniciales if s <= entrada_validacion], default=None)
+
+            salida_para_aprobado = None
+            entrada_aprobado = max(entradas_aprobado) if entradas_aprobado else None
+            if entrada_aprobado and salidas_iniciales:
+                salida_para_aprobado = max([s for s in salidas_iniciales if s <= entrada_aprobado], default=None)
+
+            # 1) To Do -> EN VALIDACION QA (último ciclo)
+            if salida_para_validacion and entrada_validacion:
+                d1 = calcular_dias_laborables(salida_para_validacion, entrada_validacion)
+                res1 = f"{d1}d" if d1 > 0 else "N/A"
             else:
-                resultado_to_qa = "N/A"
-            
-            # 2. De "To Do" a "APROBADO POR QA"
-            if fecha_salida_to_do and fecha_entrada_aprobado_qa:
-                dias_to_approved = calcular_dias_laborables(fecha_salida_to_do, fecha_entrada_aprobado_qa)
-                resultado_to_approved = f"{dias_to_approved}d" if dias_to_approved > 0 else "N/A"
+                res1 = "N/A"
+
+            # 2) To Do -> APROBADO POR QA (último ciclo)
+            if salida_para_aprobado and entrada_aprobado:
+                d2 = calcular_dias_laborables(salida_para_aprobado, entrada_aprobado)
+                res2 = f"{d2}d" if d2 > 0 else "N/A"
             else:
-                resultado_to_approved = "N/A"
-            
-            return resultado_to_qa, resultado_to_approved
-            
-        except Exception as e:
+                res2 = "N/A"
+
+            return res1, res2
+        except Exception:
             return "N/A", "N/A"
 
     # ==========================
@@ -165,69 +181,17 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
         st.error(f"❌ No se pudo cargar el archivo epicas_relevantes.json: {e}")
         st.stop()
     
-    # JQL y campos
-    jql = 'project = BUG AND created >= "2025-01-01"'
-    fields = "key,created,priority,issuetype,summary,status,labels,parent,customfield_10016"
-    
-    # Cargar issues con changelog para calcular tiempos
-    issues = []
-    start_at = 0
-    max_results = 100
-    progress_bar = st.progress(0)
-    total_issues = 0
-    
-    jira = get_jira()
-    
-    # Primero contar total de issues
-    while True:
-        try:
-            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
-            data = jira._get_json(endpoint)
-            batch = data.get("issues", [])
-            total_issues += len(batch)
-            if len(batch) < max_results:
-                break
-            start_at += max_results
-        except Exception as e:
-            break
-    
-    
-    # Ahora cargar y enriquecer
-    start_at = 0
-    processed = 0
-    
-    while True:
-        try:
-            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
-            data = jira._get_json(endpoint)
-            batch = data.get("issues", [])
-            
-            # Enriquecer cada issue con changelog
-            for issue in batch:
-                try:
-                    issue_key = issue.get("key", "")
-                    changelog_endpoint = f'issue/{issue_key}?expand=changelog&fields={fields}'
-                    enriched_issue = jira._get_json(changelog_endpoint)
-                    issues.append(enriched_issue)
-                except Exception as e:
-                    # Si falla el changelog, usar la issue sin enriquecer
-                    issues.append(issue)
-                
-                processed += 1
-                progress_bar.progress(processed / total_issues)
-            
-            if len(batch) < max_results:
-                break
-            start_at += max_results
-        except Exception as e:
-            st.error(f"❌ Error cargando datos: {e}")
-            break
+    # Cargar bugs desde la base de datos
+    db = DatabaseHelper()
+    db.conectar()
+    issues = db.obtener_bugs_proyecto_bug()
+    db.cerrar()
     
     if not issues:
         st.warning("⚠️ No se encontraron bugs")
         st.stop()
     
-    st.success(f"✅ Cargados {len(issues)} bugs")
+    st.success(f"✅ Cargados {len(issues)} bugs desde la base de datos")
     
     # ==========================
     # PROCESAMIENTO DE DATOS
@@ -297,6 +261,20 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
     if df.empty:
         st.warning("⚠️ No hay datos para mostrar")
         st.stop()
+    
+    # Filtrar a la ventana activa: Febrero 2025 en adelante
+    try:
+        df["Fecha_dt"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        inicio_filtro = pd.Timestamp(2025, 2, 1)
+        df = df[(df["Fecha_dt"] >= inicio_filtro)].copy()
+    except Exception:
+        pass
+
+    # Salvaguarda adicional por si alguna fila no parsea la fecha: usar AñoMes
+    try:
+        df = df[df["AñoMes"] >= "2025-02"].copy()
+    except Exception:
+        pass
     
     # ==========================
     # CÁLCULO DE MÉTRICAS
@@ -384,15 +362,16 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
         else:
             cumplimiento = "N/A"
         
+        # Convertir todos los valores a string desde el inicio para evitar problemas con PyArrow
         tabla_transpuesta[mes_nombre] = [
-            int(row["Q_Mensual"]),
-            int(row["Q_KINETIC"]),
-            int(row["Q_MEJORA"]),
-            int(row["Q_Bugs_EVOLTIS"]),
-            int(row["Q_Bloqueantes"]),
-            cumplimiento,
-            sla_qa_promedio,
-            sla_approved_promedio
+            str(int(row["Q_Mensual"])),
+            str(int(row["Q_KINETIC"])),
+            str(int(row["Q_MEJORA"])),
+            str(int(row["Q_Bugs_EVOLTIS"])),
+            str(int(row["Q_Bloqueantes"])),
+            cumplimiento,  # string con formato "XX.X%"
+            sla_qa_promedio,  # string con formato "XX.X días" o "N/A"
+            sla_approved_promedio  # string con formato "XX.X días" o "N/A"
         ]
     
     df_tabla_transpuesta = pd.DataFrame(tabla_transpuesta)
@@ -554,16 +533,16 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
     MESES_ES = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
 
     try:
-        # Cargar bugs de TAL, REP, ATI
-        jql_tal = 'project = TAL AND issuetype in (Error, Bug) AND created >= "2025-01-01" ORDER BY created ASC'
-        jql_rep = 'project = REP AND issuetype in (Error, Bug) AND created >= "2025-01-01" ORDER BY created ASC'
-        jql_ati = 'project = ATI AND issuetype in (Error, Bug) AND created >= "2025-01-01" ORDER BY created ASC'
+        # Cargar bugs desde la base de datos
+        db = DatabaseHelper()
+        db.conectar()
         
-        fields_bugs = "key,created,issuelinks,summary,status"
+        # Cargar bugs de TAL, REP, ATI desde la base
+        bugs_tal = db.obtener_bugs_con_cierre(["TAL"])
+        bugs_rep = db.obtener_bugs_con_cierre(["REP"])
+        bugs_ati = db.obtener_bugs_con_cierre(["ATI"])
         
-        bugs_tal = traer_todas_las_issues_global(jira, jql_tal, fields_bugs, max_results=5000)
-        bugs_rep = traer_todas_las_issues_global(jira, jql_rep, fields_bugs, max_results=5000)
-        bugs_ati = traer_todas_las_issues_global(jira, jql_ati, fields_bugs, max_results=5000)
+        db.cerrar()
         
         # Filtrar bugs externos (vinculados a BUG-XXX)
         bugs_tal_internos = [b for b in bugs_tal if not tiene_vinculo_bug(b)]
@@ -577,22 +556,25 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
             created = bug.get("fields", {}).get("created", "")
             if created:
                 fecha = datetime.strptime(created[:10], "%Y-%m-%d")
-                mes_nombre = MESES_ES[fecha.month]
-                datos_internos.append({"Proyecto": "TAL", "Mes": mes_nombre, "Cantidad": 1})
+                if fecha >= datetime(2025, 2, 1):
+                    mes_nombre = MESES_ES[fecha.month]
+                    datos_internos.append({"Proyecto": "TAL", "Mes": mes_nombre, "Cantidad": 1})
         
         for bug in bugs_rep_internos:
             created = bug.get("fields", {}).get("created", "")
             if created:
                 fecha = datetime.strptime(created[:10], "%Y-%m-%d")
-                mes_nombre = MESES_ES[fecha.month]
-                datos_internos.append({"Proyecto": "REP", "Mes": mes_nombre, "Cantidad": 1})
+                if fecha >= datetime(2025, 2, 1):
+                    mes_nombre = MESES_ES[fecha.month]
+                    datos_internos.append({"Proyecto": "REP", "Mes": mes_nombre, "Cantidad": 1})
         
         for bug in bugs_ati_internos:
             created = bug.get("fields", {}).get("created", "")
             if created:
                 fecha = datetime.strptime(created[:10], "%Y-%m-%d")
-                mes_nombre = MESES_ES[fecha.month]
-                datos_internos.append({"Proyecto": "ATI", "Mes": mes_nombre, "Cantidad": 1})
+                if fecha >= datetime(2025, 2, 1):
+                    mes_nombre = MESES_ES[fecha.month]
+                    datos_internos.append({"Proyecto": "ATI", "Mes": mes_nombre, "Cantidad": 1})
         
         if datos_internos:
             df_internos = pd.DataFrame(datos_internos)
@@ -644,16 +626,15 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
         with open('data/accountid_to_name.json', 'r', encoding='utf-8') as f:
             accountid_to_name = json.load(f)
 
-        # Cargar historias de TAL, REP, ATI
-        jql_historias_tal = 'project = TAL AND issuetype in ("Historia", "Story", "User Story") AND created >= "2025-01-01"'
-        jql_historias_rep = 'project = REP AND issuetype in ("Historia", "Story", "User Story") AND created >= "2025-01-01"'
-        jql_historias_ati = 'project = ATI AND issuetype in ("Historia", "Story", "User Story") AND created >= "2025-01-01"'
+        # Cargar historias desde la base de datos
+        db = DatabaseHelper()
+        db.conectar()
         
-        fields_historias = "key,assignee,summary,status"
+        historias_tal = db.obtener_historias_con_transiciones(["TAL"])
+        historias_rep = db.obtener_historias_con_transiciones(["REP"])
+        historias_ati = db.obtener_historias_con_transiciones(["ATI"])
         
-        historias_tal = traer_todas_las_issues_global(jira, jql_historias_tal, fields_historias, max_results=5000)
-        historias_rep = traer_todas_las_issues_global(jira, jql_historias_rep, fields_historias, max_results=5000)
-        historias_ati = traer_todas_las_issues_global(jira, jql_historias_ati, fields_historias, max_results=5000)
+        db.cerrar()
         
         # Crear diccionario de historias por clave
         historias_por_clave = {}
@@ -674,40 +655,44 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
             created = bug.get("fields", {}).get("created", "")
             if not created:
                 continue
-                
             fecha = datetime.strptime(created[:10], "%Y-%m-%d")
+            # Filtrar fechas anteriores a Feb 2025
+            if fecha < datetime(2025, 2, 1):
+                continue
             mes_nombre = MESES_ES[fecha.month]
             
-            # Buscar historia vinculada
-            issuelinks = bug.get("fields", {}).get("issuelinks", [])
-            usuario_asignado = "Sin historia vinculada"
+            # Buscar historia vinculada (PRIMERO por parent, luego por issuelinks)
+            usuario_asignado = None
             
-            for link in issuelinks:
-                # Verificar outward links
-                outward_issue = link.get("outwardIssue")
-                if outward_issue:
-                    clave_historia = outward_issue.get("key", "")
-                    if clave_historia in historias_por_clave:
-                        usuario_asignado = historias_por_clave[clave_historia]
-                        break
-                
-                # Verificar inward links
-                inward_issue = link.get("inwardIssue")
-                if inward_issue:
-                    clave_historia = inward_issue.get("key", "")
-                    if clave_historia in historias_por_clave:
-                        usuario_asignado = historias_por_clave[clave_historia]
-                        break
+            # 1. Buscar por parent (si el bug es subtask de una historia)
+            parent = bug.get("fields", {}).get("parent")
+            if parent:
+                parent_key = parent.get("key", "")
+                if parent_key in historias_por_clave:
+                    usuario_asignado = historias_por_clave[parent_key]
             
-            # Si no hay historia vinculada, usar asignado del bug como fallback
-            if usuario_asignado == "Sin historia vinculada":
-                assignee_bug = bug.get("fields", {}).get("assignee")
-                if assignee_bug:
-                    account_id = assignee_bug.get("accountId", "")
-                    usuario_asignado = accountid_to_name.get(account_id, "") if account_id else ""
+            # 2. Si no encontró por parent, buscar por issuelinks
+            if not usuario_asignado:
+                issuelinks = bug.get("fields", {}).get("issuelinks", [])
+                for link in issuelinks:
+                    # Verificar outward links
+                    outward_issue = link.get("outwardIssue")
+                    if outward_issue:
+                        clave_historia = outward_issue.get("key", "")
+                        if clave_historia in historias_por_clave:
+                            usuario_asignado = historias_por_clave[clave_historia]
+                            break
+                    
+                    # Verificar inward links
+                    inward_issue = link.get("inwardIssue")
+                    if inward_issue:
+                        clave_historia = inward_issue.get("key", "")
+                        if clave_historia in historias_por_clave:
+                            usuario_asignado = historias_por_clave[clave_historia]
+                            break
             
-            # Solo agregar si hay usuario asignado (no incluir "Sin asignar")
-            if usuario_asignado and usuario_asignado != "Sin historia vinculada":
+            # Solo contar bugs que tienen historia vinculada (asignado por el dueño de la historia)
+            if usuario_asignado and usuario_asignado != "Sin asignar":
                 datos_usuarios.append({
                     "Usuario": usuario_asignado,
                     "Mes": mes_nombre,
