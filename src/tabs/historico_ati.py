@@ -7,12 +7,9 @@ import streamlit as st
 import pandas as pd
 import unicodedata
 import re
-import time
-import os
-import pickle
-from datetime import datetime, timedelta
-from src.jira_conexion import get_jira
-from src.utils.configuracion import cache_path, cargar_epicas_relevantes
+from datetime import datetime, timedelta, date
+from src.utils.configuracion import cargar_epicas_relevantes
+from src.utils.database_helper import DatabaseHelper
 
 def mostrar_historico_ati(epicas_relevantes, issues_jira):
     """Mostrar la pestaña de Histórico ATI"""
@@ -35,37 +32,44 @@ def mostrar_historico_ati(epicas_relevantes, issues_jira):
     def _safe_issue_key(iss) -> str:
         return (iss.get("key") or iss.get("id") or "") if isinstance(iss, dict) else ""
 
-    def _unwrap_issue(iss):
-        if isinstance(iss, dict) and "fields" in iss:
-            return iss
-        return {"key": str(iss), "fields": {}}
 
-    def traer_todos_las_issues(jira, jql, fields, max_results=100):
-        issues, start_at = [], 0
-        while True:
-            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
-            data = jira._get_json(endpoint)
-            batch = data.get("issues", [])
-            issues.extend(batch)
-            if len(batch) < max_results:
-                break
-            start_at += max_results
-        return issues
 
-    def traer_bugs_con_changelog(jira, jql, fields, max_results=100):
-        issues, start_at = [], 0
-        while True:
-            endpoint = (f'search?jql={jql}&fields={fields}'
-                        f'&expand=changelog&startAt={start_at}&maxResults={max_results}')
-            data = jira._get_json(endpoint)
-            batch = data.get("issues", [])
-            issues.extend(batch)
-            if len(batch) < max_results:
-                break
-            start_at += max_results
-        return issues
-
-    # --- FIX: cálculo robusto de horas desde changelog (con fallbacks) ---
+    # --- Cálculo de días laborables (excluyendo fines de semana y feriados) ---
+    def calcular_dias_laborables(fecha_inicio, fecha_fin):
+        """Calcula días laborables entre dos fechas (excluyendo fines de semana y feriados)"""
+        if pd.isna(fecha_inicio) or pd.isna(fecha_fin):
+            return 0
+        feriados = [
+            date(2025, 1, 1),
+            date(2025, 2, 24),
+            date(2025, 2, 25),
+            date(2025, 3, 24),
+            date(2025, 4, 2),
+            date(2025, 4, 18),
+            date(2025, 5, 1),
+            date(2025, 5, 25),
+            date(2025, 6, 20),
+            date(2025, 6, 16),
+            date(2025, 7, 9),
+            date(2025, 8, 17),
+            date(2025, 10, 12),
+            date(2025, 11, 24),
+            date(2025, 12, 8),
+            date(2025, 12, 25),
+        ]
+        ini = fecha_inicio.date() if hasattr(fecha_inicio, 'date') else fecha_inicio
+        fin = fecha_fin.date() if hasattr(fecha_fin, 'date') else fecha_fin
+        if ini > fin:
+            return 0
+        dias = 0
+        actual = ini  # incluir día de inicio si es hábil
+        while actual <= fin:
+            if actual.weekday() < 5 and actual not in feriados:
+                dias += 1
+            actual += timedelta(days=1)
+        return dias
+    
+    # --- Cálculo robusto de horas desde changelog (con fallbacks) ---
     def _bug_resolution_hours(bug_issue) -> float | None:
         f = bug_issue.get("fields", {}) or {}
         created = pd.to_datetime(f.get("created"), errors="coerce")
@@ -114,8 +118,14 @@ def mostrar_historico_ati(epicas_relevantes, issues_jira):
         if pd.isna(start_dt) or pd.isna(end_dt):
             return None
 
-        delta_hs = (end_dt - start_dt).total_seconds() / 3600.0
-        return None if delta_hs < 0 else float(delta_hs)
+        # Calcular días laborables y convertir a horas (8 horas por día laboral)
+        dias_lab = calcular_dias_laborables(start_dt, end_dt)
+        if dias_lab < 0:
+            return None
+        
+        # Convertir días laborables a horas (8 horas por día)
+        horas_laborables = dias_lab * 8.0
+        return horas_laborables
 
     def _bugs_por_hu(bugs_issues) -> dict:
         """
@@ -151,22 +161,6 @@ def mostrar_historico_ati(epicas_relevantes, issues_jira):
                     slot["hrs"].append(hrs)
         return por_hu
 
-    def detectar_campo_epic_link():
-        try:
-            jira = get_jira()
-            fields = jira._get_json("field")
-            candidatos = []
-            for f in fields:
-                name = (f.get("name") or "").strip().lower()
-                key  = (f.get("key") or f.get("id") or "").strip()
-                if any(x in name for x in ["epic link", "enlace épico", "enlace epico", "epik link"]):
-                    candidatos.append(key)
-            for c in candidatos:
-                if c.startswith("customfield_"):
-                    return c
-            return candidatos[0] if candidatos else None
-        except Exception:
-            return None
 
     def _es_tipo_bug_uat(issuetype_name: str) -> bool:
         n = (issuetype_name or "").lower()
@@ -175,38 +169,15 @@ def mostrar_historico_ati(epicas_relevantes, issues_jira):
     # ------------------ Fuente de datos ------------------
     meses_orden = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-    # Historias ATI → base de RN (con cache)
-    fields_hist = ("key,summary,status,project,issuetype,assignee,parent,"
-                   "customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated")
-    
-    # Cache para issues de ATI - OPTIMIZADO para primera carga
-    cache_key_ati = "desarrollo_ati_issues"
-    cache_file_ati = cache_path(cache_key_ati, 'pkl')
-    
-    jira = get_jira()
-    
-    # Cargar desde cache o consultar Jira con límites para primera carga rápida
-    try:
-        if os.path.exists(cache_file_ati):
-            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_ati))
-            if (datetime.now() - mtime) < timedelta(hours=48):
-                with open(cache_file_ati, 'rb') as f:
-                    issues_ati = pickle.load(f)
-            else:
-                issues_ati = traer_todos_las_issues(jira, 'project = ATI AND issuetype = Historia ORDER BY updated DESC', fields_hist)
-                with open(cache_file_ati, 'wb') as f:
-                    pickle.dump(issues_ati, f)
-        else:
-            issues_ati = traer_todos_las_issues(jira, 'project = ATI AND issuetype = Historia ORDER BY updated DESC', fields_hist)
-            with open(cache_file_ati, 'wb') as f:
-                pickle.dump(issues_ati, f)
-    except Exception:
-        issues_ati = traer_todos_las_issues(jira, 'project = ATI AND issuetype = Historia ORDER BY updated DESC', fields_hist)
-    
-    issues = issues_ati
+    # Cargar historias ATI desde la base de datos
+    db = DatabaseHelper()
+    db.conectar()
+    historias_db = db.obtener_historias_con_transiciones(["ATI"])  # Jira-like dicts
+    db.cerrar()
+
+    issues = historias_db
 
     # Desduplico por key
-    issues = [_unwrap_issue(iss) for iss in issues]
     issues_unicos = {}
     for iss in issues:
         k = _safe_issue_key(iss)
@@ -217,27 +188,43 @@ def mostrar_historico_ati(epicas_relevantes, issues_jira):
     # Map RN (nombre de épica) → historias y → set de EPIC KEYS (para UAT)
     EPIC_LINK_CAMPO_STORY = "customfield_10016"
     epicas = {}              # { RN_name: {"Historias": [...] } }
+    epicas_por_key = {}      # { EPIC_KEY: {"Historias": [...] } }
     rn_to_epic_keys = {}     # { RN_name: set([EPIC-123,...]) }
 
+    # Mapeo auxiliar desde clave de épica (ATI-xxx) a nombre de RN
+    epicas_relevantes_all = cargar_epicas_relevantes()
+    epic_key_to_name = {e.get("rn", ""): e.get("nombre", "") for e in epicas_relevantes_all}
+
     # Filtrar solo issues de ATI
-    issues_ati_filtered = [i for i in issues if i["fields"]["project"]["key"] == "ATI"]
+    issues_ati_filtered = [i for i in issues if (i.get("fields",{}).get("project",{}) or {}).get("key") == "ATI"]
 
     for issue in issues_ati_filtered:
         f = issue.get("fields", {}) or {}
 
-        # RN/Épica (nombre) desde parent.summary (o custom)
+        # Determinar RN/Épica (nombre) y parent_key de forma robusta con base de datos
         epic_name = None
         parent = f.get("parent")
         parent_key = None
         if parent:
-            epic_name = (parent.get("summary") or (parent.get("fields") or {}).get("summary"))
             parent_key = (parent.get("key") or (parent.get("fields") or {}).get("key"))
-        if not epic_name or normalize(epic_name) in {"sin epica", "sin épica", "none", ""}:
-            epica_custom = f.get(EPIC_LINK_CAMPO_STORY, None)
-            if isinstance(epica_custom, dict) and epica_custom.get("value"):
-                epic_name = epica_custom["value"]
-            elif isinstance(epica_custom, str) and epica_custom:
-                epic_name = epica_custom
+            # Si tenemos la clave, podemos mapear a nombre usando JSON
+            if parent_key:
+                epic_name = epic_key_to_name.get(parent_key) or (parent.get("summary") or (parent.get("fields") or {}).get("summary"))
+        # Fallback: intentar con customfield_10016 (puede ser string con key)
+        if not epic_name:
+            ep_ref = f.get(EPIC_LINK_CAMPO_STORY)
+            if isinstance(ep_ref, dict):
+                # Algunos tableros guardan {key: ATI-123, name: \n}
+                ek = ep_ref.get("key") or ep_ref.get("id") or ep_ref.get("value")
+                if ek:
+                    epic_name = epic_key_to_name.get(str(ek).strip()) or ep_ref.get("value") or ep_ref.get("name")
+                    if not parent_key:
+                        parent_key = str(ek).strip()
+            elif isinstance(ep_ref, str) and ep_ref.strip():
+                ek = ep_ref.strip()
+                epic_name = epic_key_to_name.get(ek) or ek
+                if not parent_key:
+                    parent_key = ek
         if not epic_name or normalize(epic_name) in {"sin epica", "sin épica", "none", ""}:
             epic_name = "Sin epica"
 
@@ -268,60 +255,77 @@ def mostrar_historico_ati(epicas_relevantes, issues_jira):
             "Puntos": puntos,
         })
         if parent_key:
+            epicas_por_key.setdefault(parent_key, {"Historias": []})["Historias"].append({
+                "Clave": key,
+                "Nombre": summary,
+                "Estado": estado,
+                "Asignado": asignado,
+                "Fecha_estado": fecha_estado,
+                "Duedate": duedate,
+                "Puntos": puntos,
+            })
             rn_to_epic_keys.setdefault(epic_name, set()).add(parent_key)
 
-    # Bugs ATI con changelog (para 'Bugs asociados' y promedio hs) - con cache
-    fields_bugs_ati = "key,project,issuetype,status,resolutiondate,assignee,parent,issuelinks,created,updated"
-    
-    # Cache para bugs de ATI
-    cache_key_bugs_ati = "desarrollo_bugs_ati"
-    cache_file_bugs_ati = cache_path(cache_key_bugs_ati, 'pkl')
-    
-    try:
-        if os.path.exists(cache_file_bugs_ati):
-            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_ati))
-            if (datetime.now() - mtime) < timedelta(hours=48):
-                with open(cache_file_bugs_ati, 'rb') as f:
-                    bugs_ati = pickle.load(f)
-            else:
-                bugs_ati = traer_bugs_con_changelog(jira, 'project = ATI AND issuetype = Error ORDER BY updated DESC', fields_bugs_ati)
-                with open(cache_file_bugs_ati, 'wb') as f:
-                    pickle.dump(bugs_ati, f)
-        else:
-            bugs_ati = traer_bugs_con_changelog(jira, 'project = ATI AND issuetype = Error ORDER BY updated DESC', fields_bugs_ati)
-            with open(cache_file_bugs_ati, 'wb') as f:
-                pickle.dump(bugs_ati, f)
-    except Exception:
-        bugs_ati = traer_bugs_con_changelog(jira, 'project = ATI AND issuetype = Error ORDER BY updated DESC', fields_bugs_ati)
-    
+    # Bugs ATI con datos de la base (incluye parent/issuelinks/fechas). El cálculo de horas usa fallback si no hay changelog.
+    db = DatabaseHelper()
+    db.conectar()
+    bugs_ati = db.obtener_bugs_con_cierre(["ATI"]) or []
+    db.cerrar()
     bugs_all = bugs_ati
     mapa_bugs_hu = _bugs_por_hu(bugs_all)
 
-    # BUGS UAT (project = BUG) — SOLO por Epic Link - con cache
-    EPIC_FIELD_BUG = detectar_campo_epic_link() or "customfield_10016"
-    fields_bugs_uat = f"key,issuetype,created,{EPIC_FIELD_BUG}"
-    
-    cache_key_bugs_uat = "desarrollo_bugs_uat_ati"
-    cache_file_bugs_uat = cache_path(cache_key_bugs_uat, 'pkl')
-    
-    try:
-        if os.path.exists(cache_file_bugs_uat):
-            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_bugs_uat))
-            if (datetime.now() - mtime) < timedelta(hours=48):
-                with open(cache_file_bugs_uat, 'rb') as f:
-                    bugs_uat = pickle.load(f)
-            else:
-                bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat)
-                with open(cache_file_bugs_uat, 'wb') as f:
-                    pickle.dump(bugs_uat, f)
-        else:
-            bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat)
-            with open(cache_file_bugs_uat, 'wb') as f:
-                pickle.dump(bugs_uat, f)
-    except Exception:
-        bugs_uat = traer_todos_las_issues(jira, 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC', fields_bugs_uat)
+    # BUGS UAT (project = BUG) — desde la base (Epic Link en customfield_10016 o parent.key)
+    EPIC_FIELD_BUG = "customfield_10016"
+    EPIC_FIELD_CANDIDATES = [
+        "customfield_10016", "customfield_10014",  # ids comunes
+        "epic_link", "epicLink", "Epic Link"       # nombres posibles en custom_fields
+    ]
+    db = DatabaseHelper()
+    db.conectar()
+    bugs_uat = db.obtener_bugs_proyecto_bug() or []
+    db.cerrar()
 
     epic_to_bugs_uat: dict[str, set] = {}
+    def _collect_epic_keys_from_fields(f: dict) -> set:
+        keys = set()
+        # 0) PRIORIDAD: Buscar en parent.key (como lo hace la pestaña de bugs)
+        parent = f.get("parent", {}) or {}
+        parent_key = parent.get("key", "") if isinstance(parent, dict) else ""
+        if parent_key and isinstance(parent_key, str):
+            keys.add(parent_key.strip().upper())
+        
+        # 1) Campos directos
+        for k in EPIC_FIELD_CANDIDATES:
+            v = f.get(k)
+            if isinstance(v, dict):
+                val = (v.get("key") or v.get("id") or v.get("value") or "").strip().upper()
+                if val:
+                    keys.add(val)
+            elif isinstance(v, str) and v.strip():
+                keys.add(v.strip().upper())
+        # 2) Dentro de custom_fields serializado
+        cf = f.get("custom_fields")
+        try:
+            import json as _json
+            if isinstance(cf, str):
+                cf_obj = _json.loads(cf)
+            elif isinstance(cf, dict):
+                cf_obj = cf
+            else:
+                cf_obj = None
+            if isinstance(cf_obj, dict):
+                for k in EPIC_FIELD_CANDIDATES:
+                    v = cf_obj.get(k)
+                    if isinstance(v, dict):
+                        val = (v.get("key") or v.get("id") or v.get("value") or "").strip().upper()
+                        if val:
+                            keys.add(val)
+                    elif isinstance(v, str) and v.strip():
+                        keys.add(v.strip().upper())
+        except Exception:
+            pass
+        return keys
+
     for iss in bugs_uat:
         f = iss.get("fields", {}) or {}
         itype = (f.get("issuetype") or {}).get("name") or ""
@@ -330,169 +334,143 @@ def mostrar_historico_ati(epicas_relevantes, issues_jira):
         bug_key = iss.get("key", "")
         if not bug_key:
             continue
-        epic_ref = f.get(EPIC_FIELD_BUG)
-        epic_key = ""
-        if isinstance(epic_ref, dict):
-            epic_key = (epic_ref.get("key") or epic_ref.get("id") or "").strip()
-        elif isinstance(epic_ref, str):
-            epic_key = epic_ref.strip()
-        if epic_key:
-            epic_to_bugs_uat.setdefault(epic_key, set()).add(bug_key)
+        # 1) Epic Link directo + custom_fields con múltiples candidatos
+        epic_keys_found = _collect_epic_keys_from_fields(f)
+        # 2) Fallback: buscar claves ATI- en issuelinks
+        if not epic_keys_found:
+            for link in (f.get("issuelinks") or []):
+                for side in ("inwardIssue", "outwardIssue"):
+                    lk = link.get(side) or {}
+                    k = (lk.get("key") or "").strip().upper()
+                    if k.startswith("ATI-"):
+                        epic_keys_found.add(k)
+        # Registrar por clave de épica (normalizar formato "ATI-3544 [NOMBRE]" -> "ATI-3544")
+        import re as _re
+        for ek in epic_keys_found:
+            if ek:
+                # Extraer solo la clave si viene como "ATI-3544 [NOMBRE]"
+                ek_clean = ek.strip().upper()  # Normalizar a mayúsculas
+                match_key = _re.match(r"^([A-Z]{2,10}-\d+)", ek_clean)
+                if match_key:
+                    ek_clean = match_key.group(1)  # Solo la parte "ATI-3544"
+                epic_to_bugs_uat.setdefault(ek_clean, set()).add(bug_key)
 
-    # ------------------ Tabla de histórico (usa 'epicas_relevantes') - con cache ------------------
+    # ------------------ Tabla de histórico (usa 'epicas_relevantes') - SIN cache, siempre desde BD ------------------
     def ordenar_mes(m):
         try:
             return meses_orden.index(m)
         except Exception:
             return 99
 
-    # Cache para tabla histórica procesada
-    cache_key_historico = "historico_tabla_procesada_ati"
-    cache_file_historico = cache_path(cache_key_historico, 'pkl')
-    
-    # Intentar cargar tabla histórica desde cache
+    # Procesar tabla histórica siempre desde la base de datos (sin cache)
+    st.info("⏳ **Procesando datos históricos de ATI desde la base de datos**...")
     tabla_historico = []
-    try:
-        if os.path.exists(cache_file_historico):
-            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_historico))
-            if (datetime.now() - mtime) < timedelta(hours=48):
-                with open(cache_file_historico, 'rb') as f:
-                    tabla_historico = pickle.load(f)
-                    # Verificar si el cache tiene el campo DCR_% (nuevo campo)
-                    if tabla_historico and "DCR_%" not in tabla_historico[0]:
-                        # Cache antiguo sin DCR, limpiarlo para recalcular
-                        os.remove(cache_file_historico)
-                        tabla_historico = []
-    except Exception:
-        pass
-    
-    # Botón para limpiar cache del histórico
-    if st.button("🗑️ Limpiar Cache Histórico", help="Limpia el cache del histórico para regenerar datos"):
-        cache_file_historico = cache_path("historico_ati", 'pkl')
-        if os.path.exists(cache_file_historico):
-            os.remove(cache_file_historico)
-        st.success("✅ Cache del histórico limpiado. Recargando datos...")
-        st.rerun()
+    # Filtrar solo épicas de ATI
+    epicas_ati = [e for e in epicas_relevantes if e["rn"].startswith("ATI-")]
+    for epica_rn in epicas_ati:
+        nombre_epica = epica_rn.get("nombre", "")
+        mes_entrega = epica_rn.get("mes_entrega", "")
+        epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
 
-    # Si no hay cache, procesar tabla histórica
-    if not tabla_historico:
-        st.info("⏳ **Procesando datos históricos de ATI**... Esto puede tomar unos minutos la primera vez.")
-        tabla_historico = []
-        # Filtrar solo épicas de ATI
-        epicas_ati = [e for e in epicas_relevantes if e["rn"].startswith("ATI-")]
-        for epica_rn in epicas_ati:
-            nombre_epica = epica_rn.get("nombre", "")
-            mes_entrega = epica_rn.get("mes_entrega", "")
-            epic_match = next((rn for rn in epicas if normalize(nombre_epica) == normalize(rn)), None)
+        if epic_match:
+            data = epicas[epic_match]
+            historias = data["Historias"]
+        else:
+            # Fallback: buscar por clave de RN (ATI-xxx)
+            historias = epicas_por_key.get(epica_rn.get("rn", ""), {}).get("Historias", [])
 
-            if epic_match:
-                data = epicas[epic_match]
-                historias = data["Historias"]
-                total = len(historias)
-                listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
-                porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
-                puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+        # Métricas por RN (si no hay historias, quedan en 0)
+        total = len(historias)
+        listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+        porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
+        puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
 
-                # Bugs asociados (ATI) + promedio hs
-                hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
-                bugs_keys_ati, bugs_hrs = [], []
-                for hu in hu_keys:
-                    info = mapa_bugs_hu.get(hu)
-                    if not info:
-                        continue
-                    bugs_keys_ati.extend(info.get("bugs", []))
-                    bugs_hrs.extend(info.get("hrs", []))
-                uniq_bugs_ati = sorted(set(bugs_keys_ati))
-                bugs_cnt_ati = len(uniq_bugs_ati)
-                prom_hrs = round(sum(bugs_hrs) / len(bugs_hrs), 2) if bugs_hrs else None
+        # Bugs asociados (ATI) + promedio hs
+        hu_keys = [h["Clave"] for h in historias if h.get("Clave")]
+        bugs_keys_ati = []
+        # Recolectar todos los bugs únicos con sus horas
+        bugs_unicos_con_hrs = {}  # {bug_key: hrs} - cada bug aparece una sola vez
+        for hu in hu_keys:
+            info = mapa_bugs_hu.get(hu)
+            if not info:
+                continue
+            bugs_list = info.get("bugs", [])
+            hrs_list = info.get("hrs", [])
+            # Para cada bug, agregarlo a la lista y guardar sus horas si no está ya registrado
+            for i, bug_key in enumerate(bugs_list):
+                bugs_keys_ati.append(bug_key)
+                # Guardar horas del bug solo la primera vez que lo encontramos
+                if bug_key not in bugs_unicos_con_hrs and i < len(hrs_list):
+                    hrs_value = hrs_list[i]
+                    if hrs_value is not None:
+                        bugs_unicos_con_hrs[bug_key] = hrs_value
+        uniq_bugs_ati = sorted(set(bugs_keys_ati))
+        bugs_cnt_ati = len(uniq_bugs_ati)
+        # Calcular promedio: suma de horas de bugs únicos / cantidad de bugs únicos con horas
+        hrs_unicas = [h for h in bugs_unicos_con_hrs.values() if h is not None]
+        prom_hrs = round(sum(hrs_unicas) / len(hrs_unicas), 2) if hrs_unicas else None
 
-                # UAT por RN (solo Epic Link)
-                candidate_epic_keys = rn_to_epic_keys.get(epic_match, set())
-                uat_keys = set()
-                for ek in candidate_epic_keys:
-                    uat_keys |= epic_to_bugs_uat.get(ek, set())
-                uniq_bugs_uat = sorted(uat_keys)
-                bugs_cnt_uat = len(uniq_bugs_uat)
-                
-                # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
-                total_bugs = bugs_cnt_ati + bugs_cnt_uat
-                dcr = round((bugs_cnt_ati / total_bugs * 100), 1) if total_bugs > 0 else 0.0
-                    
-            else:
-                historias = []
-                porcentaje_num = 0
-                puntos_totales = 0
-                uniq_bugs_ati, bugs_cnt_ati, prom_hrs = [], 0, None
-                uniq_bugs_uat, bugs_cnt_uat = [], 0
-                dcr = 0.0  # Sin datos, DCR = 0
-
-            tabla_historico.append({
-                "Épica": nombre_epica,
-                "Mes entrega": mes_entrega,
-                "%_num": porcentaje_num,
-                "Historias": historias,
-                "Puntos totales": puntos_totales,
-                "Bugs_asociados": bugs_cnt_ati,
-                "Bugs_asociados_claves": ", ".join(uniq_bugs_ati),
-                "Promedio_resolucion_bugs_hs": prom_hrs,
-                "Bugs_pruebas_UAT": bugs_cnt_uat,
-                "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
-                "DCR_%": dcr,
-            })
+        # UAT por RN (solo Epic Link)
+        # Siempre incluir la clave RN directamente (ej: ATI-3544)
+        rn_key = epica_rn.get("rn", "").strip().upper() if epica_rn.get("rn") else ""
+        candidate_epic_keys = {rn_key} if rn_key else set()
+        # También agregar claves desde rn_to_epic_keys si epic_match existe
+        if epic_match:
+            for ek in rn_to_epic_keys.get(epic_match, set()):
+                if ek:
+                    # Normalizar a mayúsculas
+                    ek_clean = str(ek).strip().upper()
+                    # Limpiar formato "ATI-3544 [NOMBRE]" -> "ATI-3544"
+                    import re as _re
+                    match_key = _re.match(r"^([A-Z]{2,10}-\d+)", ek_clean)
+                    if match_key:
+                        ek_clean = match_key.group(1)
+                    candidate_epic_keys.add(ek_clean)
+        uat_keys = set()
+        for ek in candidate_epic_keys:
+            if ek:
+                # Buscar en mayúsculas
+                ek_upper = str(ek).strip().upper()
+                uat_keys |= epic_to_bugs_uat.get(ek_upper, set())
+        uniq_bugs_uat = sorted(uat_keys)
+        bugs_cnt_uat = len(uniq_bugs_uat)
         
-        # Guardar tabla histórica en cache
-        try:
-            with open(cache_file_historico, 'wb') as f:
-                pickle.dump(tabla_historico, f)
-        except Exception:
-            pass
+        # Calcular DCR (Defect Containment Rate) = QBug / (QBug + QUAT) * 100
+        total_bugs = bugs_cnt_ati + bugs_cnt_uat
+        dcr = round((bugs_cnt_ati / total_bugs * 100), 1) if total_bugs > 0 else 0.0
+
+        tabla_historico.append({
+            "Épica": nombre_epica,
+            "Mes entrega": mes_entrega,
+            "%_num": porcentaje_num,
+            "Historias": historias,
+            "Puntos totales": puntos_totales,
+            "Bugs_asociados": bugs_cnt_ati,
+            "Bugs_asociados_claves": ", ".join(uniq_bugs_ati),
+            "Promedio_resolucion_bugs_hs": prom_hrs,
+            "Bugs_pruebas_UAT": bugs_cnt_uat,
+            "Bugs_pruebas_UAT_claves": ", ".join(uniq_bugs_uat),
+            "DCR_%": dcr,
+        })
 
     tabla_historico = sorted(tabla_historico, key=lambda r: (ordenar_mes(r["Mes entrega"]), r["%_num"]))
 
     # ------------------ UI ------------------
     st.markdown("## Histórico de RNs ATI")
     
-    # Mostrar información sobre datos limitados en primera carga
+    # Mostrar información sobre datos desde base de datos
     if not tabla_historico:
         st.info("No hay datos históricos disponibles.")
-    else:
-        st.caption("ℹ️ **Primera carga optimizada**: Mostrando datos más recientes. Usa 'Actualizar' para datos completos.")
     
     # Leyenda de colores DCR
     st.caption("🎨 **DCR**: 🟢 ≥90% (Excelente) | 🔴 <90% (Necesita mejora)")
     
-    # Verificar si hay DCR mal calculado y mostrar advertencia
-    dcr_mal_calculado = any(row.get("DCR_%", 0) == 0.0 and row.get("Bugs_asociados", 0) > 0 for row in tabla_historico)
-    if dcr_mal_calculado:
-        st.warning("⚠️ **DCR mal calculado detectado**. Usa 'Actualizar' para recalcular con la fórmula correcta.")
-
     # Filtro de entregable (RN)
-    colf1, colf2, colf3 = st.columns([2,1,1])
+    colf1, colf2 = st.columns([3,1])
     with colf1:
         buscar_rn = st.text_input("Buscar entregable (RN)", value="", placeholder="Ej: Generar presupuesto")
     with colf2:
         st.caption("Filtra por nombre (ignora acentos y mayúsculas).")
-    with colf3:
-        # Botón para forzar actualización
-        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="historico_ati_actualizar"):
-            # Limpiar todos los caches relacionados con histórico ATI
-            cache_keys_to_clear = [
-                "desarrollo_ati_issues",
-                "desarrollo_bugs_ati",
-                "desarrollo_bugs_uat_ati",
-                "historico_tabla_procesada_ati"  # Cache de tabla con nuevo campo DCR
-            ]
-            
-            for cache_key in cache_keys_to_clear:
-                cache_file = cache_path(cache_key, 'pkl')
-                if os.path.exists(cache_file):
-                    try:
-                        os.remove(cache_file)
-                    except Exception:
-                        pass
-            
-            st.success("✅ Cache limpiado. Recargando datos...")
-            st.rerun()
 
     buscar_norm = normalize(buscar_rn)
     if buscar_norm:
