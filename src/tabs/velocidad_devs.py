@@ -18,8 +18,8 @@ from src.utils.database_helper import DatabaseHelper
 def mostrar_velocidad_devs(df, issues_jira):
     """Mostrar la pestaña de Velocidad de devs"""
     
-    st.header("🔥 Velocidad de devs - RAMA LOCAL - CAMBIO EXTRA")
-    st.caption("📊 **Métricas de productividad de desarrolladores - VERSIÓN LOCAL - CAMBIO EXTRA**")
+    st.header("🔥 Velocidad de devs")
+    st.caption("📊 **Métricas de productividad de desarrolladores**")
 
     # ==========================
     #   FUNCIONES MODULARES
@@ -419,9 +419,12 @@ def mostrar_velocidad_devs(df, issues_jira):
             if col in df_merge.columns:
                 df_merge[col] = df_merge[col].fillna("").astype(str)
 
-        # Calcular velocidad (usando 80% de las horas)
+        # Aplicar 80% a las horas mostradas
+        df_merge["Horas"] = df_merge["Horas"] * 0.8
+        
+        # Calcular velocidad (usando las horas ya ajustadas al 80%)
         df_merge["Velocidad"] = df_merge.apply(
-            lambda r: round((r["Horas"] * 0.8) / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
+            lambda r: round(r["Horas"] / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
         )
         
         return df_merge
@@ -467,10 +470,12 @@ def mostrar_velocidad_devs(df, issues_jira):
             elif p >= 20: sp = 1.10
             else: sp = 1.00  # p == 16
 
-            # Calcular puntuación de horas
+            # Calcular puntuación de horas (h ya está al 80% de las horas cargadas)
+            # Objetivo: ≥128 horas (se compara con las horas al 80%)
+            # Ejemplo: Si cargó 160 horas → muestra 128 horas (80%) → cumple objetivo (128 >= 128)
             if h >= 128: 
                 sh = 1.00
-            elif 100 <= h <= 127: 
+            elif 100 <= h < 128: 
                 sh = 0.95
             else: 
                 sh = 0.70
@@ -601,6 +606,8 @@ def mostrar_velocidad_devs(df, issues_jira):
                 - ≥128 horas: 100%
                 - 100-127 horas: 95%
                 - <100 horas: 70%
+                
+                **Nota:** Las horas mostradas representan el 80% de las horas cargadas. El objetivo se calcula usando este 80%.
                 """)
         
         with col3:
