@@ -29,10 +29,14 @@ class DatabaseHelper:
             self.conn.close()
             self.conn = None
     
-    def obtener_historias_con_transiciones(self, proyectos: List[str] = ["REP", "TAL", "ATI"]) -> List[Dict[str, Any]]:
+    def obtener_historias_con_transiciones(self, proyectos: List[str] = ["REP", "TAL", "ATI"], fecha_desde: str = '2024-01-01', incluir_sin_puntos: bool = False) -> List[Dict[str, Any]]:
         """
         Obtener historias de los proyectos especificados con sus transiciones de estado
         Devuelve en formato compatible con la API de Jira (para mantener compatibilidad con el código existente)
+        
+        Args:
+            proyectos: Lista de proyectos a consultar
+            fecha_desde: Fecha mínima de creación (formato 'YYYY-MM-DD'). Por defecto '2024-01-01'
         """
         if not self.conn:
             self.conectar()
@@ -68,9 +72,8 @@ class DatabaseHelper:
             FROM issues i
             WHERE i.project IN ('{proyectos_str}') 
                 AND i.issuetype = 'Historia'
-                AND (i.story_points IS NOT NULL AND i.story_points > 0 
-                     OR i.epic_link IS NOT NULL)
-                AND i.created_date >= '2024-01-01'
+                AND ({'1=1' if incluir_sin_puntos else '(i.story_points IS NOT NULL AND i.story_points > 0 OR i.epic_link IS NOT NULL OR i.parent_key IS NOT NULL)'})
+                AND i.created_date >= '{fecha_desde}'
             ORDER BY i.updated_date DESC
         """
         
@@ -177,7 +180,8 @@ class DatabaseHelper:
             WHERE i.project IN ('{proyectos_str}') 
                 AND i.issuetype = 'Error'
                 AND i.status_category_changed_date IS NOT NULL
-                AND i.created_date >= '2024-01-01'
+                AND i.created_date >= '2025-01-01'
+                AND i.created_date < '2026-01-01'
             ORDER BY i.status_category_changed_date DESC
         """
         
@@ -217,6 +221,100 @@ class DatabaseHelper:
                     "updated": row["updated_date"],
                 }
             }
+            issues.append(issue)
+        
+        return issues
+    
+    def obtener_bugs_proyecto_bug(self) -> List[Dict[str, Any]]:
+        """
+        Obtener bugs del proyecto BUG con changelog
+        Devuelve en formato compatible con la API de Jira
+        """
+        if not self.conn:
+            self.conectar()
+        
+        query = f"""
+            SELECT 
+                i.key,
+                i.summary,
+                i.status,
+                i.project,
+                i.issuetype,
+                i.assignee_id,
+                i.parent_key,
+                i.priority,
+                i.labels,
+                i.epic_link,
+                i.created_date,
+                i.updated_date
+            FROM issues i
+            WHERE i.project = 'BUG' 
+                AND i.issuetype = 'Error'
+            ORDER BY i.created_date DESC
+        """
+        
+        cursor = self.conn.cursor()
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        
+        # Convertir a formato compatible con API de Jira
+        issues = []
+        for row in rows:
+            # Obtener el nombre del usuario desde la tabla de usuarios
+            assignee_name = None
+            if row["assignee_id"]:
+                cursor.execute("SELECT nombre FROM usuarios WHERE account_id = ?", (row["assignee_id"],))
+                user_result = cursor.fetchone()
+                assignee_name = user_result["nombre"] if user_result else None
+            
+            assignee = {
+                "accountId": row["assignee_id"],
+                "displayName": assignee_name
+            } if row["assignee_id"] else None
+            parent = {"key": row["parent_key"]} if row["parent_key"] else None
+            
+            issue = {
+                "key": row["key"],
+                "fields": {
+                    "summary": row["summary"],
+                    "status": {"name": row["status"]},
+                    "project": {"key": row["project"]},
+                    "issuetype": {"name": row["issuetype"]},
+                    "assignee": assignee,
+                    "parent": parent,
+                    "priority": {"name": row["priority"]} if row["priority"] else None,
+                    "labels": json.loads(row["labels"]) if row["labels"] else [],
+                    "customfield_10016": row["epic_link"],
+                    "created": row["created_date"],
+                    "updated": row["updated_date"],
+                },
+                "changelog": {
+                    "histories": []
+                }
+            }
+            
+            # Obtener transiciones de esta issue para el changelog
+            cursor.execute("""
+                SELECT from_status, to_status, transition_date, changed_by
+                FROM issue_transitions
+                WHERE issue_key = ?
+                ORDER BY transition_date ASC
+            """, (row["key"],))
+            transitions = cursor.fetchall()
+            
+            # Convertir transiciones a formato de histories
+            for trans in transitions:
+                history = {
+                    "created": trans["transition_date"],
+                    "author": {"displayName": trans["changed_by"]} if trans["changed_by"] else None,
+                    "items": [{
+                        "field": "status",
+                        "fromString": trans["from_status"],
+                        "toString": trans["to_status"]
+                    }]
+                }
+                issue["changelog"]["histories"].append(history)
+            
             issues.append(issue)
         
         return issues

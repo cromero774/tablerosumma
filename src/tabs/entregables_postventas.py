@@ -5,37 +5,15 @@ Pestaña de Entregables Postventas
 import streamlit as st
 import pandas as pd
 import unicodedata
-import pickle
-import os
 from datetime import datetime, timedelta
-from src.jira_conexion import get_jira
-from src.utils.configuracion import cache_path
+from src.utils.configuracion import cargar_epicas_relevantes
+from src.utils.database_helper import DatabaseHelper
 
 def normalize(s):
     """Normalizar texto para comparaciones"""
     if not s:
         return ""
     return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII').lower().strip()
-
-def traer_todos_los_issues(jira, jql, fields, max_results=100):
-    """Función para traer todas las issues de Jira con paginación"""
-    issues = []
-    start_at = 0
-    while True:
-        endpoint = (
-            f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
-        )
-        data = jira._get_json(endpoint)
-        batch = data.get("issues", [])
-        issues.extend(batch)
-        if len(batch) < max_results:
-            break
-        start_at += max_results
-    return issues
-
-def _unwrap_issue(issue):
-    """Helper para extraer datos de issue"""
-    return issue
 
 def _safe_issue_key(issue):
     """Helper para obtener key segura de issue"""
@@ -47,105 +25,50 @@ def _safe_issue_key(issue):
 def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
     """Mostrar la pestaña de Entregables Postventas"""
     
-    # Obtener conexión a Jira
-    jira = get_jira()
-    
     EPIC_LINK_CAMPO = "customfield_10016"
 
     meses_orden = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
     meses_entrega = sorted({epica["mes_entrega"] for epica in epicas_relevantes}, key=lambda m: meses_orden.index(m))
 
     # ---- Filtros en columnas ----
-    cols = st.columns([1, 1, 1])
+    cols = st.columns([1, 1])
     with cols[0]:
         proyecto_seleccionado = st.selectbox("Filtrar por proyecto", ["Todos", "Taller", "Repuestos"])
     with cols[1]:
         mes_seleccionado = st.selectbox("Filtrar por mes de entrega", ["Todos"] + meses_entrega)
-    with cols[2]:
-        # Botón para forzar actualización
-        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="entregable_actualizar"):
-            # Limpiar todos los caches relacionados con entregable postventa
-            cache_keys_to_clear = [
-                "entregable_tal_issues",
-                "entregable_rep_issues"
-            ]
-            
-            for cache_key in cache_keys_to_clear:
-                cache_file = cache_path(cache_key, 'pkl')
-                if os.path.exists(cache_file):
-                    try:
-                        os.remove(cache_file)
-                    except Exception:
-                        pass
-            
-            st.success("✅ Cache limpiado. Recargando datos...")
-            st.rerun()
 
-    fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated"
-
-    # Cache para issues de TAL y REP en Entregable Postventa
-    cache_key_tal_entregable = "entregable_tal_issues"
-    cache_key_rep_entregable = "entregable_rep_issues"
-    cache_file_tal_entregable = cache_path(cache_key_tal_entregable, 'pkl')
-    cache_file_rep_entregable = cache_path(cache_key_rep_entregable, 'pkl')
+    # Cargar historias desde la base de datos
+    db = DatabaseHelper()
+    db.conectar()
     
-    try:
-        if os.path.exists(cache_file_tal_entregable):
-            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_tal_entregable))
-            if (datetime.now() - mtime) < timedelta(hours=48):
-                with open(cache_file_tal_entregable, 'rb') as f:
-                    issues_tal = pickle.load(f)
-            else:
-                progress_bar = st.progress(0)
-                issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-                progress_bar.progress(0.5)
-                with open(cache_file_tal_entregable, 'wb') as f:
-                    pickle.dump(issues_tal, f)
-        else:
-            progress_bar = st.progress(0)
-            issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-            progress_bar.progress(0.5)
-            with open(cache_file_tal_entregable, 'wb') as f:
-                pickle.dump(issues_tal, f)
-    except Exception:
-        issues_tal = traer_todos_los_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-    
-    try:
-        if os.path.exists(cache_file_rep_entregable):
-            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_rep_entregable))
-            if (datetime.now() - mtime) < timedelta(hours=48):
-                with open(cache_file_rep_entregable, 'rb') as f:
-                    issues_rep = pickle.load(f)
-            else:
-                issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
-                progress_bar.progress(1.0)
-                with open(cache_file_rep_entregable, 'wb') as f:
-                    pickle.dump(issues_rep, f)
-        else:
-            issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
-            progress_bar.progress(1.0)
-            with open(cache_file_rep_entregable, 'wb') as f:
-                pickle.dump(issues_rep, f)
-    except Exception:
-        issues_rep = traer_todos_los_issues(jira, 'project = REP AND issuetype = Historia', fields)
-
+    proyectos_a_cargar = []
     if proyecto_seleccionado == "Todos":
-        issues = issues_tal + issues_rep
+        proyectos_a_cargar = ["TAL", "REP"]
     elif proyecto_seleccionado == "Taller":
-        issues = issues_tal
+        proyectos_a_cargar = ["TAL"]
     elif proyecto_seleccionado == "Repuestos":
-        issues = issues_rep
+        proyectos_a_cargar = ["REP"]
+    
+    if proyectos_a_cargar:
+        historias_db = db.obtener_historias_con_transiciones(proyectos_a_cargar, fecha_desde='2020-01-01', incluir_sin_puntos=True)  # Jira-like dicts
     else:
-        issues = []
+        historias_db = []
+    
+    db.cerrar()
+    
+    issues = historias_db
 
     # Eliminar duplicados
-    issues = [_unwrap_issue(iss) for iss in issues]
     issues_unicos = {}
     for iss in issues:
         k = _safe_issue_key(iss)
         if k:
             issues_unicos[k] = iss
     issues = list(issues_unicos.values())
+    
+    # Mapeo auxiliar desde clave de épica (TAL-xxx/REP-xxx) a nombre de RN
+    epicas_relevantes_all = cargar_epicas_relevantes()
+    epic_key_to_name = {e.get("rn", ""): e.get("nombre", "") for e in epicas_relevantes_all}
 
     # Filtrar épicas relevantes (solo postventas: REP y TAL, excluir ATI)
     epicas_postventas = [e for e in epicas_relevantes if e["rn"].startswith(("REP-", "TAL-"))]
@@ -157,52 +80,86 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
 
     nombres_relevantes = [normalize(epica["nombre"]) for epica in epicas_relevantes_filtradas]
     rns_relevantes = [normalize(epica["rn"]) for epica in epicas_relevantes_filtradas]
+    
+    # Crear mapeo RN -> nombre épica para todas las épicas relevantes
+    rn_to_nombre_epica = {e.get("rn", ""): e.get("nombre", "") for e in epicas_relevantes_filtradas}
 
-    # Agrupación por épica
-    epicas = {}
+    # Agrupación por épica - PRIMERO por parent_key (RN), luego mapeamos al nombre
+    epicas = {}  # {nombre_epica: {"Historias": [...]}}
     for issue in issues:
+        f = issue.get("fields", {}) or {}
+        issue_key = issue.get("key", "")
         # Buscar epic_name
         epic_name = None
-        if "parent" in issue["fields"] and issue["fields"]["parent"]:
-            parent = issue["fields"]["parent"]
-            if "summary" in parent and parent["summary"]:
-                epic_name = parent["summary"]
-            elif "fields" in parent and "summary" in parent["fields"]:
-                epic_name = parent["fields"]["summary"]
-        if not epic_name or epic_name.lower() in ["sin epica", "sin épica", "none", ""]:
-            epica_custom = issue["fields"].get(EPIC_LINK_CAMPO, None)
-            if epica_custom and isinstance(epica_custom, dict) and "value" in epica_custom and epica_custom["value"]:
-                epic_name = epica_custom["value"]
-            elif epica_custom and isinstance(epica_custom, str) and epica_custom:
-                epic_name = epica_custom
-        if not epic_name or epic_name.lower() in ["sin epica", "sin épica", "none", ""]:
-            epic_name = "Sin epica"
+        parent = f.get("parent")
+        parent_key = None
+        if parent:
+            parent_key = (parent.get("key") or (parent.get("fields") or {}).get("key"))
+            # Si tenemos la clave, podemos mapear a nombre usando JSON
+            if parent_key:
+                epic_name = epic_key_to_name.get(parent_key) or (parent.get("summary") or (parent.get("fields") or {}).get("summary"))
+        # Fallback: intentar con customfield_10016 (puede ser string con key)
+        if not epic_name:
+            ep_ref = f.get(EPIC_LINK_CAMPO)
+            if isinstance(ep_ref, dict):
+                # Algunos tableros guardan {key: TAL-123, name: \n}
+                ek = ep_ref.get("key") or ep_ref.get("id") or ep_ref.get("value")
+                if ek:
+                    epic_name = epic_key_to_name.get(str(ek).strip()) or ep_ref.get("value") or ep_ref.get("name")
+                    if not parent_key:
+                        parent_key = str(ek).strip()
+            elif isinstance(ep_ref, str) and ep_ref.strip():
+                ek = ep_ref.strip()
+                epic_name = epic_key_to_name.get(ek) or ek
+                if not parent_key:
+                    parent_key = ek
+        # Si tenemos parent_key (RN), usar ese para agrupar (más confiable que el nombre)
+        rn_key_encontrado = None
+        if parent_key and normalize(parent_key) in rns_relevantes:
+            rn_key_encontrado = parent_key
+            # Si encontramos RN, usar el nombre de épica del mapeo
+            if parent_key in rn_to_nombre_epica:
+                epic_name = rn_to_nombre_epica[parent_key]
+        
+        if not epic_name or normalize(epic_name) in {"sin epica", "sin épica", "none", ""}:
+            # Si tenemos RN pero no nombre, intentar con el nombre del mapeo
+            if rn_key_encontrado and rn_key_encontrado in rn_to_nombre_epica:
+                epic_name = rn_to_nombre_epica[rn_key_encontrado]
+            else:
+                epic_name = "Sin epica"
 
-        if not (normalize(epic_name) in nombres_relevantes or normalize(epic_name) in rns_relevantes):
+        # Filtrar: solo incluir si el nombre coincide O si el RN coincide
+        if not (normalize(epic_name) in nombres_relevantes or (rn_key_encontrado and normalize(rn_key_encontrado) in rns_relevantes)):
             continue
 
-        puntos = issue["fields"].get("customfield_10026")
+        puntos = f.get("customfield_10026") or f.get("story_points") or 0
         try:
             puntos = float(puntos)
         except (TypeError, ValueError):
             puntos = 0
 
-        summary = issue["fields"]["summary"]
-        if "madre" in summary.lower():
+        summary = f.get("summary", "")
+        if "madre" in (summary or "").lower():
             continue
 
-        estado = (issue["fields"]["status"]["name"] or "").strip().lower()
-        asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
-        key = issue["key"]
-        fecha_estado = issue["fields"].get("statuscategorychangedate") or issue["fields"].get("updated") or ""
-        duedate = issue["fields"].get("duedate") or ""
+        estado = ((f.get("status") or {}).get("name") or "").strip().lower()
+        asignado = ((f.get("assignee") or {}).get("displayName") or "") if f.get("assignee") else ""
+        key = issue.get("key", "")
+        fecha_estado = f.get("statuscategorychangedate") or f.get("updated") or ""
+        duedate = f.get("duedate") or ""
 
-        if epic_name not in epicas:
-            epicas[epic_name] = {
+        # Si encontramos RN, asegurarnos de usar el nombre correcto de la épica
+        if rn_key_encontrado and rn_key_encontrado in rn_to_nombre_epica:
+            epic_name_final = rn_to_nombre_epica[rn_key_encontrado]
+        else:
+            epic_name_final = epic_name
+
+        if epic_name_final not in epicas:
+            epicas[epic_name_final] = {
                 "Historias": [],
                 "Mes de entrega": None
             }
-        epicas[epic_name]["Historias"].append({
+        epicas[epic_name_final]["Historias"].append({
             "Clave": key,
             "Nombre": summary,
             "Estado": estado,
@@ -213,26 +170,59 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
         })
 
     # ---- Resumen para tabla de prioridades ----
+    # Construir mapeo inverso: clave RN -> nombre épica para fallback
+    rn_to_nombre = {e.get("rn", ""): e.get("nombre", "") for e in epicas_relevantes_filtradas}
+    
     tabla_prioridad = []
     for epica_rn in epicas_relevantes_filtradas:
         nombre_epica = epica_rn.get("nombre", "")
+        rn_key = epica_rn.get("rn", "")
         mes_entrega = epica_rn.get("mes_entrega", "")
+        # Intentar match por nombre primero
         epic_match = next((epic for epic in epicas if normalize(nombre_epica) == normalize(epic)), None)
+        # Si no hay match, intentar por clave RN
+        if not epic_match and rn_key:
+            # Buscar épicas que tengan historias con parent_key igual a rn_key
+            for epic_name, epic_data in epicas.items():
+                historias_epic = epic_data.get("Historias", [])
+                # Verificar si alguna historia tiene parent_key igual a rn_key
+                for h in historias_epic:
+                    issue_key = h.get("Clave", "")
+                    # Buscar el issue original para obtener parent_key
+                    for issue in issues:
+                        if issue.get("key") == issue_key:
+                            f = issue.get("fields", {}) or {}
+                            parent = f.get("parent")
+                            if parent:
+                                parent_key = (parent.get("key") or (parent.get("fields") or {}).get("key"))
+                                if parent_key and normalize(parent_key) == normalize(rn_key):
+                                    epic_match = epic_name
+                                    break
+                    if epic_match:
+                        break
+                if epic_match:
+                    break
+        
         if epic_match:
             data = epicas[epic_match]
             historias = data["Historias"]
             total = len(historias)
-            listas_para_implementar = sum(1 for h in historias if h["Estado"] == "lista para implementar")
+            
+            # Normalizar estados para comparación robusta
+            listas_para_implementar = sum(1 for h in historias if normalize(h["Estado"]) == normalize("lista para implementar"))
             pendientes = sum(
                 1 for h in historias 
-                if h["Estado"] == "lista para desarrollar" and not h["Asignado"]
+                if normalize(h["Estado"]) == normalize("lista para desarrollar") and not h["Asignado"]
             )
+            estados_en_proceso = [
+                "en desarrollo", "en testing", "en corrección", "por corregir",
+                "requiere validación", "en análisis", "sin refinar", "pausada",
+                "en correccion"  # variante sin tilde
+            ]
+            estados_en_proceso_normalizados = [normalize(e) for e in estados_en_proceso]
             en_proceso = sum(
                 1 for h in historias 
-                if h["Estado"] in [
-                    "en desarrollo", "en testing", "en corrección", "por corregir",
-                    "requiere validación", "en análisis", "sin refinar", "pausada"
-                ]
+                if normalize(h["Estado"]) in estados_en_proceso_normalizados
             )
             porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
             porcentaje_avance = f"{porcentaje_num:.1f}%"
@@ -248,6 +238,7 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
             porcentaje_avance = "0%"
             porcentaje_proceso = "0.0% 🔴"
             puntos_totales = 0
+        
         tabla_prioridad.append({
             "Épica": nombre_epica,
             "Mes entrega": mes_entrega,
@@ -343,7 +334,7 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
         for fila in tabla_completas:
             fechas_hu = []
             for h in fila["Historias"]:
-                if h["Estado"] == "lista para implementar":
+                if normalize(h["Estado"]) == normalize("lista para implementar"):
                     fecha = h.get("Fecha_estado") or ""
                     fechas_hu.append(fecha)
             if fechas_hu:
@@ -378,7 +369,7 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
         historias = epicas[epic_match]["Historias"]
         pendientes = [
             h for h in historias
-            if h["Estado"] == "lista para desarrollar" and not h["Asignado"]
+            if normalize(h["Estado"]) == normalize("lista para desarrollar") and not h["Asignado"]
         ]
         if pendientes:
             pendientes_por_mes.setdefault(mes_entrega, []).extend([
