@@ -5,49 +5,15 @@ Implementa la lógica completa del desarrollo ATI
 
 import streamlit as st
 import pandas as pd
-import time
-import os
-import pickle
-from datetime import datetime, timedelta
-from src.jira_conexion import get_jira
-from src.utils.configuracion import cache_path
+from datetime import datetime
+from src.utils.database_helper import DatabaseHelper
 
 def mostrar_desarrollo_ati(issues_jira):
     """Mostrar la pestaña de Desarrollo ATI"""
     
-    # Funciones duplicadas eliminadas
+    # Inicializar DatabaseHelper
+    db = DatabaseHelper()
     
-    def traer_todas_las_issues(jira, jql, fields, max_results=100):
-        issues, start_at = [], 0
-        while True:
-            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
-            data = jira._get_json(endpoint)
-            batch = data.get("issues", [])
-            issues.extend(batch)
-            if len(batch) < max_results:
-                break
-            start_at += max_results
-        return issues
-
-    def get_issue_summary(issue_key, cache):
-        if issue_key in cache:
-            return cache[issue_key]
-        try:
-            jira = get_jira()
-            issue = jira.issue(issue_key)
-            summary = issue.fields.summary
-            cache[issue_key] = summary
-            return summary
-        except Exception:
-            cache[issue_key] = issue_key
-            return issue_key
-
-    def get_fix_version(issue):
-        fix = issue["fields"].get("fixVersions", [])
-        if isinstance(fix, list) and fix:
-            return fix[-1].get("name", "")
-        return ""
-
     ESTADOS_EN_PROCESO = [
         "en desarrollo", "en testing", "en corrección", "por corregir",
         "requiere validación", "en análisis", "sin refinar", "pausada", "en correccion"
@@ -55,78 +21,40 @@ def mostrar_desarrollo_ati(issues_jira):
     ESTADO_LISTO_PARA_IMPLEMENTAR = "lista para implementar"
     ESTADO_LISTA_PARA_DESARROLLAR = "lista para desarrollar"
 
-    fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
-    
-    # Cache para issues de ATI
-    cache_key_ati_desarrollo = "desarrollo_ati_issues"
-    cache_file_ati_desarrollo = cache_path(cache_key_ati_desarrollo, 'pkl')
-    
-    jira = get_jira()
-    
-    try:
-        if os.path.exists(cache_file_ati_desarrollo):
-            mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_ati_desarrollo))
-            if (datetime.now() - mtime) < timedelta(hours=48):
-                with open(cache_file_ati_desarrollo, 'rb') as f:
-                    issues_ati = pickle.load(f)
-            else:
-                progress_bar = st.progress(0)
-                issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-05-01"', fields)
-                progress_bar.progress(1.0)
-                with open(cache_file_ati_desarrollo, 'wb') as f:
-                    pickle.dump(issues_ati, f)
-        else:
-            progress_bar = st.progress(0)
-            issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-05-01"', fields)
-            progress_bar.progress(1.0)
-            with open(cache_file_ati_desarrollo, 'wb') as f:
-                pickle.dump(issues_ati, f)
-    except Exception:
-        issues_ati = traer_todas_las_issues(jira, 'project = ATI AND issuetype = Historia AND created >= "2025-05-01"', fields)
+    # Cargar historias desde la base de datos
+    progress_bar = st.progress(0)
+    issues = db.obtener_historias_con_transiciones(proyectos=["ATI"], fecha_desde='2020-01-01', incluir_sin_puntos=True)
+    progress_bar.progress(1.0)
 
-    # Función _unwrap_issue duplicada eliminada
-    def _unwrap_issue(issue):
-        """Función helper para unwrap issues"""
-        if isinstance(issue, dict) and "fields" in issue:
-            return issue
-        return issue
-
-    def _safe_issue_key(iss) -> str:
-        return (iss.get("key") or iss.get("id") or "") if isinstance(iss, dict) else ""
-
-    issues = [_unwrap_issue(iss) for iss in issues_ati]
-    issues_unicos = {}
-    for iss in issues:
-        k = _safe_issue_key(iss)
-        if k:
-            issues_unicos[k] = iss
-    issues = list(issues_unicos.values())
+    # ---- FILTRO: excluir historias "MADRE" ----
+    issues = [i for i in issues if "madre" not in i["fields"].get("summary", "").lower()]
+    
+    # Agregar campos Sprint y Version para compatibilidad
+    for issue in issues:
+        issue["fields"]["Sprint"] = issue["fields"].get("sprint") or "Sin Sprint"
+        issue["fields"]["Version"] = issue["fields"].get("version") or ""
+    
+    def get_fix_version(issue):
+        """Obtener versión desde el campo version almacenado en BD"""
+        return issue["fields"].get("Version", "") or ""
 
     # ==== FILTROS ====
     st.subheader("Filtros")
-    cols = st.columns([1, 1, 1, 1])
+    cols = st.columns(3)
     
     with cols[0]:
-        version_sel = st.selectbox("Versión", ["Todas"] + sorted(set(get_fix_version(i) for i in issues if get_fix_version(i))), key="ati_version")
+        versiones_unicas = sorted(set(get_fix_version(i) for i in issues if get_fix_version(i)))
+        version_sel = st.selectbox("Versión", ["Todas"] + versiones_unicas, key="ati_version")
     with cols[1]:
-        usuario_seleccionado = st.selectbox("Usuario", ["Todos"] + sorted(set(i["fields"]["assignee"]["displayName"] for i in issues if i["fields"].get("assignee"))), key="ati_usuario")
+        usuarios_asignados = sorted(list({
+            i["fields"]["assignee"]["displayName"]
+            for i in issues 
+            if i["fields"].get("assignee") and i["fields"]["assignee"].get("displayName")
+        }))
+        usuario_seleccionado = st.selectbox("Usuario", ["Todos"] + usuarios_asignados, key="ati_usuario")
     with cols[2]:
-        estado_sel = st.selectbox("Estado", ["Todos"] + sorted(set(i["fields"]["status"]["name"] for i in issues)), key="ati_estado")
-    with cols[3]:
-        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="ati_desarrollo_actualizar"):
-            # Limpiar cache de ATI desarrollo
-            cache_keys_to_clear = ["desarrollo_ati_issues"]
-            
-            for cache_key in cache_keys_to_clear:
-                cache_file = cache_path(cache_key, 'pkl')
-                if os.path.exists(cache_file):
-                    try:
-                        os.remove(cache_file)
-                    except Exception:
-                        pass
-            
-            st.success("✅ Cache limpiado. Recargando datos...")
-            st.rerun()
+        estados_unicos = sorted(set(i["fields"]["status"]["name"] for i in issues))
+        estado_sel = st.selectbox("Estado", ["Todos"] + estados_unicos, key="ati_estado")
 
     # ==== CONTADORES DE PORCENTAJE ====
     if version_sel != "Todas":
@@ -151,7 +79,9 @@ def mostrar_desarrollo_ati(issues_jira):
     for issue in issues:
         estado = issue["fields"]["status"]["name"].strip().lower()
         fecha_fin_str = issue["fields"].get("duedate", "")
-        asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
+        asignado = ""
+        if issue["fields"].get("assignee") and issue["fields"]["assignee"].get("displayName"):
+            asignado = issue["fields"]["assignee"]["displayName"]
         if estado == "en desarrollo" and fecha_fin_str:
             try:
                 fecha_fin = datetime.strptime(fecha_fin_str, "%Y-%m-%d").date()
@@ -188,7 +118,12 @@ def mostrar_desarrollo_ati(issues_jira):
         issues_filtradas = [i for i in issues_filtradas if get_fix_version(i) == version_sel]
     
     if usuario_seleccionado != "Todos":
-        issues_filtradas = [i for i in issues_filtradas if i["fields"].get("assignee") and i["fields"]["assignee"]["displayName"] == usuario_seleccionado]
+        issues_filtradas = [
+            i for i in issues_filtradas 
+            if i["fields"].get("assignee") 
+            and i["fields"]["assignee"].get("displayName")
+            and i["fields"]["assignee"]["displayName"] == usuario_seleccionado
+        ]
     
     if estado_sel != "Todos":
         issues_filtradas = [i for i in issues_filtradas if i["fields"]["status"]["name"] == estado_sel]
@@ -196,20 +131,33 @@ def mostrar_desarrollo_ati(issues_jira):
     # ==== PROCESAMIENTO DE DATOS ====
     rows = []
     for issue in issues_filtradas:
+        puntos = issue["fields"].get("customfield_10026", 0) or 0
+        try:
+            puntos = float(puntos)
+        except (TypeError, ValueError):
+            puntos = 0
+        
+        asignado = "Sin asignar"
+        if issue["fields"].get("assignee") and issue["fields"]["assignee"].get("displayName"):
+            asignado = issue["fields"]["assignee"]["displayName"]
+        
+        # Obtener fecha en que la tomó (statuscategorychangedate)
+        fecha_tomo = issue["fields"].get("statuscategorychangedate", "")
+        if fecha_tomo:
+            fecha_tomo = fecha_tomo[:10]  # Tomar solo la fecha (YYYY-MM-DD)
+        
         fila = {
             "Clave": issue["key"],
             "Resumen": issue["fields"]["summary"],
             "Estado": issue["fields"]["status"]["name"],
             "Proyecto": issue["fields"]["project"]["key"],
-            "Asignado": issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else "Sin asignar",
-            "Duedate": issue["fields"].get("duedate", ""),
+            "Asignado": asignado,
+            "Duedate": issue["fields"].get("duedate", "Sin fecha de fin"),
             "Version": get_fix_version(issue),
-            "Puntos": issue["fields"].get("customfield_10026", 0),
+            "Puntos": puntos,
+            "Fecha en que la tomó": fecha_tomo,
             "Porcentaje avance": "Sin subtareas"
         }
-
-        if issue["fields"].get("assignee"):
-            fila["Asignado"] = issue["fields"]["assignee"]["displayName"]
 
         rows.append(fila)
 
@@ -240,55 +188,81 @@ def mostrar_desarrollo_ati(issues_jira):
     else:
         calcular_avance = st.checkbox("Mostrar % de avance de subtareas (puede demorar)", value=False, key="avance_subtareas_ati")
         if calcular_avance:
-            # Cache para estados de subtareas
-            cache_key_subtareas = f"desarrollo_subtareas_ati_{version_sel}_{usuario_seleccionado}"
-            cache_file_subtareas = cache_path(cache_key_subtareas, 'pkl')
+            st.info("⏳ Calculando avance de subtareas... Esto puede tomar unos momentos.")
             
-            # Intentar cargar desde cache
-            subtareas_cache = {}
-            try:
-                if os.path.exists(cache_file_subtareas):
-                    mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_subtareas))
-                    if (datetime.now() - mtime) < timedelta(hours=48):
-                        with open(cache_file_subtareas, 'rb') as f:
-                            subtareas_cache = pickle.load(f)
-            except Exception:
-                pass
+            # Recolectar todas las claves de subtareas
+            all_subtask_keys = []
+            issue_to_subtasks = {}
             
             for fila in rows_a_mostrar:
                 issue = next((i for i in issues if i["key"] == fila["Clave"]), None)
-                if issue and issue["fields"].get("subtasks"):
-                    subtasks = issue["fields"]["subtasks"]
-                    total = len(subtasks)
-                    hechas = 0
+                if not issue:
+                    fila["Porcentaje avance"] = "Sin subtareas"
+                    continue
                     
-                    for stask in subtasks:
-                        st_key = stask["key"]
-                        
-                        # Usar cache si está disponible
-                        if st_key in subtareas_cache:
-                            st_status = subtareas_cache[st_key]
-                        else:
-                            try:
-                                st_info = jira._get_json(f'issue/{st_key}?fields=status')
-                                st_status = st_info["fields"]["status"]["name"]
-                                subtareas_cache[st_key] = st_status  # Guardar en cache
-                            except Exception:
-                                st_status = "Unknown"
-                                subtareas_cache[st_key] = st_status
-                        
-                        if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
-                            hechas += 1
-                    fila["Porcentaje avance"] = f"{round(100 * hechas / total, 1)} %"
+                subtasks = issue["fields"].get("subtasks", [])
+                if subtasks:
+                    subtask_keys = [stask.get("key") if isinstance(stask, dict) else stask for stask in subtasks]
+                    # Filtrar None y strings vacíos
+                    subtask_keys = [key for key in subtask_keys if key]
+                    issue_to_subtasks[fila["Clave"]] = subtask_keys
+                    all_subtask_keys.extend(subtask_keys)
                 else:
                     fila["Porcentaje avance"] = "Sin subtareas"
             
-            # Guardar cache de subtareas
-            try:
-                with open(cache_file_subtareas, 'wb') as f:
-                    pickle.dump(subtareas_cache, f)
-            except Exception:
-                pass
+            # Obtener estados de todas las subtareas de una vez desde la BD
+            if all_subtask_keys:
+                estados_subtareas = db.obtener_estados_subtareas(all_subtask_keys)
+                
+                # Calcular porcentaje de avance para cada historia
+                for fila in rows_a_mostrar:
+                    if fila["Clave"] in issue_to_subtasks:
+                        subtask_keys = issue_to_subtasks[fila["Clave"]]
+                        total = len(subtask_keys)
+                        hechas = 0
+                        
+                        for st_key in subtask_keys:
+                            st_status = estados_subtareas.get(st_key, "Unknown")
+                            if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
+                                hechas += 1
+                        
+                        fila["Porcentaje avance"] = f"{round(100 * hechas / total, 1)} %"
+        else:
+            for fila in rows_a_mostrar:
+                fila["Porcentaje avance"] = "Sin calcular"
 
         df = pd.DataFrame(rows_a_mostrar)
         st.dataframe(df, use_container_width=True)
+        st.caption('Nota: "% de avance" se calcula por subtareas solo si tildás la opción, así la carga es mucho más rápida.')
+
+    # ========== GANTT ==========
+    st.markdown("---")
+    st.subheader("Gantt: Historias EN DESARROLLO (con fechas válidas)")
+
+    gantt_rows = [
+        fila for fila in rows
+        if fila["Estado"].strip().lower() == "en desarrollo" and fila["Duedate"] != "Sin fecha de fin"
+    ]
+    gantt_df = pd.DataFrame(gantt_rows)
+    if not gantt_df.empty:
+        gantt_df["Inicio"] = pd.to_datetime(gantt_df["Fecha en que la tomó"], errors="coerce")
+        gantt_df["Fin"] = pd.to_datetime(gantt_df["Duedate"], errors="coerce")
+        gantt_df["Puntos"] = pd.to_numeric(gantt_df["Puntos"], errors="coerce").fillna(0).astype(float)
+        gantt_df = gantt_df[gantt_df["Inicio"].notnull() & gantt_df["Fin"].notnull()]
+        if gantt_df.empty:
+            st.info("No hay historias con fechas válidas para mostrar en el Gantt.")
+        else:
+            import plotly.express as px
+            fig = px.timeline(
+                gantt_df,
+                x_start="Inicio",
+                x_end="Fin",
+                y="Clave",
+                color="Asignado",
+                hover_data=["Resumen", "Puntos", "Proyecto", "Version"]
+            )
+            fig.update_yaxes(autorange="reversed")
+            fig.update_layout(title='Historias EN DESARROLLO (Gantt)')
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No hay historias en desarrollo con fecha de vencimiento para mostrar en el Gantt.")
