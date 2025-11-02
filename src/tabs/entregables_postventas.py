@@ -206,12 +206,16 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
         if epic_match:
             data = epicas[epic_match]
             historias = data["Historias"]
-            total = len(historias)
+            
+            # Excluir historias canceladas del total para los cálculos
+            estados_cancelados = ["cancelada", "cancelado", "cancelled"]
+            historias_activas = [h for h in historias if normalize(h["Estado"]) not in [normalize(e) for e in estados_cancelados]]
+            total = len(historias_activas)
             
             # Normalizar estados para comparación robusta
-            listas_para_implementar = sum(1 for h in historias if normalize(h["Estado"]) == normalize("lista para implementar"))
+            listas_para_implementar = sum(1 for h in historias_activas if normalize(h["Estado"]) == normalize("lista para implementar"))
             pendientes = sum(
-                1 for h in historias 
+                1 for h in historias_activas 
                 if normalize(h["Estado"]) == normalize("lista para desarrollar") and not h["Asignado"]
             )
             estados_en_proceso = [
@@ -221,7 +225,7 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
             ]
             estados_en_proceso_normalizados = [normalize(e) for e in estados_en_proceso]
             en_proceso = sum(
-                1 for h in historias 
+                1 for h in historias_activas 
                 if normalize(h["Estado"]) in estados_en_proceso_normalizados
             )
             porcentaje_num = (listas_para_implementar / total * 100) if total > 0 else 0
@@ -229,7 +233,7 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
             porcentaje_proceso_num = (en_proceso / total * 100) if total > 0 else 0
             color_proc = "🟢" if porcentaje_proceso_num == 100 else "🟡" if porcentaje_proceso_num >= 50 else "🔴"
             porcentaje_proceso = f"{porcentaje_proceso_num:.1f}% {color_proc}"
-            puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias)
+            puntos_totales = sum(h.get("Puntos", 0) or 0 for h in historias_activas)
         else:
             historias = []
             pendientes = 0
@@ -333,7 +337,10 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
         fechas_entrega = []
         for fila in tabla_completas:
             fechas_hu = []
-            for h in fila["Historias"]:
+            # Excluir canceladas al calcular fecha de entrega
+            estados_cancelados = ["cancelada", "cancelado", "cancelled"]
+            historias_activas_fecha = [h for h in fila["Historias"] if normalize(h.get("Estado", "")) not in [normalize(e) for e in estados_cancelados]]
+            for h in historias_activas_fecha:
                 if normalize(h["Estado"]) == normalize("lista para implementar"):
                     fecha = h.get("Fecha_estado") or ""
                     fechas_hu.append(fecha)
@@ -367,8 +374,11 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
         if not epic_match:
             continue
         historias = epicas[epic_match]["Historias"]
+        # Excluir canceladas
+        estados_cancelados = ["cancelada", "cancelado", "cancelled"]
+        historias_activas = [h for h in historias if normalize(h["Estado"]) not in [normalize(e) for e in estados_cancelados]]
         pendientes = [
-            h for h in historias
+            h for h in historias_activas
             if normalize(h["Estado"]) == normalize("lista para desarrollar") and not h["Asignado"]
         ]
         if pendientes:
@@ -397,16 +407,22 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
         if not epic_match:
             continue
         historias = epicas[epic_match]["Historias"]
-        for h in historias:
+        # Excluir canceladas para afinidad de devs
+        estados_cancelados = ["cancelada", "cancelado", "cancelled"]
+        historias_activas = [h for h in historias if normalize(h["Estado"]) not in [normalize(e) for e in estados_cancelados]]
+        for h in historias_activas:
             if h["Asignado"]:
                 dev_hist_epica.setdefault(h["Asignado"], set()).add(nombre_epica)
 
     # Carga de cada dev (para sugerencia por menor carga)
     dev_carga = {d: 0 for d in dev_hist_epica}
     for epica in epicas.values():
+        estados_cancelados = ["cancelada", "cancelado", "cancelled"]
         for h in epica["Historias"]:
-            if h["Asignado"]:
-                dev_carga[h["Asignado"]] += 1
+            # Excluir canceladas del conteo de carga
+            if normalize(h.get("Estado", "")) not in [normalize(e) for e in estados_cancelados]:
+                if h["Asignado"]:
+                    dev_carga[h["Asignado"]] += 1
 
     st.markdown("## Historias prioritarias a tomar")
     if mes_prioritario and historias_prioritarias:
@@ -426,7 +442,11 @@ def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
                 # Buscar la HU en proceso con due date más próxima para ese dev
                 hu_proceso = []
                 for epica in epicas.values():
+                    estados_cancelados = ["cancelada", "cancelado", "cancelled"]
                     for hu_asig in epica["Historias"]:
+                        # Excluir canceladas
+                        if normalize(hu_asig.get("Estado", "")) in [normalize(e) for e in estados_cancelados]:
+                            continue
                         if hu_asig["Asignado"] == d and hu_asig["Duedate"]:
                             try:
                                 fecha_lib = pd.to_datetime(hu_asig["Duedate"])
