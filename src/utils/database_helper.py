@@ -120,6 +120,8 @@ class DatabaseHelper:
                     "fixVersions": json.loads(row["fix_versions"]) if row["fix_versions"] else [],
                     "issuelinks": json.loads(row["issue_links"]) if row["issue_links"] else [],
                     "subtasks": json.loads(row["subtasks"]) if row["subtasks"] else [],
+                    "sprint": row["sprint"],  # Sprint almacenado directamente
+                    "version": row["version"],  # Versión almacenada directamente
                 },
                 "changelog": {
                     "histories": []
@@ -350,4 +352,29 @@ class DatabaseHelper:
         """
         
         return pd.read_sql_query(query, self.conn)
+    
+    def obtener_estados_subtareas(self, subtask_keys: List[str]) -> Dict[str, str]:
+        """
+        Obtener los estados de múltiples subtareas desde la base de datos
+        Devuelve un diccionario {subtask_key: status}
+        """
+        if not subtask_keys:
+            return {}
+        
+        if not self.conn:
+            self.conectar()
+        
+        # Crear placeholders para la consulta IN
+        placeholders = ','.join('?' * len(subtask_keys))
+        query = f"""
+            SELECT key, status
+            FROM issues
+            WHERE key IN ({placeholders})
+        """
+        
+        cursor = self.conn.cursor()
+        cursor.execute(query, subtask_keys)
+        rows = cursor.fetchall()
+        
+        return {row["key"]: row["status"] for row in rows}
 

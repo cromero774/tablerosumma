@@ -4,56 +4,16 @@ Pestaña de Desarrollo Postventas
 
 import streamlit as st
 import pandas as pd
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import re
-import os
-import pickle
-from src.jira_conexion import get_jira
-from src.utils.configuracion import cache_path
-
-def traer_todas_las_issues(jira, jql, fields, max_results=100):
-    """Función para traer todas las issues de Jira con paginación"""
-    issues = []
-    start_at = 0
-    while True:
-        endpoint = (
-            f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={max_results}'
-        )
-        data = jira._get_json(endpoint)
-        batch = data.get("issues", [])
-        issues.extend(batch)
-        if len(batch) < max_results:
-            break
-        start_at += max_results
-    return issues
-
-def obtener_sprint(issue):
-    """Extraer el sprint de una issue"""
-    sprint = issue["fields"].get("customfield_10021")
-    if isinstance(sprint, list) and sprint:
-        if isinstance(sprint[-1], dict):
-            return sprint[-1].get("name", "Sin Sprint")
-        elif isinstance(sprint[-1], str):
-            return sprint[-1]
-    elif isinstance(sprint, dict):
-        return sprint.get("name", "Sin Sprint")
-    elif isinstance(sprint, str):
-        return sprint
-    return "Sin Sprint"
-
-def obtener_version(issue):
-    """Extraer la versión de una issue"""
-    fix = issue["fields"].get("fixVersions", [])
-    if isinstance(fix, list) and fix:
-        return fix[-1].get("name", "")
-    return ""
+from src.utils.database_helper import DatabaseHelper
+from src.utils.configuracion import cargar_epicas_relevantes
 
 def mostrar_desarrollo_postventas(issues_jira):
     """Mostrar la pestaña de Desarrollo Postventas"""
     
-    # Obtener conexión a Jira
-    jira = get_jira()
+    # Inicializar DatabaseHelper
+    db = DatabaseHelper()
     
     # Estados definidos
     ESTADOS_EN_PROCESO = [
@@ -63,29 +23,38 @@ def mostrar_desarrollo_postventas(issues_jira):
     ESTADO_LISTO_PARA_IMPLEMENTAR = "lista para implementar"
     ESTADO_LISTA_PARA_DESARROLLAR = "lista para desarrollar"
 
-    fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,fixVersions,customfield_10021,updated,subtasks"
+    # Mapeo de keys de proyecto a nombres
+    PROYECTO_NAMES = {
+        "TAL": "TALLER - MAIPÚ -",
+        "REP": "REPUESTOS MAIPU",
+        "ATI": "AFUs ATI"
+    }
     
-    # Cargar historias SIN límite de 6 meses (eliminado según solicitud)
+    # Cargar épicas relevantes para mapeo de parent_key a nombre de épica
+    epicas_relevantes = cargar_epicas_relevantes()
+    rn_to_nombre_epica = {e.get("rn", ""): e.get("nombre", "") for e in epicas_relevantes if e.get("rn")}
+    
+    # Cargar historias desde la base de datos
     progress_bar = st.progress(0)
-    issues_tal = traer_todas_las_issues(jira, 'project = TAL AND issuetype = Historia', fields)
-    progress_bar.progress(0.5)
-    issues_rep = traer_todas_las_issues(jira, 'project = REP AND issuetype = Historia', fields)
+    issues = db.obtener_historias_con_transiciones(proyectos=["TAL", "REP"], fecha_desde='2020-01-01', incluir_sin_puntos=True)
     progress_bar.progress(1.0)
-    issues = issues_tal + issues_rep
 
     # ---- FILTRO: excluir historias "MADRE" ----
     issues = [i for i in issues if "madre" not in i["fields"].get("summary", "").lower()]
 
     for issue in issues:
-        issue["fields"]["Sprint"] = obtener_sprint(issue)
-        issue["fields"]["Version"] = obtener_version(issue)
-        issue["fields"]["Proyecto"] = issue["fields"]["project"]["name"]
+        # Obtener sprint y versión desde los campos de la BD
+        issue["fields"]["Sprint"] = issue["fields"].get("sprint") or "Sin Sprint"
+        issue["fields"]["Version"] = issue["fields"].get("version") or ""
+        # Mapear key del proyecto a nombre
+        project_key = issue["fields"]["project"]["key"]
+        issue["fields"]["Proyecto"] = PROYECTO_NAMES.get(project_key, project_key)
 
     regex_version = re.compile(r"\bv\d+\.\d+\b", re.IGNORECASE)
     sprints_con_version = sorted({i["fields"]["Sprint"] for i in issues if i["fields"]["Sprint"] and regex_version.search(i["fields"]["Sprint"])})
     versiones_unicas = sorted({i["fields"]["Version"] for i in issues if i["fields"]["Version"]})
 
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+    col1, col2, col3 = st.columns(3)
     with col1:
         sprint_sel = st.selectbox(
             "Filtrar por sprint (solo sprints con versión)",
@@ -99,8 +68,11 @@ def mostrar_desarrollo_postventas(issues_jira):
             key="filtro_version_velocidad"
         )
     with col3:
-        usuarios_asignados = sorted(list({i["fields"]["assignee"]["displayName"]
-                                      for i in issues if i["fields"].get("assignee")}))
+        usuarios_asignados = sorted(list({
+            i["fields"]["assignee"]["displayName"]
+            for i in issues 
+            if i["fields"].get("assignee") and i["fields"]["assignee"].get("displayName")
+        }))
         usuarios_asignados = ["Todos"] + usuarios_asignados
         usuario_seleccionado = st.selectbox(
             "Usuario asignado",
@@ -108,37 +80,6 @@ def mostrar_desarrollo_postventas(issues_jira):
             index=0,
             key="usuario_asignado_dev_velocidad"
         )
-    with col4:
-        # Botón para forzar actualización
-        if st.button("🔄 Actualizar", help="Fuerza la recarga de datos desde Jira", key="desarrollo_postventas_actualizar"):
-            # Limpiar todos los caches relacionados con desarrollo postventas
-            cache_keys_to_clear = [
-                "desarrollo_tal_issues",
-                "desarrollo_rep_issues", 
-                "desarrollo_bugs_rep",
-                "desarrollo_bugs_tal",
-                "desarrollo_bugs_uat"
-            ]
-            
-            # También limpiar cache de subtareas
-            import glob
-            subtareas_cache_files = glob.glob("cache/desarrollo_subtareas_*.pkl")
-            for cache_file in subtareas_cache_files:
-                try:
-                    os.remove(cache_file)
-                except Exception:
-                    pass
-            
-            for cache_key in cache_keys_to_clear:
-                cache_file = cache_path(cache_key, 'pkl')
-                if os.path.exists(cache_file):
-                    try:
-                        os.remove(cache_file)
-                    except Exception:
-                        pass
-            
-            st.success("✅ Cache limpiado. Recargando datos...")
-            st.rerun()
 
     # ---- FILTROS ----
     if sprint_sel == "Todos":
@@ -148,7 +89,12 @@ def mostrar_desarrollo_postventas(issues_jira):
     if version_sel != "Todas":
         issues_filtradas = [i for i in issues_filtradas if i["fields"]["Version"] == version_sel]
     if usuario_seleccionado != "Todos":
-        issues_filtradas = [i for i in issues_filtradas if i["fields"].get("assignee") and i["fields"]["assignee"]["displayName"] == usuario_seleccionado]
+        issues_filtradas = [
+            i for i in issues_filtradas 
+            if i["fields"].get("assignee") 
+            and i["fields"]["assignee"].get("displayName")
+            and i["fields"]["assignee"]["displayName"] == usuario_seleccionado
+        ]
 
     # ==== CONTADORES DE PORCENTAJE ====
     if version_sel != "Todas":
@@ -173,7 +119,9 @@ def mostrar_desarrollo_postventas(issues_jira):
     for issue in issues_filtradas:
         estado = issue["fields"]["status"]["name"].strip().lower()
         fecha_fin_str = issue["fields"].get("duedate", "")
-        asignado = issue["fields"]["assignee"]["displayName"] if issue["fields"].get("assignee") else ""
+        asignado = ""
+        if issue["fields"].get("assignee") and issue["fields"]["assignee"].get("displayName"):
+            asignado = issue["fields"]["assignee"]["displayName"]
         if estado == "en desarrollo" and fecha_fin_str:
             try:
                 fecha_fin = datetime.strptime(fecha_fin_str, "%Y-%m-%d").date()
@@ -208,18 +156,31 @@ def mostrar_desarrollo_postventas(issues_jira):
     for issue in issues_filtradas:
         estado = issue["fields"]["status"]["name"]
         epic_name = None
-        if "parent" in issue["fields"] and issue["fields"]["parent"]:
-            parent = issue["fields"]["parent"]
-            if "summary" in parent:
-                epic_name = parent["summary"]
-            elif "fields" in parent and "summary" in parent["fields"]:
-                epic_name = parent["fields"]["summary"]
+        
+        # Intentar obtener nombre de épica desde parent_key usando epicas_relevantes
+        parent = issue["fields"].get("parent")
+        parent_key = None
+        if parent:
+            if isinstance(parent, dict):
+                parent_key = parent.get("key")
+            elif isinstance(parent, str):
+                parent_key = parent
+        
+        if parent_key and parent_key in rn_to_nombre_epica:
+            epic_name = rn_to_nombre_epica[parent_key]
+        
+        # Si no se encontró, intentar desde customfield_10016
         if not epic_name:
             epica_custom = issue["fields"].get("customfield_10016", None)
-            if epica_custom and isinstance(epica_custom, dict) and "value" in epica_custom:
-                epic_name = epica_custom["value"]
-            elif epica_custom:
-                epic_name = str(epica_custom)
+            if epica_custom:
+                if isinstance(epica_custom, dict) and "value" in epica_custom:
+                    epic_name = epica_custom["value"]
+                elif isinstance(epica_custom, str):
+                    epic_name = epica_custom
+                    # Intentar mapear desde epicas_relevantes si es una clave RN
+                    if epic_name in rn_to_nombre_epica:
+                        epic_name = rn_to_nombre_epica[epic_name]
+        
         if not epic_name:
             epic_name = "Sin épica"
 
@@ -244,7 +205,7 @@ def mostrar_desarrollo_postventas(issues_jira):
             "Puntos": puntos
         }
 
-        if issue["fields"].get("assignee"):
+        if issue["fields"].get("assignee") and issue["fields"]["assignee"].get("displayName"):
             fila["Asignado"] = issue["fields"]["assignee"]["displayName"]
 
         rows.append(fila)
@@ -277,57 +238,44 @@ def mostrar_desarrollo_postventas(issues_jira):
         calcular_avance = st.checkbox("Mostrar % de avance de subtareas (puede demorar)", value=False, key="avance_subtareas_velocidad")
         if calcular_avance:
             st.info("⏳ Calculando avance de subtareas... Esto puede tomar unos momentos.")
-            # Cache para estados de subtareas
-            cache_key_subtareas = f"desarrollo_subtareas_{sprint_sel}_{version_sel}_{usuario_seleccionado}"
-            cache_file_subtareas = cache_path(cache_key_subtareas, 'pkl')
             
-            # Intentar cargar desde cache
-            subtareas_cache = {}
-            try:
-                if os.path.exists(cache_file_subtareas):
-                    mtime = datetime.fromtimestamp(os.path.getmtime(cache_file_subtareas))
-                    if (datetime.now() - mtime) < timedelta(hours=48):
-                        with open(cache_file_subtareas, 'rb') as f:
-                            subtareas_cache = pickle.load(f)
-            except Exception:
-                pass
+            # Recolectar todas las claves de subtareas
+            all_subtask_keys = []
+            issue_to_subtasks = {}
             
             for fila in rows_a_mostrar:
                 issue = next((i for i in issues if i["key"] == fila["Clave"]), None)
                 if not issue:
                     fila["Porcentaje avance"] = "Sin subtareas"
                     continue
+                    
                 subtasks = issue["fields"].get("subtasks", [])
                 if subtasks:
-                    total = len(subtasks)
-                    hechas = 0
-                    for stask in subtasks:
-                        st_key = stask["key"]
-                        
-                        # Usar cache si está disponible
-                        if st_key in subtareas_cache:
-                            st_status = subtareas_cache[st_key]
-                        else:
-                            try:
-                                st_info = jira._get_json(f'issue/{st_key}?fields=status')
-                                st_status = st_info["fields"]["status"]["name"]
-                                subtareas_cache[st_key] = st_status  # Guardar en cache
-                            except Exception:
-                                st_status = "Unknown"
-                                subtareas_cache[st_key] = st_status
-                        
-                        if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
-                            hechas += 1
-                    fila["Porcentaje avance"] = f"{round(100 * hechas / total, 1)} %"
+                    subtask_keys = [stask.get("key") if isinstance(stask, dict) else stask for stask in subtasks]
+                    # Filtrar None y strings vacíos
+                    subtask_keys = [key for key in subtask_keys if key]
+                    issue_to_subtasks[fila["Clave"]] = subtask_keys
+                    all_subtask_keys.extend(subtask_keys)
                 else:
                     fila["Porcentaje avance"] = "Sin subtareas"
             
-            # Guardar cache de subtareas
-            try:
-                with open(cache_file_subtareas, 'wb') as f:
-                    pickle.dump(subtareas_cache, f)
-            except Exception:
-                pass
+            # Obtener estados de todas las subtareas de una vez desde la BD
+            if all_subtask_keys:
+                estados_subtareas = db.obtener_estados_subtareas(all_subtask_keys)
+                
+                # Calcular porcentaje de avance para cada historia
+                for fila in rows_a_mostrar:
+                    if fila["Clave"] in issue_to_subtasks:
+                        subtask_keys = issue_to_subtasks[fila["Clave"]]
+                        total = len(subtask_keys)
+                        hechas = 0
+                        
+                        for st_key in subtask_keys:
+                            st_status = estados_subtareas.get(st_key, "Unknown")
+                            if st_status.lower() in ESTADOS_EN_PROCESO or st_status.lower() == ESTADO_LISTO_PARA_IMPLEMENTAR:
+                                hechas += 1
+                        
+                        fila["Porcentaje avance"] = f"{round(100 * hechas / total, 1)} %"
         else:
             for fila in rows_a_mostrar:
                 fila["Porcentaje avance"] = "Sin calcular"
