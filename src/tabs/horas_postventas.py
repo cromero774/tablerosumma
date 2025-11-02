@@ -5,10 +5,14 @@ Pestaña de Horas Postventas
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from src.utils.configuracion import MAPEO_TEM, PROYECTOS_POSTVENTA
+from src.utils.configuracion import MAPEO_TEM, PROYECTOS_POSTVENTA, obtener_proyecto_logico
+from src.utils.database_helper import DatabaseHelper
 
 def mostrar_horas_postventas(df):
     """Mostrar la pestaña de Horas Postventas"""
+    
+    # Usar directamente el df que viene de cargar_datos_principales() (igual que velocidad_devs)
+    # Este df ya tiene todos los datos procesados (mapeo de usuarios, proyecto lógico, etc.)
     
     # Constantes de proyectos
     INTERNAL = "TECH LAB - INTERNO"
@@ -35,8 +39,60 @@ def mostrar_horas_postventas(df):
             mes_real = meses_numeros[meses_nombres.index(mes_nom)]
         
         with cols[2]:
-            # Filtrar solo usuarios que están en el mapeo (son nombres válidos, no IDs)
-            usuarios_validos = [u for u in df["Usuario"].dropna().unique() if str(u).strip() != ""]
+            # Filtrar solo usuarios que son nombres válidos (no IDs)
+            # Usar el mapeo de usuarios para verificar qué son IDs y qué son nombres
+            from src.utils.configuracion import cargar_mapeo_usuarios
+            accountid_to_name = cargar_mapeo_usuarios()
+            # Crear mapeo inverso: nombre -> True (es válido)
+            nombres_validos = set(accountid_to_name.values())
+            
+            def es_usuario_valido(usuario):
+                if pd.isna(usuario) or str(usuario).strip() == "":
+                    return False
+                usuario_str = str(usuario).strip()
+                
+                # Si está en el mapeo de nombres válidos, es válido
+                if usuario_str in nombres_validos:
+                    return True
+                
+                # Si NO está en el mapeo, verificar si es claramente un ID
+                # Excluir si tiene el formato específico de account ID de Jira
+                if usuario_str.startswith("712020:"):
+                    return False
+                
+                # Excluir si contiene ":" seguido de UUID o formato largo
+                if ":" in usuario_str:
+                    partes = usuario_str.split(":")
+                    if len(partes) == 2 and len(partes[1]) > 10:
+                        return False
+                
+                # Excluir si parece un UUID (formato con guiones y longitud típica)
+                if len(usuario_str) > 30 and "-" in usuario_str and usuario_str.count("-") >= 4:
+                    return False
+                
+                # Excluir si es un ID hexadecimal largo (más de 20 caracteres, solo letras/números en minúsculas/hex)
+                if len(usuario_str) >= 20:
+                    # Si es solo alfanumérico sin espacios ni caracteres especiales, probablemente es un ID
+                    if usuario_str.replace("-", "").replace("_", "").isalnum():
+                        # Si tiene más de 18 caracteres sin espacios, es muy probable que sea un ID
+                        if " " not in usuario_str and len(usuario_str) >= 20:
+                            return False
+                
+                # Excluir si empieza con números y es muy largo (típico de IDs hexadecimales)
+                if usuario_str[0].isdigit() and len(usuario_str) >= 20:
+                    return False
+                
+                # Si tiene espacios, probablemente es un nombre (los IDs no tienen espacios)
+                if " " in usuario_str:
+                    return True
+                
+                # Si no pasó ninguna validación anterior y es muy largo sin espacios, es probable que sea un ID
+                if len(usuario_str) >= 18 and " " not in usuario_str:
+                    return False
+                
+                return True
+            
+            usuarios_validos = [u for u in df["Usuario"].dropna().unique() if es_usuario_valido(u)]
             usuarios_lista = ["Todos"] + sorted(usuarios_validos)
             usuario_seleccionado = st.selectbox("Usuario", usuarios_lista, index=0, key="horas_postventas_usuario")
         
@@ -163,6 +219,7 @@ def mostrar_horas_postventas(df):
                     bolsas.append(df_m)  # si trabajó en ambas, mostrar todo
                 elif has_post:
                     bolsas.append(df_m[df_m["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL + [INTERNAL])])
+                # NOTA: Si no tiene POST, no se agrega nada (solo mostrar horas POSTVENTA)
             
             df_user_vista = pd.concat(bolsas, ignore_index=True) if bolsas else pd.DataFrame(columns=df_user.columns)
             

@@ -444,9 +444,9 @@ class TableroDatabase:
                 
                 # Usar JQL específico según el proyecto (como en el tablero real)
                 if proyecto == "BUG":
-                    # Bugs UAT - solo creados desde 2025 SIN CHANGELOG (se carga después)
-                    jql = 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC'
-                    fields = "key,issuetype,created,customfield_10016,summary,status,priority,labels,issuelinks"
+                    # Bugs UAT - SIN CHANGELOG (se carga después)
+                    jql = 'project = BUG ORDER BY created DESC'
+                    fields = "key,issuetype,created,project,summary,status,priority,labels,issuelinks,assignee,parent,updated,customfield_10016"
                     issues = self._traer_todas_las_issues(jira, jql, fields, max_results=5000)
                 else:
                     # Proyectos normales - historias Y errors SIN CHANGELOG (se carga después)
@@ -1034,16 +1034,68 @@ class TableroDatabase:
         else:
             print("    ⚠️ No se encontraron worklogs en Tempo API")
         
-        # 2. Cargar datos históricos desde CSV
-        print("  📊 Cargando datos históricos desde CSV...")
-        csv_path = "data/horas_historicas.csv"
+        # 2. Cargar datos históricos y actuales desde CSV (igual que cargar_datos_principales)
+        print("  📊 Cargando datos históricos y actuales desde CSV...")
+        hist_path = "data/horas_historicas.csv"
+        actual_path = "data/horas_con_proyecto.csv"
         
-        if os.path.exists(csv_path):
+        # Cargar y combinar CSVs igual que cargar_datos_principales
+        if os.path.exists(hist_path) and os.path.exists(actual_path):
             try:
-                df_historico = pd.read_csv(csv_path)
+                df_hist = pd.read_csv(hist_path)
+                df_actual = pd.read_csv(actual_path)
+                min_fecha_actual = pd.to_datetime(df_actual["Fecha"], errors="coerce").min()
+                df_hist["Fecha_dt"] = pd.to_datetime(df_hist["Fecha"], errors="coerce")
+                df_hist = df_hist[df_hist["Fecha_dt"] < min_fecha_actual]
+                df_hist = df_hist.drop(columns="Fecha_dt")
+                df_historico = pd.concat([df_hist, df_actual], ignore_index=True)
                 
+                # Deduplicar: si hay registros idénticos (issue+fecha+usuario+horas) con diferentes TempoWorklogId,
+                # mantener solo el primero (para evitar duplicados en la BD)
+                df_historico['_grupo_contenido'] = (
+                    df_historico['Issue'].astype(str) + '_' + 
+                    df_historico['Fecha'].astype(str) + '_' + 
+                    df_historico['Usuario'].astype(str) + '_' + 
+                    df_historico['Horas'].astype(str)
+                )
+                df_historico = df_historico.drop_duplicates(subset=['_grupo_contenido'], keep='first')
+                df_historico = df_historico.drop(columns='_grupo_contenido')
+            except Exception as e:
+                print(f"    ⚠️ Error combinando CSVs: {e}")
+                if os.path.exists(actual_path):
+                    df_historico = pd.read_csv(actual_path)
+                else:
+                    df_historico = pd.DataFrame()
+        elif os.path.exists(actual_path):
+            df_historico = pd.read_csv(actual_path)
+        elif os.path.exists(hist_path):
+            df_historico = pd.read_csv(hist_path)
+        else:
+            df_historico = pd.DataFrame()
+        
+        if not df_historico.empty:
+            try:
                 filas_procesadas = 0
                 filas_omitidas = 0
+                
+                # Generar IDs únicos para registros sin TempoWorklogId
+                # Agrupar por issue+fecha+usuario y agregar contador para hacer único cada worklog
+                def generar_id_unico(row, contador):
+                    tempo_wid = str(row.get('TempoWorklogId', '')).strip()
+                    if not tempo_wid or tempo_wid == 'nan':
+                        issue_key = str(row.get('Issue', '')).strip()
+                        fecha = str(row.get('Fecha', '')).strip()
+                        usuario = str(row.get('Usuario', '')).strip()
+                        return f"csv_noid_{issue_key}_{fecha}_{usuario}_{contador}"
+                    else:
+                        return f"csv_{tempo_wid}"
+                
+                # Contar cuántos hay de cada combinación para asignar contadores
+                df_historico['grupo'] = df_historico.apply(
+                    lambda row: f"{row.get('Issue', '')}_{row.get('Fecha', '')}_{row.get('Usuario', '')}", 
+                    axis=1
+                )
+                contadores = {}
                 
                 for _, row in df_historico.iterrows():
                     # Validar datos requeridos
@@ -1057,7 +1109,16 @@ class TableroDatabase:
                         continue
                     
                     # Convertir datos del CSV al formato de la base
-                    tempo_worklog_id = f"csv_{row.get('TempoWorklogId', '')}_{fecha}_{usuario}"
+                    tempo_wid = str(row.get('TempoWorklogId', '')).strip()
+                    if not tempo_wid or tempo_wid == 'nan':
+                        # Sin TempoWorklogId, usar contador secuencial para hacer único
+                        grupo = f"{issue_key}_{fecha}_{usuario}"
+                        if grupo not in contadores:
+                            contadores[grupo] = 0
+                        contadores[grupo] += 1
+                        tempo_worklog_id = f"csv_noid_{issue_key}_{fecha}_{usuario}_{contadores[grupo]}"
+                    else:
+                        tempo_worklog_id = f"csv_{tempo_wid}"
                     
                     try:
                         horas = float(row.get('Horas', 0))
@@ -1088,28 +1149,71 @@ class TableroDatabase:
                     print(f"    ⚠️ {filas_omitidas} filas omitidas por datos faltantes")
                 
             except Exception as e:
-                print(f"    ❌ Error cargando CSV histórico: {e}")
+                print(f"    ❌ Error cargando CSV: {e}")
         else:
-            print("    ⚠️ Archivo horas_historicas.csv no encontrado")
+            print("    ⚠️ No se encontraron archivos CSV de horas")
         
         self.conn.commit()
         print(f"✅ Total: {total_worklogs} worklogs sincronizados (Tempo API + CSV histórico)")
     
     def sincronizar_worklogs_csv_solo(self):
-        """Sincronizar solo worklogs desde CSV histórico"""
-        print("🔄 Sincronizando worklogs desde CSV histórico...")
+        """Sincronizar solo worklogs desde CSV histórico y actual"""
+        print("🔄 Sincronizando worklogs desde CSV histórico y actual...")
         
         cursor = self.conn.cursor()
-        csv_path = "data/horas_historicas.csv"
         
-        if os.path.exists(csv_path):
+        # Limpiar worklogs existentes de CSV antes de recargar (para evitar duplicados de sincronizaciones anteriores)
+        print("  🗑️  Limpiando worklogs existentes de CSV...")
+        cursor.execute("DELETE FROM worklogs WHERE tempo_worklog_id LIKE 'csv_%'")
+        registros_eliminados = cursor.rowcount
+        print(f"    ✅ {registros_eliminados} registros CSV antiguos eliminados")
+        self.conn.commit()
+        hist_path = "data/horas_historicas.csv"
+        actual_path = "data/horas_con_proyecto.csv"
+        
+        # Cargar y combinar CSVs igual que cargar_datos_principales
+        if os.path.exists(hist_path) and os.path.exists(actual_path):
             try:
-                df_historico = pd.read_csv(csv_path)
+                df_hist = pd.read_csv(hist_path)
+                df_actual = pd.read_csv(actual_path)
+                min_fecha_actual = pd.to_datetime(df_actual["Fecha"], errors="coerce").min()
+                df_hist["Fecha_dt"] = pd.to_datetime(df_hist["Fecha"], errors="coerce")
+                df_hist = df_hist[df_hist["Fecha_dt"] < min_fecha_actual]
+                df_hist = df_hist.drop(columns="Fecha_dt")
+                df_csv = pd.concat([df_hist, df_actual], ignore_index=True)
                 
+                # Deduplicar: si hay registros idénticos (issue+fecha+usuario+horas) con diferentes TempoWorklogId,
+                # mantener solo el primero (para evitar duplicados en la BD)
+                df_csv['_grupo_contenido'] = (
+                    df_csv['Issue'].astype(str) + '_' + 
+                    df_csv['Fecha'].astype(str) + '_' + 
+                    df_csv['Usuario'].astype(str) + '_' + 
+                    df_csv['Horas'].astype(str)
+                )
+                df_csv = df_csv.drop_duplicates(subset=['_grupo_contenido'], keep='first')
+                df_csv = df_csv.drop(columns='_grupo_contenido')
+            except Exception as e:
+                print(f"    ⚠️ Error combinando CSVs: {e}")
+                if os.path.exists(actual_path):
+                    df_csv = pd.read_csv(actual_path)
+                else:
+                    df_csv = pd.DataFrame()
+        elif os.path.exists(actual_path):
+            df_csv = pd.read_csv(actual_path)
+        elif os.path.exists(hist_path):
+            df_csv = pd.read_csv(hist_path)
+        else:
+            df_csv = pd.DataFrame()
+        
+        if not df_csv.empty:
+            try:
                 filas_procesadas = 0
                 filas_omitidas = 0
                 
-                for _, row in df_historico.iterrows():
+                # Generar IDs únicos para registros sin TempoWorklogId usando contador
+                contadores = {}
+                
+                for _, row in df_csv.iterrows():
                     # Validar datos requeridos
                     issue_key = str(row.get('Issue', '')).strip()
                     usuario = str(row.get('Usuario', '')).strip()
@@ -1121,7 +1225,16 @@ class TableroDatabase:
                         continue
                     
                     # Convertir datos del CSV al formato de la base
-                    tempo_worklog_id = f"csv_{row.get('TempoWorklogId', '')}_{fecha}_{usuario}"
+                    tempo_wid = str(row.get('TempoWorklogId', '')).strip()
+                    if not tempo_wid or tempo_wid == 'nan':
+                        # Sin TempoWorklogId, usar contador secuencial para hacer único
+                        grupo = f"{issue_key}_{fecha}_{usuario}"
+                        if grupo not in contadores:
+                            contadores[grupo] = 0
+                        contadores[grupo] += 1
+                        tempo_worklog_id = f"csv_noid_{issue_key}_{fecha}_{usuario}_{contadores[grupo]}"
+                    else:
+                        tempo_worklog_id = f"csv_{tempo_wid}"
                     
                     try:
                         horas = float(row.get('Horas', 0))
@@ -1152,9 +1265,9 @@ class TableroDatabase:
                     print(f"    ⚠️ {filas_omitidas} filas omitidas por datos faltantes")
                 
             except Exception as e:
-                print(f"    ❌ Error cargando CSV histórico: {e}")
+                print(f"    ❌ Error cargando CSV: {e}")
         else:
-            print("    ⚠️ Archivo horas_historicas.csv no encontrado")
+            print("    ⚠️ No se encontraron archivos CSV de horas")
     
     def calcular_metricas_por_rn(self):
         """Calcular métricas pre-calculadas por RN"""
