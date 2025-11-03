@@ -197,17 +197,44 @@ def mostrar_velocidad_devs(df, issues_jira):
         Mantiene el mismo formato de salida que la versión anterior para compatibilidad
         """
         try:
+            tiempo_inicio_carga = time.time()
             # Inicializar helper de base de datos
             db = DatabaseHelper()
             db.conectar()
+            tiempo_conexion = time.time()
+            print(f"⏱️ [VELOCIDAD-CARGA] Conexión BD: {tiempo_conexion - tiempo_inicio_carga:.2f}s")
             
             # Cargar datos desde la base (sin filtros de fechas - se filtra por fecha de testing)
             # Incluir historias desde 2023 y permitir historias sin puntos (spikes)
+            tiempo_antes_historias = time.time()
             historias = db.obtener_historias_con_transiciones(["REP", "TAL", "ATI"], fecha_desde='2023-01-01', incluir_sin_puntos=True)
+            tiempo_despues_historias = time.time()
+            print(f"⏱️ [VELOCIDAD-CARGA] Obtener historias: {tiempo_despues_historias - tiempo_antes_historias:.2f}s ({len(historias)} historias)")
+            
+            # Obtener primera fecha de testing para todas las historias de una vez (OPTIMIZACIÓN)
+            tiempo_antes_fechas_testing = time.time()
+            issue_keys = [iss.get("key") for iss in historias]
+            fechas_testing = db.obtener_primera_fecha_testing(issue_keys)
+            tiempo_despues_fechas_testing = time.time()
+            print(f"⏱️ [VELOCIDAD-CARGA] Obtener fechas testing: {tiempo_despues_fechas_testing - tiempo_antes_fechas_testing:.2f}s ({len(fechas_testing)} fechas)")
+            
+            tiempo_antes_bugs = time.time()
             bugs = db.obtener_bugs_con_cierre(["REP", "TAL", "ATI"])
+            tiempo_despues_bugs = time.time()
+            print(f"⏱️ [VELOCIDAD-CARGA] Obtener bugs: {tiempo_despues_bugs - tiempo_antes_bugs:.2f}s ({len(bugs)} bugs)")
             
             # Cerrar conexión
             db.cerrar()
+            
+            tiempo_fin_carga = time.time()
+            print(f"⏱️ [VELOCIDAD-CARGA] Total carga BD: {tiempo_fin_carga - tiempo_inicio_carga:.2f}s")
+            
+            # Agregar fechas de testing directamente a las historias (OPTIMIZACIÓN)
+            for iss in historias:
+                key = iss.get("key")
+                if key in fechas_testing:
+                    # Agregar fecha de testing directamente al issue
+                    iss["_primera_fecha_testing"] = fechas_testing[key]
             
             return historias, bugs
             
@@ -220,7 +247,14 @@ def mostrar_velocidad_devs(df, issues_jira):
     # ==========================
     
     def procesar_historias(historias, accountid_to_name, name_to_acc):
+        tiempo_inicio_proceso = time.time()
         rows_issues = []
+        contador_historias = 0
+        contador_spikes = 0
+        contador_filtradas_proyecto = 0
+        contador_sin_testing = 0
+        contador_sin_puntos = 0
+        contador_sin_owner = 0
         
         for iss in historias:
             f = iss.get("fields", {}) or {}
@@ -229,8 +263,14 @@ def mostrar_velocidad_devs(df, issues_jira):
             if itype not in ("historia", "spike"):
                 continue
             
+            if itype == "historia":
+                contador_historias += 1
+            else:
+                contador_spikes += 1
+            
             proj_key = _norm((f.get("project") or {}).get("key"))
             if not _proy_ok(proj_key, proyecto_sel):
+                contador_filtradas_proyecto += 1
                 continue
             
             key = iss.get("key", "")
@@ -239,7 +279,13 @@ def mostrar_velocidad_devs(df, issues_jira):
             # Buscar owner al momento de testing
             owner_name, owner_id, first_dt = _owner_al_momento_testing(iss, accountid_to_name, name_to_acc)
             
-            if pd.notna(first_dt) and pts > 0 and owner_name and owner_id:
+            if pd.isna(first_dt):
+                contador_sin_testing += 1
+            elif pts <= 0:
+                contador_sin_puntos += 1
+            elif not owner_name or not owner_id:
+                contador_sin_owner += 1
+            else:
                 rows_issues.append({
                     "Issue": key,
                     "Puntos": pts,
@@ -247,6 +293,18 @@ def mostrar_velocidad_devs(df, issues_jira):
                     "Mes": _mes_label(_mes_start(first_dt)),
                     "Proyecto": proj_key,
                 })
+        
+        tiempo_fin_proceso = time.time()
+        tiempo_procesamiento = tiempo_fin_proceso - tiempo_inicio_proceso
+        print(f"⏱️ [VELOCIDAD-PROCESAR] Procesamiento de historias:")
+        print(f"    - Tiempo total: {tiempo_procesamiento:.2f}s")
+        print(f"    - Historias procesadas: {contador_historias}")
+        print(f"    - Spikes procesados: {contador_spikes}")
+        print(f"    - Filtradas por proyecto: {contador_filtradas_proyecto}")
+        print(f"    - Sin testing: {contador_sin_testing}")
+        print(f"    - Sin puntos: {contador_sin_puntos}")
+        print(f"    - Sin owner: {contador_sin_owner}")
+        print(f"    - Resultado final: {len(rows_issues)} filas")
         
         return pd.DataFrame(rows_issues, columns=["Issue", "Puntos", "Usuario_nombre", "Mes", "Proyecto"])
 
@@ -257,6 +315,16 @@ def mostrar_velocidad_devs(df, issues_jira):
         current_id = (f.get("assignee") or {}).get("accountId")
         current_name = _norm(accountid_to_name.get(current_id) or (f.get("assignee") or {}).get("displayName"))
         
+        # OPTIMIZACIÓN: Si ya tenemos la fecha de testing pre-calculada, usarla directamente
+        if "_primera_fecha_testing" in iss:
+            fecha_testing = iss["_primera_fecha_testing"]
+            if fecha_testing:
+                fecha_dt = pd.to_datetime(fecha_testing, errors="coerce")
+                if pd.notna(fecha_dt):
+                    return current_name, current_id, fecha_dt
+            return None, None, None
+        
+        # Fallback: procesar changelog (solo si no tenemos fecha pre-calculada)
         histories = (iss.get("changelog", {}) or {}).get("histories", []) or []
         histories = sorted(histories, key=lambda h: pd.to_datetime(h.get("created"), errors="coerce"))
         
@@ -922,8 +990,14 @@ def mostrar_velocidad_devs(df, issues_jira):
     #   EJECUCIÓN PRINCIPAL
     # ==========================
     
+    tiempo_inicio = time.time()
+    print(f"⏱️ [VELOCIDAD] Inicio de carga de pestaña")
+    
     # Cargar datos (usar cache si está disponible y es válido)
     force_refresh = st.session_state.get("force_refresh", False)
+    
+    tiempo_antes_carga = time.time()
+    print(f"⏱️ [VELOCIDAD] Antes de cargar datos: {tiempo_antes_carga - tiempo_inicio:.2f}s")
     
     # Verificar si hay cache válido
     if (not force_refresh and 
@@ -932,11 +1006,15 @@ def mostrar_velocidad_devs(df, issues_jira):
         cache_data = st.session_state[cache_key_velocidad]
         historias = cache_data.get("historias", [])
         bugs = cache_data.get("bugs", [])
+        tiempo_despues_carga = time.time()
+        print(f"⏱️ [VELOCIDAD] Datos desde cache: {tiempo_despues_carga - tiempo_antes_carga:.2f}s ({len(historias)} historias, {len(bugs)} bugs)")
     else:
         historias, bugs = cargar_datos_velocidad(
             get_jira(), fecha_inicio.strftime("%Y-%m-%d"), fecha_fin.strftime("%Y-%m-%d"), 
             proyecto_sel, force_refresh
         )
+        tiempo_despues_carga = time.time()
+        print(f"⏱️ [VELOCIDAD] Datos desde BD: {tiempo_despues_carga - tiempo_antes_carga:.2f}s ({len(historias)} historias, {len(bugs)} bugs)")
     
     if not historias and not bugs:
         st.error("❌ No se pudieron cargar datos de Jira")
@@ -945,11 +1023,17 @@ def mostrar_velocidad_devs(df, issues_jira):
     # === PROTECCIÓN: Alertas visuales de calidad de datos ===
     col_alert1, col_alert2 = st.columns(2)
     
+    tiempo_antes_procesar_historias = time.time()
+    print(f"⏱️ [VELOCIDAD] Antes de procesar historias: {tiempo_antes_procesar_historias - tiempo_inicio:.2f}s")
     
     # Procesar datos
     df_issues = procesar_historias(historias, accountid_to_name, name_to_acc)
     
+    tiempo_despues_procesar_historias = time.time()
+    print(f"⏱️ [VELOCIDAD] Procesar historias: {tiempo_despues_procesar_historias - tiempo_antes_procesar_historias:.2f}s ({len(df_issues)} filas)")
+    
     # Crear mapeo de historias por desarrollador para bugs extra
+    tiempo_antes_mapeo = time.time()
     historias_por_dev = {}
     for _, row in df_issues.iterrows():
         dev = row["Usuario_nombre"]
@@ -958,11 +1042,17 @@ def mostrar_velocidad_devs(df, issues_jira):
             historias_por_dev[dev] = set()
         historias_por_dev[dev].add(historia)
     
+    tiempo_despues_mapeo = time.time()
+    print(f"⏱️ [VELOCIDAD] Crear mapeo historias por dev: {tiempo_despues_mapeo - tiempo_antes_mapeo:.2f}s")
     
-    
+    tiempo_antes_procesar_bugs = time.time()
     bug_rows, bugs_extra_rows = procesar_bugs(bugs, historias_por_dev)
     
+    tiempo_despues_procesar_bugs = time.time()
+    print(f"⏱️ [VELOCIDAD] Procesar bugs: {tiempo_despues_procesar_bugs - tiempo_antes_procesar_bugs:.2f}s ({len(bug_rows)} bugs normales, {len(bugs_extra_rows)} bugs extra)")
+    
     # Aplicar filtro de proyecto a las horas
+    tiempo_antes_filtro_horas = time.time()
     if proyecto_sel == "ATI":
         proyectos_validos = ["AFUs ATI", "TECH LAB - INTERNO"]
     elif proyecto_sel == "Postventas":
@@ -974,14 +1064,35 @@ def mostrar_velocidad_devs(df, issues_jira):
     df_horas_filtrado = df_horas[df_horas["Proyecto_logico"].isin(proyectos_validos)]
     df_horas_sum_filtrado = df_horas_filtrado.groupby(["Usuario_nombre", "Mes_dt"], as_index=False)["Horas"].sum()
     
+    tiempo_despues_filtro_horas = time.time()
+    print(f"⏱️ [VELOCIDAD] Filtrar y agrupar horas: {tiempo_despues_filtro_horas - tiempo_antes_filtro_horas:.2f}s")
+    
+    tiempo_antes_agregar = time.time()
     # Agregar por usuario/mes
     df_completo = agregar_por_usuario_mes(df_issues, bug_rows, bugs_extra_rows, df_horas_sum_filtrado)
     
+    tiempo_despues_agregar = time.time()
+    print(f"⏱️ [VELOCIDAD] Agregar por usuario/mes: {tiempo_despues_agregar - tiempo_antes_agregar:.2f}s")
+    
+    tiempo_antes_aplicar_filtros = time.time()
     # Aplicar filtros
     df_filtrado = aplicar_filtros(df_completo, fecha_inicio, fecha_fin, proyecto_sel)
     
+    tiempo_despues_aplicar_filtros = time.time()
+    print(f"⏱️ [VELOCIDAD] Aplicar filtros: {tiempo_despues_aplicar_filtros - tiempo_antes_aplicar_filtros:.2f}s")
+    
+    tiempo_antes_metricas = time.time()
     # Calcular métricas finales
     df_final = calcular_metricas_finales(df_filtrado)
     
+    tiempo_despues_metricas = time.time()
+    print(f"⏱️ [VELOCIDAD] Calcular métricas finales: {tiempo_despues_metricas - tiempo_antes_metricas:.2f}s")
+    
+    tiempo_antes_mostrar = time.time()
     # Mostrar resultados
     mostrar_ranking_y_historico(df_final, "Todos", allowed_names)
+    
+    tiempo_final = time.time()
+    tiempo_total = tiempo_final - tiempo_inicio
+    print(f"⏱️ [VELOCIDAD] ⏱️⏱️⏱️ TIEMPO TOTAL: {tiempo_total:.2f} segundos ⏱️⏱️⏱️")
+    print(f"⏱️ [VELOCIDAD] Mostrar resultados: {tiempo_final - tiempo_antes_mostrar:.2f}s")
