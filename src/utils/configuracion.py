@@ -305,8 +305,26 @@ def obtener_proyecto_logico_vectorizado(df):
 def cargar_datos_principales():
     """Cargar datos principales desde la base de datos (igual lógica que CSV pero desde BD)"""
     from src.utils.database_helper import DatabaseHelper
+    import os
     
     try:
+        # Verificar si la base de datos existe, si no, inicializarla
+        db_path = "data/tablero_completo.db"
+        if not os.path.exists(db_path):
+            # Si no existe, crear estructura básica (sin sincronizar aún)
+            # La sincronización se hará en background o manualmente
+            st.warning("⚠️ Base de datos no encontrada. Inicializando estructura básica...")
+            from src.database_completa import TableroDatabase
+            temp_db = TableroDatabase(db_path)
+            temp_db.conectar()
+            temp_db.crear_tablas()
+            temp_db.cargar_usuarios_desde_json()
+            temp_db.cargar_epicas_desde_json()
+            temp_db.cargar_mapeo_proyectos()
+            temp_db.cerrar()
+            st.info("💡 La base de datos necesita ser sincronizada. Usa el script `python src/database_completa.py` para sincronizar datos.")
+            return pd.DataFrame()
+        
         # Cargar mapeo de usuarios
         accountid_to_name = cargar_mapeo_usuarios()
         
