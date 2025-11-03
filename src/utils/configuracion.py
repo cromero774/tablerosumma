@@ -311,35 +311,40 @@ def cargar_datos_principales():
         # Verificar si la base de datos existe, si no, intentar descargarla desde Google Drive
         db_path = "data/tablero_completo.db"
         if not os.path.exists(db_path):
-            # Intentar descargar desde Google Drive si está configurado
-            try:
-                import sys
-                import urllib.request
-                file_id = os.getenv("GOOGLE_DRIVE_FILE_ID")
-                if file_id:
-                    st.info("📥 Descargando base de datos desde Google Drive...")
-                    os.makedirs("data", exist_ok=True)
-                    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-                    urllib.request.urlretrieve(download_url, db_path)
-                    if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
-                        size_mb = os.path.getsize(db_path) / (1024 * 1024)
-                        st.success(f"✅ Base de datos descargada ({size_mb:.2f} MB)")
-                    else:
-                        raise Exception("Descarga falló o archivo vacío")
-                else:
-                    raise Exception("GOOGLE_DRIVE_FILE_ID no configurado")
-            except Exception as e:
-                # Si no se puede descargar, crear estructura básica vacía
-                st.warning("⚠️ Base de datos no encontrada. Inicializando estructura básica...")
-                from src.database_completa import TableroDatabase
-                temp_db = TableroDatabase(db_path)
-                temp_db.conectar()
-                temp_db.crear_tablas()
-                temp_db.cargar_usuarios_desde_json()
-                temp_db.cargar_epicas_desde_json()
-                temp_db.cargar_mapeo_proyectos()
-                temp_db.cerrar()
-                st.info("💡 La base de datos necesita ser sincronizada. Usa el script `python src/database_completa.py` para sincronizar datos.")
+            # Crear estructura básica primero para que la app pueda iniciar rápidamente
+            os.makedirs("data", exist_ok=True)
+            from src.database_completa import TableroDatabase
+            temp_db = TableroDatabase(db_path)
+            temp_db.conectar()
+            temp_db.crear_tablas()
+            temp_db.cargar_usuarios_desde_json()
+            temp_db.cargar_epicas_desde_json()
+            temp_db.cargar_mapeo_proyectos()
+            temp_db.cerrar()
+            
+            # Descargar desde Google Drive en background (si está configurado)
+            file_id = os.getenv("GOOGLE_DRIVE_FILE_ID")
+            if file_id:
+                def descargar_bd_background():
+                    try:
+                        import urllib.request
+                        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                        urllib.request.urlretrieve(download_url, db_path + ".tmp")
+                        if os.path.exists(db_path + ".tmp") and os.path.getsize(db_path + ".tmp") > 0:
+                            os.replace(db_path + ".tmp", db_path)
+                            print(f"✅ Base de datos descargada exitosamente desde Google Drive")
+                    except Exception as e:
+                        print(f"⚠️ Error descargando BD desde Google Drive: {e}")
+                        if os.path.exists(db_path + ".tmp"):
+                            os.remove(db_path + ".tmp")
+                
+                import threading
+                thread = threading.Thread(target=descargar_bd_background, daemon=True)
+                thread.start()
+                # Retornar DataFrame vacío por ahora (la BD se está descargando)
+                return pd.DataFrame()
+            else:
+                # Si no hay GOOGLE_DRIVE_FILE_ID, retornar DataFrame vacío
                 return pd.DataFrame()
         
         # Cargar mapeo de usuarios
