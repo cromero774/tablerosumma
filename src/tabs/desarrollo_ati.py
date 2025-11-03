@@ -11,6 +11,13 @@ from src.utils.database_helper import DatabaseHelper
 def mostrar_desarrollo_ati(issues_jira):
     """Mostrar la pestaña de Desarrollo ATI"""
     
+    # Mostrar fecha de última actualización
+    db = DatabaseHelper()
+    db.conectar()
+    fecha_actualizacion = db.obtener_fecha_ultima_actualizacion()
+    db.cerrar()
+    st.caption(f"🕒 **Última actualización:** {fecha_actualizacion}")
+    
     # Inicializar DatabaseHelper
     db = DatabaseHelper()
     

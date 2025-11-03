@@ -11,6 +11,14 @@ from datetime import datetime
 def mostrar_gantt(issues_jira):
     """Mostrar la pestaña de Gantt"""
     
+    # Mostrar fecha de última actualización
+    from src.utils.database_helper import DatabaseHelper
+    db_helper = DatabaseHelper()
+    db_helper.conectar()
+    fecha_actualizacion = db_helper.obtener_fecha_ultima_actualizacion()
+    db_helper.cerrar()
+    st.caption(f"🕒 **Última actualización:** {fecha_actualizacion}")
+    
     # --- URLs de los CSV ---
     link_postventas = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTRvUazuzfWjGl5VWuZJUJslZEf-PpYyHZ_5G2SXwPtu16R71mPSKVQTYjen9UBwQ/pub?gid=865145678&single=true&output=csv"
     link_ati        = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT6s9qMzmA_sJRko5EDggumO4sybGVq3n-uOmZOMj8CJDnHo9AWZeZOXZGz7cTg4XoqeiPDIgQP3QER/pub?output=csv"

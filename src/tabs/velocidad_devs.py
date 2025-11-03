@@ -20,6 +20,13 @@ def mostrar_velocidad_devs(df, issues_jira):
     
     st.header("🔥 Velocidad de devs")
     st.caption("📊 **Métricas de productividad de desarrolladores**")
+    
+    # Mostrar fecha de última actualización
+    db_helper = DatabaseHelper()
+    db_helper.conectar()
+    fecha_actualizacion = db_helper.obtener_fecha_ultima_actualizacion()
+    db_helper.cerrar()
+    st.caption(f"🕒 **Última actualización:** {fecha_actualizacion}")
 
     # ==========================
     #   FUNCIONES MODULARES
@@ -195,7 +202,8 @@ def mostrar_velocidad_devs(df, issues_jira):
             db.conectar()
             
             # Cargar datos desde la base (sin filtros de fechas - se filtra por fecha de testing)
-            historias = db.obtener_historias_con_transiciones(["REP", "TAL", "ATI"])
+            # Incluir historias desde 2023 y permitir historias sin puntos (spikes)
+            historias = db.obtener_historias_con_transiciones(["REP", "TAL", "ATI"], fecha_desde='2023-01-01', incluir_sin_puntos=True)
             bugs = db.obtener_bugs_con_cierre(["REP", "TAL", "ATI"])
             
             # Cerrar conexión
@@ -217,7 +225,8 @@ def mostrar_velocidad_devs(df, issues_jira):
         for iss in historias:
             f = iss.get("fields", {}) or {}
             itype = _norm((f.get("issuetype", {}) or {}).get("name")).lower()
-            if itype != "historia":
+            # Incluir historias y spikes para contar velocidad y puntos
+            if itype not in ("historia", "spike"):
                 continue
             
             proj_key = _norm((f.get("project") or {}).get("key"))
@@ -419,12 +428,9 @@ def mostrar_velocidad_devs(df, issues_jira):
             if col in df_merge.columns:
                 df_merge[col] = df_merge[col].fillna("").astype(str)
 
-        # Aplicar 80% a las horas mostradas
-        df_merge["Horas"] = df_merge["Horas"] * 0.8
-        
-        # Calcular velocidad (usando las horas ya ajustadas al 80%)
+        # Calcular velocidad (usando 80% de las horas)
         df_merge["Velocidad"] = df_merge.apply(
-            lambda r: round(r["Horas"] / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
+            lambda r: round((r["Horas"] * 0.8) / r["Puntos"], 4) if r["Puntos"] > 0 else 0, axis=1
         )
         
         return df_merge
@@ -470,12 +476,10 @@ def mostrar_velocidad_devs(df, issues_jira):
             elif p >= 20: sp = 1.10
             else: sp = 1.00  # p == 16
 
-            # Calcular puntuación de horas (h ya está al 80% de las horas cargadas)
-            # Objetivo: ≥128 horas (se compara con las horas al 80%)
-            # Ejemplo: Si cargó 160 horas → muestra 128 horas (80%) → cumple objetivo (128 >= 128)
+            # Calcular puntuación de horas
             if h >= 128: 
                 sh = 1.00
-            elif 100 <= h < 128: 
+            elif 100 <= h <= 127: 
                 sh = 0.95
             else: 
                 sh = 0.70
@@ -606,8 +610,6 @@ def mostrar_velocidad_devs(df, issues_jira):
                 - ≥128 horas: 100%
                 - 100-127 horas: 95%
                 - <100 horas: 70%
-                
-                **Nota:** Las horas mostradas representan el 80% de las horas cargadas. El objetivo se calcula usando este 80%.
                 """)
         
         with col3:

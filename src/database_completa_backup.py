@@ -333,17 +333,10 @@ class TableroDatabase:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_assignee ON issues(assignee_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_epic ON issues(epic_link)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_transitions_issue ON issue_transitions(issue_key)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_changelog_issue ON changelog(issue_key)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_worklogs_issue ON worklogs(issue_key)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_worklogs_author ON worklogs(author_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_worklogs_date ON worklogs(start_date)")
-        
-        # Índices compuestos para optimizar queries comunes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_project_type ON issues(project, issuetype)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_project_type_created ON issues(project, issuetype, created_date)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_transitions_issue_date ON issue_transitions(issue_key, transition_date)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_usuarios_account_id ON usuarios(account_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_worklogs_issue_author ON worklogs(issue_key, author_id)")
         
         self.conn.commit()
         print("✅ Tablas creadas exitosamente")
@@ -446,182 +439,121 @@ class TableroDatabase:
             jira = get_jira()
             
             total_proyectos = len(proyectos)
-            proyectos_procesados = 0
-            proyectos_fallidos = []
-            
             for i, proyecto in enumerate(proyectos):
                 print(f"  📋 Procesando proyecto {proyecto} ({i+1}/{total_proyectos})...")
                 
-                try:
-                    # Recrear conexión Jira si es necesario (para evitar conexiones cerradas)
-                    try:
-                        jira.ensure_ready()
-                    except:
-                        # Reconectar si falla
-                        from src.jira_conexion import get_jira
-                        jira = get_jira()
-                    
-                    # Usar JQL específico según el proyecto (como en el tablero real)
-                    if proyecto == "BUG":
-                        # Bugs UAT - SIN CHANGELOG (se carga después)
-                        jql = 'project = BUG ORDER BY created DESC'
-                        fields = "key,issuetype,created,project,summary,status,priority,labels,issuelinks,assignee,parent,updated,customfield_10016"
-                        issues = self._traer_todas_las_issues(jira, jql, fields, max_results=5000)
-                    else:
-                        # Proyectos normales - historias, spikes Y errors SIN CHANGELOG (se carga después)
-                        # INCLUYENDO subtasks para cálculo de porcentaje de avance
-                        jql = f'project = {proyecto} AND (issuetype = Historia OR issuetype = Spike OR issuetype = Error) ORDER BY created DESC'
-                        fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated,created,resolutiondate,priority,labels,fixVersions,issuelinks,customfield_10021,subtasks"
-                        issues = self._traer_todas_las_issues(jira, jql, fields, max_results=5000)
-                    
-                    if not issues:
-                        print(f"    ⚠️ No se encontraron issues para {proyecto}")
-                        continue
-                    
-                    cursor = self.conn.cursor()
-                    print(f"    📥 Insertando {len(issues)} issues de {proyecto} en la base de datos...")
-                    for issue in issues:
-                        fields_data = issue.get('fields', {})
-                        
-                        # Extraer datos del issue
-                        assignee = fields_data.get('assignee', {})
-                        assignee_id = assignee.get('accountId') if assignee else None
-                        
-                        parent = fields_data.get('parent', {})
-                        parent_key = parent.get('key') if parent else None
-                        
-                        epic_link = fields_data.get('customfield_10016')
-                        story_points = fields_data.get('customfield_10026')
-                        
-                        labels = json.dumps(fields_data.get('labels', []))
-                        fix_versions = json.dumps([v.get('name', '') for v in fields_data.get('fixVersions', [])])
-                        
-                        custom_fields = {
-                            'customfield_10016': epic_link,
-                            'customfield_10026': story_points
-                        }
-                        
-                        # Extraer campos adicionales
-                        issue_links = json.dumps(fields_data.get('issuelinks', []))
-                        subtasks = json.dumps(fields_data.get('subtasks', []))
-                        sprint = self._extraer_sprint(fields_data)
-                        version = self._extraer_version(fields_data)
-                        tempo_project = self._mapear_proyecto_tempo(fields_data)
-                        proyecto_logico = self._normalizar_proyecto(fields_data)
-                        
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO issues (
-                                key, summary, status, project, issuetype, assignee_id, parent_key,
-                                epic_link, story_points, priority, duedate, created_date, updated_date,
-                                resolution_date, status_category_changed_date, labels, fix_versions,
-                                custom_fields, issue_links, subtasks, sprint, version, tempo_project, proyecto_logico,
-                                updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                        """, (
-                            issue['key'],
-                            fields_data.get('summary', ''),
-                            fields_data.get('status', {}).get('name', ''),
-                            fields_data.get('project', {}).get('key', ''),
-                            fields_data.get('issuetype', {}).get('name', ''),
-                            assignee_id,
-                            parent_key,
-                            epic_link,
-                            story_points,
-                            fields_data.get('priority', {}).get('name', ''),
-                            fields_data.get('duedate'),
-                            fields_data.get('created'),
-                            fields_data.get('updated'),
-                            fields_data.get('resolutiondate'),
-                            fields_data.get('statuscategorychangedate'),
-                            labels,
-                            fix_versions,
-                            json.dumps(custom_fields),
-                            issue_links,
-                            subtasks,
-                            sprint,
-                            version,
-                            tempo_project,
-                            proyecto_logico
-                        ))
+                # Usar JQL específico según el proyecto (como en el tablero real)
+                if proyecto == "BUG":
+                    # Bugs UAT - solo creados desde 2025 SIN CHANGELOG (se carga después)
+                    jql = 'project = BUG AND created >= "2025-01-01" ORDER BY created DESC'
+                    fields = "key,issuetype,created,customfield_10016,summary,status,priority,labels,issuelinks"
+                    issues = self._traer_todas_las_issues(jira, jql, fields, max_results=5000)
+                else:
+                    # Proyectos normales - historias y bugs SIN CHANGELOG (se carga después)
+                    # INCLUYENDO subtasks para cálculo de porcentaje de avance
+                    jql = f'project = {proyecto} AND issuetype in (Historia, Bug, Task) ORDER BY updated DESC'
+                    fields = "key,summary,status,project,issuetype,assignee,parent,customfield_10016,customfield_10026,duedate,statuscategorychangedate,updated,created,resolutiondate,priority,labels,fixVersions,issuelinks,customfield_10021,subtasks"
+                    issues = self._traer_todas_las_issues(jira, jql, fields, max_results=5000)
                 
-                    # Commit de las issues ANTES de procesar changelog
-                    self.conn.commit()
-                    print(f"    ✅ {len(issues)} issues de {proyecto} insertadas en la base de datos")
-                    
-                    # Procesar changelog para calcular métricas temporales (POR LOTES)
-                    print(f"    🔄 Procesando changelog para métricas temporales (POR LOTES) del proyecto {proyecto}...")
-                    print(f"    ⚠️  Esto puede tomar varios minutos - procesando {len(issues)} issues del proyecto {proyecto}...")
-                    self._procesar_changelog_por_lotes(jira, issues, len(issues), proyecto)
-                    
-                    # Procesar transiciones de estado
-                    print(f"    🔄 Procesando transiciones de estado del proyecto {proyecto}...")
-                    self._procesar_transiciones(issues, len(issues))
-                    
-                    # Commit final de transiciones
-                    self.conn.commit()
-                    print(f"    ✅ {len(issues)} issues de {proyecto} sincronizados con changelog y transiciones")
-                    proyectos_procesados += 1
-                    
-                except Exception as e:
-                    print(f"    ❌ Error procesando proyecto {proyecto}: {e}")
-                    proyectos_fallidos.append(proyecto)
-                    # Continuar con el siguiente proyecto aunque este falle
+                if not issues:
+                    print(f"    ⚠️ No se encontraron issues para {proyecto}")
                     continue
-            
-            # Resumen final
-            if proyectos_fallidos:
-                print(f"\n⚠️ Proyectos fallidos: {', '.join(proyectos_fallidos)}")
-            print(f"\n✅ Proyectos procesados exitosamente: {proyectos_procesados}/{total_proyectos}")
+                
+                cursor = self.conn.cursor()
+                for issue in issues:
+                    fields_data = issue.get('fields', {})
+                
+                    # Extraer datos del issue
+                    assignee = fields_data.get('assignee', {})
+                    assignee_id = assignee.get('accountId') if assignee else None
+                    
+                    parent = fields_data.get('parent', {})
+                    parent_key = parent.get('key') if parent else None
+                    
+                    epic_link = fields_data.get('customfield_10016')
+                    story_points = fields_data.get('customfield_10026')
+                    
+                    labels = json.dumps(fields_data.get('labels', []))
+                    fix_versions = json.dumps([v.get('name', '') for v in fields_data.get('fixVersions', [])])
+                    
+                    custom_fields = {
+                        'customfield_10016': epic_link,
+                        'customfield_10026': story_points
+                    }
+                    
+                    # Extraer campos adicionales
+                    issue_links = json.dumps(fields_data.get('issuelinks', []))
+                    subtasks = json.dumps(fields_data.get('subtasks', []))
+                    sprint = self._extraer_sprint(fields_data)
+                    version = self._extraer_version(fields_data)
+                    tempo_project = self._mapear_proyecto_tempo(fields_data)
+                    proyecto_logico = self._normalizar_proyecto(fields_data)
+                    
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO issues (
+                            key, summary, status, project, issuetype, assignee_id, parent_key,
+                            epic_link, story_points, priority, duedate, created_date, updated_date,
+                            resolution_date, status_category_changed_date, labels, fix_versions,
+                            custom_fields, issue_links, subtasks, sprint, version, tempo_project, proyecto_logico,
+                            updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """, (
+                        issue['key'],
+                        fields_data.get('summary', ''),
+                        fields_data.get('status', {}).get('name', ''),
+                        fields_data.get('project', {}).get('key', ''),
+                        fields_data.get('issuetype', {}).get('name', ''),
+                        assignee_id,
+                        parent_key,
+                        epic_link,
+                        story_points,
+                        fields_data.get('priority', {}).get('name', ''),
+                        fields_data.get('duedate'),
+                        fields_data.get('created'),
+                        fields_data.get('updated'),
+                        fields_data.get('resolutiondate'),
+                        fields_data.get('statuscategorychangedate'),
+                        labels,
+                        fix_versions,
+                        json.dumps(custom_fields),
+                        issue_links,
+                        subtasks,
+                        sprint,
+                        version,
+                        tempo_project,
+                        proyecto_logico
+                    ))
+                
+                # Procesar changelog para calcular métricas temporales (POR LOTES)
+                print(f"    🔄 Procesando changelog para métricas temporales (POR LOTES) del proyecto {proyecto}...")
+                print(f"    ⚠️  Esto puede tomar varios minutos - procesando {len(issues)} issues del proyecto {proyecto}...")
+                self._procesar_changelog_por_lotes(jira, issues, len(issues), proyecto)
+                
+                # Procesar transiciones de estado
+                print(f"    🔄 Procesando transiciones de estado del proyecto {proyecto}...")
+                self._procesar_transiciones(issues, len(issues))
+                
+                self.conn.commit()
+                print(f"    ✅ {len(issues)} issues de {proyecto} sincronizados con changelog")
         
         except Exception as e:
-            print(f"❌ Error crítico sincronizando issues: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ Error sincronizando issues: {e}")
     
     def _traer_todas_las_issues(self, jira, jql, fields, max_results=5000):
-        """Traer todas las issues usando la misma lógica del tablero con reintentos"""
+        """Traer todas las issues usando la misma lógica del tablero"""
         print(f"    🔄 Cargando issues básicas (sin changelog)...")
-        issues = []
+        issues, start_at = [], 0
         batch_size = 100  # Jira tiene límite máximo de 100 por request
         
-        # Convertir fields de string a lista si es necesario
-        if isinstance(fields, str):
-            fields_list = [f.strip() for f in fields.split(",") if f.strip()]
-        else:
-            fields_list = fields
-        
-        batch_num = 0
-        token = None
-        max_reintentos = 3
+        # Calcular progreso estimado
+        total_batches = (max_results + batch_size - 1) // batch_size
         
         while len(issues) < max_results:
-            batch_num += 1
-            reintentos = 0
+            batch_num = (start_at // batch_size) + 1
+            progress_pct = min(100, (batch_num / total_batches) * 100)
             
-            while reintentos < max_reintentos:
-                try:
-                    # Llamar a search_jql directamente
-                    data = jira.search_jql(jql=jql, fields=fields_list, max_results=batch_size, next_page_token=token)
-                    break  # Éxito, salir del loop de reintentos
-                except (ConnectionError, ConnectionResetError, TimeoutError) as e:
-                    reintentos += 1
-                    if reintentos < max_reintentos:
-                        print(f"    ⚠️ Error de conexión (intento {reintentos}/{max_reintentos}), reintentando en 2 segundos...")
-                        import time
-                        time.sleep(2)
-                        # Intentar reconectar
-                        try:
-                            jira.ensure_ready()
-                        except:
-                            from src.jira_conexion import get_jira
-                            jira = get_jira()
-                    else:
-                        print(f"    ❌ Error de conexión después de {max_reintentos} intentos: {e}")
-                        raise
-                except Exception as e:
-                    # Otros errores, no reintentar
-                    raise
-            
+            endpoint = f'search/jql?jql={jql}&fields={fields}&startAt={start_at}&maxResults={batch_size}'
+            data = jira._get(endpoint)
             batch = data.get("issues", [])
             
             if not batch:  # No hay más issues
@@ -630,16 +562,13 @@ class TableroDatabase:
                 
             issues.extend(batch)
             
-            # Obtener el token para la siguiente página
-            token = data.get("nextPageToken")
-            
-            progress_pct = min(100, (len(issues) / max_results) * 100)
-            print(f"    📊 Cargadas {len(issues)} issues... ({progress_pct:.1f}% - Lote {batch_num})")
-            
-            # Si no hay más páginas
-            if not token:
+            # Si el lote es menor que batch_size, no hay más páginas
+            if len(batch) < batch_size:
                 print(f"    📊 Último lote recibido (total issues: {len(issues)})")
                 break
+                
+            start_at += batch_size
+            print(f"    📊 Cargadas {len(issues)} issues... ({progress_pct:.1f}% - Lote {batch_num}/{total_batches})")
             
         print(f"    ✅ Total issues básicas cargadas: {len(issues)}")
         return issues
@@ -657,10 +586,8 @@ class TableroDatabase:
             batch_num = (start_at // batch_size) + 1
             progress_pct = min(100, (batch_num / total_batches) * 100)
             
-            # Note: changelog se descarga lote por lote, no en esta función
-            # Esta función NO se usa actualmente, se usa _traer_todas_las_issues + procesar changelog por lotes
-            endpoint = f'search?jql={jql}&fields={fields}&startAt={start_at}&maxResults={batch_size}&expand=changelog'
-            data = jira._get_json(endpoint)
+            endpoint = f'search/jql?jql={jql}&fields={fields}&startAt={start_at}&maxResults={batch_size}&expand=changelog'
+            data = jira._get(endpoint)
             batch = data.get("issues", [])
             
             if not batch:  # No hay más issues
@@ -686,55 +613,6 @@ class TableroDatabase:
         except Exception as e:
             print(f"❌ Error obteniendo changelog para {issue_key}: {e}")
             return None
-    
-    def _obtener_issue_key_desde_id(self, issue_id: str) -> str:
-        """
-        Obtener la key real de Jira (REP-123) desde un ID numérico usando Jira API
-        Usa un cache simple en memoria para evitar llamadas repetidas
-        """
-        if not hasattr(self, '_cache_issue_ids'):
-            self._cache_issue_ids = {}
-        
-        # Si ya está en cache, retornarlo
-        if issue_id in self._cache_issue_ids:
-            return self._cache_issue_ids[issue_id]
-        
-        # Intentar obtener desde Jira API (con delay para respetar rate limits)
-        try:
-            import sys
-            import os
-            import time
-            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from src.jira_conexion import get_jira
-            
-            # Delay para respetar rate limits (100 requests/minuto = ~0.6s entre requests)
-            if hasattr(self, '_ultima_consulta_jira'):
-                tiempo_desde_ultima = time.time() - self._ultima_consulta_jira
-                if tiempo_desde_ultima < 0.6:
-                    time.sleep(0.6 - tiempo_desde_ultima)
-            
-            jira = get_jira()
-            
-            # La API de Jira acepta tanto IDs como keys
-            endpoint = f'issue/{issue_id}'
-            params = {'fields': 'key'}  # Solo pedir la key para ser rápido
-            data = jira._get(endpoint, params=params)
-            
-            self._ultima_consulta_jira = time.time()
-            
-            issue_key = data.get('key', '')
-            if issue_key:
-                self._cache_issue_ids[issue_id] = issue_key
-                # Mostrar progreso cada 100 consultas
-                if len(self._cache_issue_ids) % 100 == 0:
-                    print(f"      🔄 Obtenidas {len(self._cache_issue_ids)} keys desde Jira API...")
-                return issue_key
-        except Exception as e:
-            # Si falla (issue no existe, acceso denegado, etc.), guardar en cache vacío
-            self._cache_issue_ids[issue_id] = ''
-            return ''
-        
-        return ''
     
     def calcular_tiempos_estado(self, jira, issue_key):
         """Calcular tiempos de estado desde changelog"""
@@ -806,9 +684,6 @@ class TableroDatabase:
                 if pd.isna(transition_date):
                     continue
                 
-                # Convertir Timestamp a string para SQLite
-                transition_date_str = transition_date.strftime('%Y-%m-%d %H:%M:%S')
-                
                 author = hist.get('author', {})
                 changed_by = author.get('displayName', '') if author else ''
                 
@@ -829,7 +704,7 @@ class TableroDatabase:
                                     issue_key, from_status, to_status, transition_date,
                                     is_testing, is_progress, is_done, changed_by
                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (issue_key, from_status, to_status, transition_date_str,
+                            """, (issue_key, from_status, to_status, transition_date,
                                   is_testing, is_progress, is_done, changed_by))
                         except Exception as e:
                             print(f"        ⚠️ Error insertando transición para {issue_key}: {e}")
@@ -854,36 +729,9 @@ class TableroDatabase:
                 fields_data = issue.get('fields', {})
                 
                 try:
-                    # Obtener changelog individual para esta issue (con reintentos)
-                    changelog_data = None
-                    max_reintentos_changelog = 3
-                    reintentos_changelog = 0
-                    
-                    while reintentos_changelog < max_reintentos_changelog:
-                        try:
-                            changelog_data = self.obtener_changelog_issue(jira, issue_key)
-                            break  # Éxito, salir del loop
-                        except (ConnectionError, ConnectionResetError, TimeoutError) as e:
-                            reintentos_changelog += 1
-                            if reintentos_changelog < max_reintentos_changelog:
-                                print(f"        ⚠️ Error de conexión obteniendo changelog para {issue_key} (intento {reintentos_changelog}/{max_reintentos_changelog}), reintentando...")
-                                import time
-                                time.sleep(1)
-                                # Intentar reconectar
-                                try:
-                                    jira.ensure_ready()
-                                except:
-                                    from src.jira_conexion import get_jira
-                                    jira = get_jira()
-                            else:
-                                print(f"        ❌ Error de conexión obteniendo changelog para {issue_key} después de {max_reintentos_changelog} intentos: {e}")
-                                changelog_data = None
-                                break
-                    
+                    # Obtener changelog individual para esta issue
+                    changelog_data = self.obtener_changelog_issue(jira, issue_key)
                     if changelog_data:
-                        # AGREGAR EL CHANGELOG A LA ISSUE para que _procesar_transiciones pueda usarlo
-                        issue['changelog'] = changelog_data.get('changelog', {})
-                        
                         # Calcular tiempos de estado desde changelog
                         tiempo_resolucion, tiempo_en_progreso = self._calcular_tiempos_desde_changelog_completo(changelog_data)
                         
@@ -1072,7 +920,7 @@ class TableroDatabase:
         cursor = self.conn.cursor()
         cursor.execute("""
             SELECT COUNT(*) FROM issues 
-            WHERE parent_key = ? AND issuetype = 'Error'
+            WHERE parent_key = ? AND issuetype = 'Bug'
         """, (issue_key,))
         return cursor.fetchone()[0] or 0
     
@@ -1111,153 +959,36 @@ class TableroDatabase:
         else:
             return 'INTERNO'
     
-    def sincronizar_worklogs_tempo(self, fecha_desde: str = None):
-        """Sincronizar worklogs desde Tempo API (solo API, sin CSV)
+    def sincronizar_worklogs_tempo(self, dias_atras: int = 90):
+        """Sincronizar worklogs desde Tempo API + CSV histórico"""
+        print("🔄 Sincronizando worklogs desde Tempo API + CSV histórico...")
         
-        Args:
-            fecha_desde: Fecha desde la cual cargar worklogs. Si es None, usa la fecha más reciente
-                        de worklogs existentes o "2022-01-01" si no hay worklogs.
-        """
         cursor = self.conn.cursor()
-        
-        # Determinar fecha desde la cual cargar worklogs
-        if fecha_desde is None:
-            # Obtener la fecha más reciente de worklogs ya cargados
-            cursor.execute("SELECT MAX(start_date) as fecha_max FROM worklogs WHERE tempo_worklog_id NOT LIKE 'csv_%'")
-            resultado = cursor.fetchone()
-            fecha_max = resultado['fecha_max'] if resultado and resultado['fecha_max'] else None
-            
-            if fecha_max:
-                # Si hay worklogs existentes, cargar solo desde la fecha más reciente (solo nuevos)
-                from datetime import timedelta
-                fecha_max_dt = datetime.strptime(fecha_max, "%Y-%m-%d").date() if isinstance(fecha_max, str) else fecha_max
-                fecha_inicio = fecha_max_dt  # Cargar desde la última fecha (incluye ese día por si hay horas nuevas)
-                print(f"🔄 Sincronizando solo worklogs NUEVOS desde {fecha_inicio} (última fecha en BD)...")
-            else:
-                # Si no hay worklogs, cargar desde 2022 (primera vez)
-                fecha_inicio = datetime.strptime("2022-01-01", "%Y-%m-%d").date()
-                print(f"🔄 Sincronizando worklogs desde 2022 (primera carga completa)...")
-        else:
-            fecha_inicio = datetime.strptime(fecha_desde, "%Y-%m-%d").date()
-            print(f"🔄 Sincronizando worklogs desde {fecha_desde}...")
-        
-        # Limpiar worklogs antiguos de CSV antes de cargar desde Tempo
-        print("  🗑️  Limpiando worklogs antiguos de CSV...")
-        cursor.execute("DELETE FROM worklogs WHERE tempo_worklog_id LIKE 'csv_%'")
-        registros_eliminados = cursor.rowcount
-        if registros_eliminados > 0:
-            print(f"    ✅ {registros_eliminados:,} registros CSV antiguos eliminados")
-        self.conn.commit()
-        
         total_worklogs = 0
         
-        # Cargar datos de Tempo API desde fecha_inicio hasta hoy
+        # 1. Cargar datos de Tempo API (últimos 3 meses)
+        print("  📊 Cargando datos recientes desde Tempo API...")
         fecha_fin = datetime.now().date()
+        fecha_inicio = fecha_fin - timedelta(days=dias_atras)
         
-        print(f"  📅 Rango: {fecha_inicio} a {fecha_fin}")
         worklogs_tempo = self._consultar_tempo_api(fecha_inicio, fecha_fin)
         
         if worklogs_tempo:
-            # Deduplicación: agrupar por contenido real (issue + fecha + usuario + horas)
-            # Igual que se hacía con los CSVs - mantener solo uno por grupo de contenido
-            worklogs_por_contenido = {}  # clave: (issue_key, start_date, author_id, time_spent_hours) -> worklog con mejor tempoWorklogId
-            worklogs_insertados = 0  # Contador de worklogs realmente insertados
-            worklogs_duplicados = 0  # Contador de duplicados omitidos
-            worklogs_invalidos = 0  # Contador de worklogs con datos faltantes
-            
-            # Primera pasada: deduplicar por contenido
             for worklog in worklogs_tempo:
-                # Extraer datos del worklog (manejar None y campos alternativos)
-                author = worklog.get('author') or {}
-                author_id = author.get('accountId') if isinstance(author, dict) else None
+                author = worklog.get('author', {})
+                author_id = author.get('accountId')
                 
-                issue = worklog.get('issue') or {}
-                # issue.key puede no existir, intentar también issue.id o issue.key directamente
-                if isinstance(issue, dict):
-                    issue_key = issue.get('key') or ''
-                    # Verificar si la key es realmente una key válida (formato PROY-123) o solo un ID
-                    # Si la key no tiene formato válido (no contiene '-'), intentar obtenerla desde Jira API
-                    issue_id = str(issue.get('id') or '')
-                    
-                    # Si no hay key o la key parece ser un ID numérico (no tiene guión), intentar obtener la key real
-                    if not issue_key or (issue_id and issue_key == issue_id) or (not '-' in issue_key and issue_key.isdigit()):
-                        if issue_id:
-                            # Intentar obtener la key real desde Jira API (con cache simple)
-                            issue_key_real = self._obtener_issue_key_desde_id(issue_id)
-                            if issue_key_real:
-                                issue_key = issue_key_real
-                            elif not issue_key:
-                                # Si no se pudo obtener, usar el ID como fallback
-                                issue_key = issue_id
-                        elif not issue_key:
-                            issue_key = None
-                else:
-                    issue_key = None
+                issue = worklog.get('issue', {})
+                issue_key = issue.get('key')
                 
-                time_spent_seconds = worklog.get('timeSpentSeconds') or 0
-                try:
-                    time_spent_seconds = int(time_spent_seconds) if time_spent_seconds else 0
-                except (ValueError, TypeError):
-                    time_spent_seconds = 0
+                time_spent_seconds = worklog.get('timeSpentSeconds', 0)
                 time_spent_hours = time_spent_seconds / 3600.0 if time_spent_seconds else 0.0
                 
-                # startDate puede venir como 'startDate' o 'dateStarted'
-                start_date = worklog.get('startDate') or worklog.get('dateStarted') or ''
-                if start_date and isinstance(start_date, str):
-                    if 'T' in start_date:
-                        start_date = start_date.split('T')[0]
-                
-                # Validar datos críticos (author_id y start_date son obligatorios, issue_key puede ser opcional)
-                if not author_id or not start_date:
-                    worklogs_invalidos += 1
-                    # Debug: mostrar los primeros casos de datos faltantes
-                    if worklogs_invalidos <= 5:
-                        print(f"      ⚠️ Worklog sin datos: issue_key={issue_key}, author_id={author_id}, start_date={start_date}")
-                    continue
-                
-                # Si no hay issue_key, usar un valor por defecto para worklogs sin issue
-                if not issue_key:
-                    issue_key = "SIN_ISSUE"
-                
-                # Crear clave de contenido (igual que en CSV: issue + fecha + usuario + horas)
-                contenido_key = (issue_key, start_date, author_id, time_spent_hours)
-                
-                # Obtener tempoWorklogId (priorizar el real si existe)
-                tempo_worklog_id = worklog.get('tempoWorklogId') or worklog.get('id') or ''
-                # Convertir a string (puede venir como int)
-                tempo_worklog_id = str(tempo_worklog_id).strip() if tempo_worklog_id else ''
-                
-                # Si ya existe un worklog con el mismo contenido
-                if contenido_key in worklogs_por_contenido:
-                    worklogs_duplicados += 1
-                    # Mantener el que tiene tempoWorklogId real (no generado)
-                    existente = worklogs_por_contenido[contenido_key]
-                    existente_id = existente.get('_tempo_worklog_id') or ''
-                    existente_id_str = str(existente_id) if existente_id else ''
-                    if tempo_worklog_id and (not existente_id_str or existente_id_str.startswith('tempo_noid_')):
-                        # El nuevo tiene ID real y el existente no, reemplazar
-                        worklog['_tempo_worklog_id'] = tempo_worklog_id
-                        worklogs_por_contenido[contenido_key] = worklog
-                else:
-                    # Primer worklog con este contenido
-                    worklog['_tempo_worklog_id'] = tempo_worklog_id
-                    worklogs_por_contenido[contenido_key] = worklog
-            
-            # Segunda pasada: insertar worklogs deduplicados
-            contador_sin_id = 0
-            for contenido_key, worklog in worklogs_por_contenido.items():
-                issue_key, start_date, author_id, time_spent_hours = contenido_key
-                
-                time_spent_seconds = int(time_spent_hours * 3600)
+                start_date = worklog.get('startDate')
+                if 'T' in start_date:
+                    start_date = start_date.split('T')[0]
                 
                 tempo_account = self._extraer_tempo_account(worklog)
-                tempo_worklog_id = worklog.get('_tempo_worklog_id', '')
-                
-                # Si no hay tempoWorklogId, generar uno único basado en contenido
-                if not tempo_worklog_id:
-                    contador_sin_id += 1
-                    # Generar ID único usando issue + fecha + usuario + contador
-                    tempo_worklog_id = f"tempo_noid_{issue_key}_{start_date}_{author_id}_{contador_sin_id}"
                 
                 cursor.execute("""
                     INSERT OR REPLACE INTO worklogs (
@@ -1265,7 +996,7 @@ class TableroDatabase:
                         time_spent_hours, start_date, description, tempo_account, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, (
-                    tempo_worklog_id,
+                    worklog.get('tempoWorklogId', ''),
                     issue_key,
                     author_id,
                     time_spent_seconds,
@@ -1274,78 +1005,24 @@ class TableroDatabase:
                     worklog.get('description', ''),
                     tempo_account
                 ))
-                worklogs_insertados += 1
             
-            total_worklogs += worklogs_insertados
-            print(f"    ✅ {worklogs_insertados} worklogs de Tempo API insertados/actualizados")
-            if worklogs_duplicados > 0:
-                print(f"    ⚠️ {worklogs_duplicados} worklogs duplicados omitidos")
-            if worklogs_invalidos > 0:
-                print(f"    ⚠️ {worklogs_invalidos} worklogs omitidos por datos faltantes")
+            total_worklogs += len(worklogs_tempo)
+            print(f"    ✅ {len(worklogs_tempo)} worklogs de Tempo API cargados")
         else:
             print("    ⚠️ No se encontraron worklogs en Tempo API")
         
-        self.conn.commit()
-        print(f"✅ Total: {total_worklogs} worklogs sincronizados desde Tempo API")
-    
-    def sincronizar_worklogs_csv_solo(self):
-        """Sincronizar solo worklogs desde CSV histórico y actual"""
-        print("🔄 Sincronizando worklogs desde CSV histórico y actual...")
+        # 2. Cargar datos históricos desde CSV
+        print("  📊 Cargando datos históricos desde CSV...")
+        csv_path = "data/horas_historicas.csv"
         
-        cursor = self.conn.cursor()
-        
-        # Limpiar worklogs existentes de CSV antes de recargar (para evitar duplicados de sincronizaciones anteriores)
-        print("  🗑️  Limpiando worklogs existentes de CSV...")
-        cursor.execute("DELETE FROM worklogs WHERE tempo_worklog_id LIKE 'csv_%'")
-        registros_eliminados = cursor.rowcount
-        print(f"    ✅ {registros_eliminados} registros CSV antiguos eliminados")
-        self.conn.commit()
-        hist_path = "data/horas_historicas.csv"
-        actual_path = "data/horas_con_proyecto.csv"
-        
-        # Cargar y combinar CSVs igual que cargar_datos_principales
-        if os.path.exists(hist_path) and os.path.exists(actual_path):
+        if os.path.exists(csv_path):
             try:
-                df_hist = pd.read_csv(hist_path)
-                df_actual = pd.read_csv(actual_path)
-                min_fecha_actual = pd.to_datetime(df_actual["Fecha"], errors="coerce").min()
-                df_hist["Fecha_dt"] = pd.to_datetime(df_hist["Fecha"], errors="coerce")
-                df_hist = df_hist[df_hist["Fecha_dt"] < min_fecha_actual]
-                df_hist = df_hist.drop(columns="Fecha_dt")
-                df_csv = pd.concat([df_hist, df_actual], ignore_index=True)
+                df_historico = pd.read_csv(csv_path)
                 
-                # Deduplicar: si hay registros idénticos (issue+fecha+usuario+horas) con diferentes TempoWorklogId,
-                # mantener solo el primero (para evitar duplicados en la BD)
-                df_csv['_grupo_contenido'] = (
-                    df_csv['Issue'].astype(str) + '_' + 
-                    df_csv['Fecha'].astype(str) + '_' + 
-                    df_csv['Usuario'].astype(str) + '_' + 
-                    df_csv['Horas'].astype(str)
-                )
-                df_csv = df_csv.drop_duplicates(subset=['_grupo_contenido'], keep='first')
-                df_csv = df_csv.drop(columns='_grupo_contenido')
-            except Exception as e:
-                print(f"    ⚠️ Error combinando CSVs: {e}")
-                if os.path.exists(actual_path):
-                    df_csv = pd.read_csv(actual_path)
-                else:
-                    df_csv = pd.DataFrame()
-        elif os.path.exists(actual_path):
-            df_csv = pd.read_csv(actual_path)
-        elif os.path.exists(hist_path):
-            df_csv = pd.read_csv(hist_path)
-        else:
-            df_csv = pd.DataFrame()
-        
-        if not df_csv.empty:
-            try:
                 filas_procesadas = 0
                 filas_omitidas = 0
                 
-                # Generar IDs únicos para registros sin TempoWorklogId usando contador
-                contadores = {}
-                
-                for _, row in df_csv.iterrows():
+                for _, row in df_historico.iterrows():
                     # Validar datos requeridos
                     issue_key = str(row.get('Issue', '')).strip()
                     usuario = str(row.get('Usuario', '')).strip()
@@ -1357,16 +1034,71 @@ class TableroDatabase:
                         continue
                     
                     # Convertir datos del CSV al formato de la base
-                    tempo_wid = str(row.get('TempoWorklogId', '')).strip()
-                    if not tempo_wid or tempo_wid == 'nan':
-                        # Sin TempoWorklogId, usar contador secuencial para hacer único
-                        grupo = f"{issue_key}_{fecha}_{usuario}"
-                        if grupo not in contadores:
-                            contadores[grupo] = 0
-                        contadores[grupo] += 1
-                        tempo_worklog_id = f"csv_noid_{issue_key}_{fecha}_{usuario}_{contadores[grupo]}"
-                    else:
-                        tempo_worklog_id = f"csv_{tempo_wid}"
+                    tempo_worklog_id = f"csv_{row.get('TempoWorklogId', '')}_{fecha}_{usuario}"
+                    
+                    try:
+                        horas = float(row.get('Horas', 0))
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO worklogs (
+                                tempo_worklog_id, issue_key, author_id, time_spent_seconds,
+                                time_spent_hours, start_date, description, tempo_account, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        """, (
+                            tempo_worklog_id,
+                            issue_key,
+                            usuario,
+                            int(horas * 3600),  # Convertir horas a segundos
+                            horas,
+                            fecha,
+                            f"CSV histórico - {row.get('Proyecto', '')}",
+                            row.get('Cuenta', '')
+                        ))
+                        filas_procesadas += 1
+                    except (ValueError, TypeError) as e:
+                        print(f"    ⚠️ Error procesando fila CSV: {e}")
+                        filas_omitidas += 1
+                        continue
+                
+                total_worklogs += filas_procesadas
+                print(f"    ✅ {filas_procesadas} worklogs históricos del CSV cargados")
+                if filas_omitidas > 0:
+                    print(f"    ⚠️ {filas_omitidas} filas omitidas por datos faltantes")
+                
+            except Exception as e:
+                print(f"    ❌ Error cargando CSV histórico: {e}")
+        else:
+            print("    ⚠️ Archivo horas_historicas.csv no encontrado")
+        
+        self.conn.commit()
+        print(f"✅ Total: {total_worklogs} worklogs sincronizados (Tempo API + CSV histórico)")
+    
+    def sincronizar_worklogs_csv_solo(self):
+        """Sincronizar solo worklogs desde CSV histórico"""
+        print("🔄 Sincronizando worklogs desde CSV histórico...")
+        
+        cursor = self.conn.cursor()
+        csv_path = "data/horas_historicas.csv"
+        
+        if os.path.exists(csv_path):
+            try:
+                df_historico = pd.read_csv(csv_path)
+                
+                filas_procesadas = 0
+                filas_omitidas = 0
+                
+                for _, row in df_historico.iterrows():
+                    # Validar datos requeridos
+                    issue_key = str(row.get('Issue', '')).strip()
+                    usuario = str(row.get('Usuario', '')).strip()
+                    fecha = str(row.get('Fecha', '')).strip()
+                    
+                    # Saltar filas con datos faltantes críticos
+                    if not issue_key or not usuario or not fecha or issue_key == 'nan' or usuario == 'nan' or fecha == 'nan':
+                        filas_omitidas += 1
+                        continue
+                    
+                    # Convertir datos del CSV al formato de la base
+                    tempo_worklog_id = f"csv_{row.get('TempoWorklogId', '')}_{fecha}_{usuario}"
                     
                     try:
                         horas = float(row.get('Horas', 0))
@@ -1397,9 +1129,9 @@ class TableroDatabase:
                     print(f"    ⚠️ {filas_omitidas} filas omitidas por datos faltantes")
                 
             except Exception as e:
-                print(f"    ❌ Error cargando CSV: {e}")
+                print(f"    ❌ Error cargando CSV histórico: {e}")
         else:
-            print("    ⚠️ No se encontraron archivos CSV de horas")
+            print("    ⚠️ Archivo horas_historicas.csv no encontrado")
     
     def calcular_metricas_por_rn(self):
         """Calcular métricas pre-calculadas por RN"""
@@ -1433,7 +1165,7 @@ class TableroDatabase:
                 SELECT COUNT(*) as total,
                        SUM(CASE WHEN status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as resueltos
                 FROM issues 
-                WHERE epic_link = ? AND issuetype = 'Error'
+                WHERE epic_link = ? AND issuetype = 'Bug'
             """, (rn,))
             
             bug_result = cursor.fetchone()
@@ -1505,7 +1237,7 @@ class TableroDatabase:
             cursor.execute("""
                 SELECT COUNT(*) as total,
                        SUM(CASE WHEN status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as completados,
-                       SUM(CASE WHEN issuetype = 'Error' AND status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as bugs_resueltos
+                       SUM(CASE WHEN issuetype = 'Bug' AND status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as bugs_resueltos
                 FROM issues 
                 WHERE assignee_id = ?
             """, (account_id,))
@@ -1560,8 +1292,8 @@ class TableroDatabase:
             cursor.execute("""
                 SELECT COUNT(*) as total,
                        SUM(CASE WHEN status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as completados,
-                       SUM(CASE WHEN issuetype = 'Error' THEN 1 ELSE 0 END) as total_bugs,
-                       SUM(CASE WHEN issuetype = 'Error' AND status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as bugs_cerrados
+                       SUM(CASE WHEN issuetype = 'Bug' THEN 1 ELSE 0 END) as total_bugs,
+                       SUM(CASE WHEN issuetype = 'Bug' AND status IN ('Done', 'Closed', 'Resolved') THEN 1 ELSE 0 END) as bugs_cerrados
                 FROM issues 
                 WHERE project = ?
             """, (proyecto,))
@@ -1627,10 +1359,10 @@ class TableroDatabase:
             print("⚠️  Cargando issues básicos (rápido) + changelog por lotes (lento)...")
             self.sincronizar_issues_jira()
             
-            # 4. Sincronizar worklogs (solo NUEVAS horas desde la última sincronización)
+            # 4. Sincronizar worklogs
             paso_actual += 1
-            print(f"📋 Paso {paso_actual}/{pasos_totales}: Sincronizando worklogs desde Tempo API...")
-            self.sincronizar_worklogs_tempo(fecha_desde=None)  # None = solo nuevas horas
+            print(f"📋 Paso {paso_actual}/{pasos_totales}: Sincronizando worklogs...")
+            self.sincronizar_worklogs_csv_solo()
             
             # 5. Calcular métricas por RN
             paso_actual += 1
@@ -1682,7 +1414,7 @@ class TableroDatabase:
             return []
     
     def _consultar_tempo_api(self, fecha_inicio, fecha_fin):
-        """Consultar API de Tempo con paginación completa"""
+        """Consultar API de Tempo"""
         headers = {
             "Authorization": f"Bearer {self.tempo_token}",
             "Accept": "application/json"
@@ -1696,44 +1428,13 @@ class TableroDatabase:
         
         url = "https://api.tempo.io/4/worklogs"
         
-        all_worklogs = []
-        page = 1
-        
         try:
-            while True:
-                response = requests.get(url, headers=headers, params=params)
-                response.raise_for_status()
-                data = response.json()
-                
-                results = data.get("results", [])
-                all_worklogs.extend(results)
-                
-                # Verificar si hay más páginas
-                metadata = data.get("metadata", {})
-                next_url = metadata.get("next")
-                
-                if not next_url:
-                    break
-                
-                # Para la siguiente página, usar la URL completa del metadata
-                url = next_url
-                params = {}  # Limpiar params porque la URL ya los incluye
-                page += 1
-                
-                # Evitar loops infinitos (límite de seguridad)
-                if page > 1000:
-                    print(f"  ⚠️ Límite de páginas alcanzado (1000)")
-                    break
-            
-            if page > 1:
-                print(f"  📊 Consultadas {page} páginas, total: {len(all_worklogs)} worklogs")
-            
-            return all_worklogs
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("results", [])
         except Exception as e:
             print(f"❌ Error consultando Tempo: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                print(f"   Status Code: {e.response.status_code}")
-                print(f"   Response: {e.response.text[:500]}")
             return []
     
     def _get_jira_auth(self):

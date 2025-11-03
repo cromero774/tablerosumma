@@ -14,6 +14,13 @@ from src.utils.database_helper import DatabaseHelper
 def mostrar_entregables_ati(epicas_relevantes, issues_jira):
     """Mostrar la pestaña de Entregables ATI"""
     
+    # Mostrar fecha de última actualización
+    db_helper = DatabaseHelper()
+    db_helper.conectar()
+    fecha_actualizacion = db_helper.obtener_fecha_ultima_actualizacion()
+    db_helper.cerrar()
+    st.caption(f"🕒 **Última actualización:** {fecha_actualizacion}")
+    
     def normalize(s):
         if not s:
             return ""

@@ -25,6 +25,13 @@ def _safe_issue_key(issue):
 def mostrar_entregables_postventas(epicas_relevantes, issues_jira):
     """Mostrar la pestaña de Entregables Postventas"""
     
+    # Mostrar fecha de última actualización
+    db_helper = DatabaseHelper()
+    db_helper.conectar()
+    fecha_actualizacion = db_helper.obtener_fecha_ultima_actualizacion()
+    db_helper.cerrar()
+    st.caption(f"🕒 **Última actualización:** {fecha_actualizacion}")
+    
     EPIC_LINK_CAMPO = "customfield_10016"
 
     meses_orden = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']

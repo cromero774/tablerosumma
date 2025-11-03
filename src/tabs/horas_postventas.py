@@ -11,6 +11,13 @@ from src.utils.database_helper import DatabaseHelper
 def mostrar_horas_postventas(df):
     """Mostrar la pestaña de Horas Postventas"""
     
+    # Mostrar fecha de última actualización
+    db_helper = DatabaseHelper()
+    db_helper.conectar()
+    fecha_actualizacion = db_helper.obtener_fecha_ultima_actualizacion()
+    db_helper.cerrar()
+    st.caption(f"🕒 **Última actualización:** {fecha_actualizacion}")
+    
     # Usar directamente el df que viene de cargar_datos_principales() (igual que velocidad_devs)
     # Este df ya tiene todos los datos procesados (mapeo de usuarios, proyecto lógico, etc.)
     
@@ -113,20 +120,22 @@ def mostrar_horas_postventas(df):
             
             
             # 2) Usuarios que cargaron no-internal por área (en ese mes)
-            users_post = set(df_mes[df_mes["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL)]["Usuario"])
-            users_ati = set(df_mes[df_mes["Proyecto_logico"].isin(ATI_NON_INTERNAL)]["Usuario"])
+            # Incluir también horas sin proyecto lógico (para IDs numéricos)
+            mask_post = df_mes["Proyecto_logico"].isna() | df_mes["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL)
+            mask_ati = df_mes["Proyecto_logico"].isna() | df_mes["Proyecto_logico"].isin(ATI_NON_INTERNAL)
+            
+            users_post = set(df_mes[mask_post]["Usuario"])
+            users_ati = set(df_mes[mask_ati]["Usuario"])
             users_both = users_post & users_ati
             
             # 3) Armar vista para Postventas
             # POSTVENTAS:
             # - Usuarios BOTH: TODAS sus filas (ATI + POST + INTERNO)
-            # - Usuarios solo POST: filas POST + INTERNO
+            # - Usuarios solo POST: filas POST + INTERNO + horas sin proyecto
+            mask_postventas_view = df_mes["Proyecto_logico"].isna() | (df_mes["Proyecto_logico"] == "") | df_mes["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL + [INTERNAL])
             df_vista = df_mes[
                 (df_mes["Usuario"].isin(users_both)) |
-                (
-                    df_mes["Usuario"].isin(users_post) &
-                    (df_mes["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL + [INTERNAL]))
-                )
+                (df_mes["Usuario"].isin(users_post) & mask_postventas_view)
             ]
             
             # === ALERTA: TEM NO MAPEADAS ===
@@ -212,13 +221,18 @@ def mostrar_horas_postventas(df):
                 if df_m.empty:
                     continue
                 
-                has_post = df_m["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL).any()
-                has_ati = df_m["Proyecto_logico"].isin(ATI_NON_INTERNAL).any()
+                # Incluir también horas sin proyecto lógico
+                mask_post = df_m["Proyecto_logico"].isna() | df_m["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL)
+                mask_ati = df_m["Proyecto_logico"].isna() | df_m["Proyecto_logico"].isin(ATI_NON_INTERNAL)
+                
+                has_post = mask_post.any()
+                has_ati = mask_ati.any()
                 
                 if has_post and has_ati:
                     bolsas.append(df_m)  # si trabajó en ambas, mostrar todo
                 elif has_post:
-                    bolsas.append(df_m[df_m["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL + [INTERNAL])])
+                    mask_postventas = df_m["Proyecto_logico"].isna() | (df_m["Proyecto_logico"] == "") | df_m["Proyecto_logico"].isin(POSTVENTA_NON_INTERNAL + [INTERNAL])
+                    bolsas.append(df_m[mask_postventas])
                 # NOTA: Si no tiene POST, no se agrega nada (solo mostrar horas POSTVENTA)
             
             df_user_vista = pd.concat(bolsas, ignore_index=True) if bolsas else pd.DataFrame(columns=df_user.columns)
@@ -260,5 +274,6 @@ def mostrar_horas_postventas(df):
                 st.subheader(f"Horas cargadas por {usuario_seleccionado} (últimos 6 meses)")
                 st.dataframe(resumen_meses[["Mes", "Horas"]], hide_index=True, use_container_width=True)
                 st.bar_chart(resumen_meses.set_index("anio_mes")["Horas"], use_container_width=True)
-    else:
+    
+    if df.empty:
         st.warning("No hay datos para el período seleccionado.")

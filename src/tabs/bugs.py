@@ -21,6 +21,13 @@ def mostrar_bugs(epicas_relevantes, issues_jira):
     
     st.header("🐛 Bugs - Análisis por Mes")
     st.caption("📊 Métricas de bugs del proyecto BUG con clasificación por tipo y épicas")
+    
+    # Mostrar fecha de última actualización
+    db_helper = DatabaseHelper()
+    db_helper.conectar()
+    fecha_actualizacion = db_helper.obtener_fecha_ultima_actualizacion()
+    db_helper.cerrar()
+    st.caption(f"🕒 **Última actualización:** {fecha_actualizacion}")
 
     # ==========================
     # FUNCIONES AUXILIARES

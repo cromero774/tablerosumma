@@ -5,6 +5,7 @@ Configuración y constantes del Tablero SUMMA
 import os
 import json
 import pandas as pd
+import streamlit as st
 from datetime import datetime, timedelta
 from src.cache_datos import cargar_df_cache, guardar_df_cache, cargar_json_cache, guardar_json_cache
 
@@ -72,6 +73,15 @@ def _data_path(filename):
     """Helper para obtener rutas de archivos de datos"""
     return os.path.join(os.path.dirname(__file__), '..', '..', 'data', filename)
 
+def cargar_mapeo_usuarios():
+    """Cargar mapeo de account IDs a nombres desde accountid_to_name.json"""
+    import json
+    accountid_path = _data_path("accountid_to_name.json")
+    if os.path.exists(accountid_path):
+        with open(accountid_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
 def cache_path(nombre, ext):
     """Helper para obtener rutas de cache"""
     cache_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'cache')
@@ -96,11 +106,56 @@ def obtener_proyecto_logico(row):
             return 'TECH LAB - INTERNO'
         return p
     
+    # Si proyecto es None o vacío o "Desconocido", intentar inferirlo desde la key del issue
+    proyecto_str = str(proyecto).strip() if proyecto and pd.notna(proyecto) else ""
+    if not proyecto or (isinstance(proyecto, float) and pd.isna(proyecto)) or proyecto_str == "Desconocido" or proyecto_str == "":
+        if issue:
+            issue_str = str(issue).strip()
+            # Si el issue tiene formato de key (REP-123, TAL-456, etc.), extraer el prefijo
+            if '-' in issue_str:
+                proyecto_key = issue_str.split('-')[0]
+                # Mapear keys comunes a proyectos
+                if proyecto_key == 'ATI':
+                    proyecto = 'ATI'
+                elif proyecto_key in ['REP', 'TAL']:
+                    proyecto = proyecto_key
+                elif proyecto_key == 'AFUS':
+                    proyecto = 'AFUS'
+                elif proyecto_key == 'BUG':
+                    proyecto = 'BUG'
+                elif proyecto_key == 'VI':
+                    # VI parece ser otro proyecto
+                    proyecto = 'VI'
+                else:
+                    # Si no reconocemos el prefijo, intentar usar el prefijo como proyecto
+                    proyecto = proyecto_key
+            # Si el issue es solo un ID numérico, no podemos inferir el proyecto sin llamar a Jira API
+            # En este caso, dejamos proyecto como None y retornamos None para que no se filtre
+            # (las horas se mostrarán pero sin proyecto lógico asignado)
+    
     # Antes de junio 2025: ignorar TEMPO WORKLOAD, resto usar proyecto normalizado
+    # Pero si proyecto viene del issue key, mapearlo a nombre de proyecto lógico
     if fecha_dt and fecha_dt < pd.Timestamp("2025-06-01"):
         if proyecto == "TEMPO WORKLOAD":
             return None
-        return normalizar_proyecto(proyecto)
+        
+        # Mapear proyectos desde issue key a nombres de proyecto lógico
+        if issue and isinstance(issue, str):
+            if issue.startswith('ATI-'):
+                return 'AFUs ATI'
+            elif issue.startswith('REP-'):
+                return 'REPUESTOS MAIPU'
+            elif issue.startswith('TAL-'):
+                return 'TALLER - MAIPÚ -'
+            elif issue.startswith('AFUS-'):
+                return 'AFUS'
+        
+        # Si no se pudo mapear desde issue, usar proyecto normalizado
+        # Si proyecto fue inferido desde issue key, normalizarlo; si no hay proyecto, retornar None
+        if proyecto:
+            return normalizar_proyecto(proyecto)
+        # Si no hay proyecto y no pudimos inferirlo desde issue, retornar None
+        return None
     
     # Desde junio 2025: si es TEM-, usar el mapeo
     if issue and issue.startswith("TEM-"):
@@ -133,39 +188,147 @@ def obtener_proyecto_logico(row):
     
     return normalizar_proyecto(proyecto)
 
+def obtener_proyecto_logico_vectorizado(df):
+    """
+    Versión vectorizada de obtener_proyecto_logico
+    Procesa todas las filas de una vez usando operaciones de pandas
+    """
+    # Inicializar columna resultado
+    resultado = pd.Series(index=df.index, dtype=object)
+    
+    # Convertir fechas a datetime una sola vez
+    fechas = pd.to_datetime(df["Fecha"], errors='coerce')
+    es_antes_junio_2025 = fechas < pd.Timestamp("2025-06-01")
+    
+    # Convertir a string para operaciones
+    proyectos = df["Proyecto"].astype(str).fillna("")
+    issues = df["Issue"].astype(str).fillna("")
+    
+    # Función de normalización
+    def normalizar_proyecto(p):
+        if p in ['CORETECH', 'Core Tech', 'TECHLAB']:
+            return 'TECH LAB - INTERNO'
+        return p
+    
+    # ========== ANTES DE JUNIO 2025 ==========
+    mask_antes_junio = es_antes_junio_2025
+    
+    # TEMPO WORKLOAD antes de junio: None
+    mask_tempo_antes = mask_antes_junio & (proyectos == "TEMPO WORKLOAD")
+    resultado[mask_tempo_antes] = None
+    
+    # Mapear desde issue key (antes de junio)
+    mask_ati_antes = mask_antes_junio & issues.str.startswith('ATI-', na=False)
+    resultado[mask_ati_antes] = 'AFUs ATI'
+    
+    mask_rep_antes = mask_antes_junio & issues.str.startswith('REP-', na=False)
+    resultado[mask_rep_antes] = 'REPUESTOS MAIPU'
+    
+    mask_tal_antes = mask_antes_junio & issues.str.startswith('TAL-', na=False)
+    resultado[mask_tal_antes] = 'TALLER - MAIPÚ -'
+    
+    mask_afus_antes = mask_antes_junio & issues.str.startswith('AFUS-', na=False)
+    resultado[mask_afus_antes] = 'AFUS'
+    
+    # Resto antes de junio: usar proyecto normalizado
+    mask_resto_antes = mask_antes_junio & resultado.isna()
+    proyectos_resto_antes = proyectos[mask_resto_antes]
+    resultado[mask_resto_antes] = proyectos_resto_antes.apply(normalizar_proyecto)
+    
+    # ========== DESDE JUNIO 2025 ==========
+    mask_desde_junio = ~es_antes_junio_2025
+    
+    # TEM- desde junio: usar MAPEO_TEM
+    mask_tem = mask_desde_junio & issues.str.startswith("TEM-", na=False)
+    issues_tem = issues[mask_tem]
+    
+    # Mapear TEM- usando vectorización
+    for tem_key, (cuenta, resumen) in MAPEO_TEM.items():
+        mask_tem_key = mask_tem & (issues == tem_key)
+        if cuenta == "CORE-TECH":
+            resultado[mask_tem_key] = "TECH LAB - INTERNO"
+        elif cuenta == "MP-MAIPU-SUMMA":
+            resultado[mask_tem_key] = RESUMEN_A_PROYECTO.get(resumen, "OTRO")
+        else:
+            proyectos_tem = proyectos[mask_tem_key]
+            resultado[mask_tem_key] = proyectos_tem.apply(normalizar_proyecto)
+    
+    # TEMPO WORKLOAD desde junio: mapear desde issue si es TEM-
+    mask_tempo_junio = mask_desde_junio & (proyectos == "TEMPO WORKLOAD") & issues.str.startswith("TEM-", na=False)
+    issues_tempo = issues[mask_tempo_junio]
+    for tem_key, (cuenta, resumen) in MAPEO_TEM.items():
+        mask_tempo_key = mask_tempo_junio & (issues == tem_key)
+        if cuenta == "CORE-TECH":
+            resultado[mask_tempo_key] = "TECH LAB - INTERNO"
+        else:
+            if resumen in RESUMEN_A_PROYECTO:
+                resultado[mask_tempo_key] = RESUMEN_A_PROYECTO[resumen]
+            else:
+                resultado[mask_tempo_key] = resumen
+    
+    # RESUMEN_A_PROYECTO desde junio
+    mask_resumen = mask_desde_junio & resultado.isna()
+    if mask_resumen.any():
+        proyectos_resumen = proyectos[mask_resumen]
+        proyectos_mapeados = proyectos_resumen.map(RESUMEN_A_PROYECTO)
+        mask_mapeados = mask_resumen & proyectos_mapeados.notna()
+        resultado[mask_mapeados] = proyectos_mapeados[mask_mapeados]
+    
+    # Normalizar resto desde junio
+    mask_resto_junio = mask_desde_junio & resultado.isna()
+    proyectos_resto_junio = proyectos[mask_resto_junio]
+    resultado[mask_resto_junio] = proyectos_resto_junio.apply(normalizar_proyecto)
+    
+    # Si proyecto es None o vacío, intentar inferir desde issue key
+    mask_sin_proyecto = (resultado.isna() | (resultado == "")) & (issues != "")
+    if mask_sin_proyecto.any():
+        issues_sin_proyecto = issues[mask_sin_proyecto]
+        
+        # Extraer prefijo del issue
+        prefijos = issues_sin_proyecto.str.split('-').str[0]
+        
+        # Mapear prefijos comunes
+        mask_ati_prefijo = prefijos == 'ATI'
+        resultado[mask_sin_proyecto & mask_ati_prefijo] = 'ATI'
+        
+        mask_rep_prefijo = prefijos.isin(['REP', 'TAL'])
+        resultado[mask_sin_proyecto & mask_rep_prefijo] = prefijos[mask_sin_proyecto & mask_rep_prefijo]
+        
+        mask_afus_prefijo = prefijos == 'AFUS'
+        resultado[mask_sin_proyecto & mask_afus_prefijo] = 'AFUS'
+        
+        mask_bug_prefijo = prefijos == 'BUG'
+        resultado[mask_sin_proyecto & mask_bug_prefijo] = 'BUG'
+    
+    return resultado
+
 def cargar_datos_principales():
-    """Cargar datos principales replicando la lógica del original"""
-    import json
-    import streamlit as st
+    """Cargar datos principales desde la base de datos (igual lógica que CSV pero desde BD)"""
+    from src.utils.database_helper import DatabaseHelper
     
     try:
         # Cargar mapeo de usuarios
-        accountid_path = _data_path("accountid_to_name.json")
-        with open(accountid_path, "r", encoding="utf-8") as f:
-            accountid_to_name = json.load(f)
+        accountid_to_name = cargar_mapeo_usuarios()
         
-        # Cargar datos históricos y actuales
-        hist_path = str(_data_path("horas_historicas.csv"))
-        actual_path = str(_data_path("horas_con_proyecto.csv"))
+        # Cargar datos desde la base de datos
+        db = DatabaseHelper()
+        db.conectar()
+        df = db.obtener_worklogs()
+        db.cerrar()
         
-        if os.path.exists(hist_path):
-            df_hist = pd.read_csv(hist_path)
-            df_actual = pd.read_csv(actual_path)
-            min_fecha_actual = pd.to_datetime(df_actual["Fecha"], errors="coerce").min()
-            df_hist["Fecha_dt"] = pd.to_datetime(df_hist["Fecha"], errors="coerce")
-            df_hist = df_hist[df_hist["Fecha_dt"] < min_fecha_actual]
-            df_hist = df_hist.drop(columns="Fecha_dt")
-            df = pd.concat([df_hist, df_actual], ignore_index=True)
-        else:
-            df = pd.read_csv(actual_path)
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Convertir Fecha a string en formato 'YYYY-MM-DD' (igual que CSV)
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
         
         # Aplicar mapeo de account IDs a nombres
         df["Usuario"] = df["Usuario"].map(accountid_to_name).fillna(df["Usuario"])
         
-        # Crear columna Proyecto_logico
-        df["Proyecto_logico"] = df.apply(obtener_proyecto_logico, axis=1)
-        df = df[df["Proyecto_logico"].notna()]
-        
+        # Crear columna Proyecto_logico (VECTORIZADO)
+        df["Proyecto_logico"] = obtener_proyecto_logico_vectorizado(df)
+        # NO filtrar por Proyecto_logico.notna() aquí - dejar que cada pestaña decida
+        # Esto permite que las horas se muestren incluso si el proyecto no se puede determinar
         
         return df
         
@@ -237,6 +400,12 @@ def configurar_sidebar():
     with st.sidebar.expander("📊 Gantt", expanded=False):
         if st.button("📊 Gantt", key="btn_gantt", use_container_width=True):
             st.session_state.opcion_actual = "Gantt"
+            st.rerun()
+    
+    # Puntos Históricos
+    with st.sidebar.expander("📈 Puntos Históricos", expanded=False):
+        if st.button("📈 Puntos Históricos", key="btn_puntos_historicos", use_container_width=True):
+            st.session_state.opcion_actual = "Puntos Históricos"
             st.rerun()
     
     # Mostrar la opción seleccionada actualmente

@@ -29,6 +29,7 @@ from src.tabs.historico_ati import mostrar_historico_ati
 from src.tabs.bugs import mostrar_bugs
 from src.tabs.velocidad_devs import mostrar_velocidad_devs
 from src.tabs.gantt import mostrar_gantt
+from src.tabs.puntos_historicos import mostrar_puntos_historicos
 
 # Importar utilidades
 from src.utils.configuracion import (
@@ -176,6 +177,8 @@ def mostrar_contenido(opcion, df, epicas_relevantes, issues_jira):
         mostrar_velocidad_devs(df, issues_jira)
     elif opcion == "Gantt":
         mostrar_gantt(issues_jira)
+    elif opcion == "Puntos Históricos":
+        mostrar_puntos_historicos()
 
 if __name__ == "__main__":
     main()
