@@ -209,13 +209,17 @@ class JiraAPI:
 
         return self._get(path, params, label or "GET")
 
-jira = JiraAPI()
+_jira_instance = None
 
 def get_jira() -> JiraAPI:
-    return jira
+    """Obtener instancia de JiraAPI (lazy initialization)"""
+    global _jira_instance
+    if _jira_instance is None:
+        _jira_instance = JiraAPI()
+    return _jira_instance
 
 def ensure_ready() -> None:
-    jira.ensure_ready()
+    get_jira().ensure_ready()
 
 
 
