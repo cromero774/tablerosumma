@@ -485,10 +485,16 @@ def mostrar_vacaciones():
                         )
                     
                     with col_edit2:
+                        # Ajustar el valor por defecto de "hasta" si la nueva "desde" es mayor
+                        # para evitar que el valor por defecto quede fuera del rango permitido
+                        valor_hasta_por_defecto = hasta
+                        if nueva_fecha_desde and nueva_fecha_desde > hasta:
+                            valor_hasta_por_defecto = nueva_fecha_desde
+                        
                         # Usar la fecha desde como mínimo para fecha hasta
                         nueva_fecha_hasta = st.date_input(
                             "Nueva fecha hasta:",
-                            value=hasta,
+                            value=valor_hasta_por_defecto,
                             min_value=nueva_fecha_desde,
                             key="nueva_fecha_hasta_opcion"
                         )

@@ -443,6 +443,12 @@ def configurar_sidebar():
             st.session_state.opcion_actual = "Puntos Históricos"
             st.rerun()
     
+    # Vacaciones
+    with st.sidebar.expander("🏖️ Vacaciones", expanded=False):
+        if st.button("🏖️ Vacaciones", key="btn_vacaciones", use_container_width=True):
+            st.session_state.opcion_actual = "Vacaciones"
+            st.rerun()
+    
     # Mostrar la opción seleccionada actualmente
     opcion = st.session_state.opcion_actual
     st.sidebar.markdown(f"**Seleccionado:** {opcion}")
