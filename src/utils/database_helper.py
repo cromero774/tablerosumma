@@ -577,3 +577,199 @@ class DatabaseHelper:
         
         return {row["key"]: row["status"] for row in rows}
 
+    # ============================
+    # MÓDULO DE VACACIONES
+    # ============================
+
+    def _ensure_connection(self):
+        if not self.conn:
+            self.conectar()
+
+    def contar_vacaciones_totales(self) -> int:
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) AS cantidad FROM vacaciones")
+        row = cursor.fetchone()
+        return row["cantidad"] if row else 0
+
+    def obtener_vacaciones_agrupadas(self) -> List[Dict[str, Any]]:
+        """Obtener vacaciones agrupadas por usuario con el formato utilizado por la pestaña."""
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        query = """
+            SELECT 
+                v.usuario,
+                v.opcion,
+                v.fecha_desde,
+                v.fecha_hasta,
+                v.fecha_creacion,
+                COALESCE(o.observaciones, '') AS observaciones
+            FROM vacaciones v
+            LEFT JOIN vacaciones_observaciones o ON o.usuario = v.usuario
+            ORDER BY v.usuario, v.opcion
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        agrupado: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            usuario = row["usuario"]
+            if usuario not in agrupado:
+                agrupado[usuario] = {
+                    "usuario": usuario,
+                    "opciones": [],
+                    "observaciones": row["observaciones"],
+                    "fecha_registro": row["fecha_creacion"]
+                }
+            agrupado[usuario]["opciones"].append({
+                "desde": row["fecha_desde"],
+                "hasta": row["fecha_hasta"]
+            })
+
+        # Asegurarse de que cada usuario tenga lista de opciones
+        for entry in agrupado.values():
+            entry["opciones"] = entry.get("opciones", [])[:3]
+
+        return list(agrupado.values())
+
+    def obtener_vacaciones_usuario(self, usuario: str) -> List[Dict[str, Any]]:
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT opcion, fecha_desde, fecha_hasta
+            FROM vacaciones
+            WHERE usuario = ?
+            ORDER BY opcion
+            """,
+            (usuario,)
+        )
+        rows = cursor.fetchall()
+        return [{"opcion": row["opcion"], "desde": row["fecha_desde"], "hasta": row["fecha_hasta"]} for row in rows]
+
+    def agregar_vacaciones(self, usuario: str, opciones: List[Dict[str, str]], observaciones: Optional[str] = None):
+        """Agregar nuevas opciones de vacaciones para un usuario."""
+        if not opciones:
+            return
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+
+        cursor.execute("SELECT opcion FROM vacaciones WHERE usuario = ? ORDER BY opcion", (usuario,))
+        existentes = [row["opcion"] for row in cursor.fetchall()]
+        if len(existentes) >= 3:
+            raise ValueError("El usuario ya tiene el máximo de 3 opciones registradas")
+
+        siguiente_opcion = len(existentes) + 1
+        for opcion in opciones:
+            if siguiente_opcion > 3:
+                break
+            cursor.execute(
+                """
+                INSERT INTO vacaciones (usuario, opcion, fecha_desde, fecha_hasta)
+                VALUES (?, ?, ?, ?)
+                """,
+                (usuario, siguiente_opcion, opcion["desde"], opcion["hasta"])
+            )
+            siguiente_opcion += 1
+
+        if observaciones is not None:
+            self.guardar_observaciones_vacaciones(usuario, observaciones, commit=False)
+
+        self.conn.commit()
+
+    def guardar_observaciones_vacaciones(self, usuario: str, observaciones: str, commit: bool = True):
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO vacaciones_observaciones (usuario, observaciones, ultima_actualizacion)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(usuario) DO UPDATE SET observaciones = excluded.observaciones, ultima_actualizacion = CURRENT_TIMESTAMP
+            """,
+            (usuario, observaciones)
+        )
+        if commit:
+            self.conn.commit()
+
+    def actualizar_vacacion(self, usuario: str, opcion: int, fecha_desde: str, fecha_hasta: str):
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE vacaciones
+            SET fecha_desde = ?, fecha_hasta = ?, ultima_actualizacion = CURRENT_TIMESTAMP
+            WHERE usuario = ? AND opcion = ?
+            """,
+            (fecha_desde, fecha_hasta, usuario, opcion)
+        )
+        self.conn.commit()
+
+    def eliminar_vacacion(self, usuario: str, opcion: int):
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM vacaciones WHERE usuario = ? AND opcion = ?", (usuario, opcion))
+        self._reindexar_vacaciones_usuario(usuario, cursor)
+        self.conn.commit()
+
+    def eliminar_todas_vacaciones(self, usuario: str):
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM vacaciones WHERE usuario = ?", (usuario,))
+        cursor.execute("DELETE FROM vacaciones_observaciones WHERE usuario = ?", (usuario,))
+        self.conn.commit()
+
+    def _reindexar_vacaciones_usuario(self, usuario: str, cursor: Optional[sqlite3.Cursor] = None):
+        interno = cursor is None
+        if interno:
+            self._ensure_connection()
+            cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM vacaciones WHERE usuario = ? ORDER BY opcion", (usuario,))
+        rows = cursor.fetchall()
+        for idx, row in enumerate(rows, start=1):
+            cursor.execute(
+                "UPDATE vacaciones SET opcion = ?, ultima_actualizacion = CURRENT_TIMESTAMP WHERE id = ?",
+                (idx, row["id"])
+            )
+        if interno:
+            self.conn.commit()
+
+    # ============================
+    # USUARIOS PARA VACACIONES
+    # ============================
+
+    def obtener_usuarios_vacaciones(self) -> List[Dict[str, Any]]:
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT nombre, lider, dias_vacaciones FROM usuarios_vacaciones ORDER BY nombre")
+        rows = cursor.fetchall()
+        return [
+            {
+                "nombre": row["nombre"],
+                "lider": row["lider"],
+                "dias_vacaciones": row["dias_vacaciones"]
+            }
+            for row in rows
+        ]
+
+    def contar_usuarios_vacaciones(self) -> int:
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) AS cantidad FROM usuarios_vacaciones")
+        row = cursor.fetchone()
+        return row["cantidad"] if row else 0
+
+    def insertar_usuarios_vacaciones_bulk(self, usuarios: List[Dict[str, Any]]):
+        if not usuarios:
+            return
+        self._ensure_connection()
+        cursor = self.conn.cursor()
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO usuarios_vacaciones (nombre, lider, dias_vacaciones)
+            VALUES (?, ?, ?)
+            """,
+            [(u["nombre"], u.get("lider"), u.get("dias_vacaciones")) for u in usuarios]
+        )
+        self.conn.commit()
+
+

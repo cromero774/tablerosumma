@@ -10,65 +10,81 @@ from datetime import datetime, date, timedelta
 import pandas as pd
 import io
 
+from src.utils.database_helper import DatabaseHelper
+
 def cargar_datos_usuarios():
-    """Cargar datos de usuarios desde JSON"""
-    usuarios_path = "data/usuarios_vacaciones.json"
-    if os.path.exists(usuarios_path):
-        with open(usuarios_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return []
+    """Cargar datos de usuarios desde la base de datos."""
+    with DatabaseHelper() as db:
+        _migrar_usuarios_desde_json(db)
+        return db.obtener_usuarios_vacaciones()
 
 def cargar_vacaciones_registradas():
-    """Cargar vacaciones registradas desde JSON"""
+    """Cargar vacaciones registradas desde la base de datos."""
+    with DatabaseHelper() as db:
+        _migrar_vacaciones_desde_json(db)
+        return db.obtener_vacaciones_agrupadas()
+
+
+def _migrar_vacaciones_desde_json(db: DatabaseHelper):
+    """Migrar datos del JSON legacy a la base de datos si aún no se migraron."""
     vacaciones_path = "data/vacaciones_registradas.json"
-    if os.path.exists(vacaciones_path):
+    if not os.path.exists(vacaciones_path):
+        return
+
+    try:
+        if db.contar_vacaciones_totales() > 0:
+            return
+
         with open(vacaciones_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            # Migrar formato antiguo al nuevo formato (si es necesario)
-            vacaciones_por_usuario = {}
-            for vac in data:
-                usuario = vac.get("usuario")
-                if not usuario:
-                    continue
-                
-                # Si el usuario ya está en el diccionario, agregar su opción
-                if usuario not in vacaciones_por_usuario:
-                    vacaciones_por_usuario[usuario] = {
-                        "usuario": usuario,
-                        "opciones": [],
-                        "observaciones": vac.get("observaciones", ""),
-                        "fecha_registro": vac.get("fecha_registro", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    }
-                
-                # Migrar opcion_principal a opciones
-                if "opcion_principal" in vac:
-                    opcion = vac["opcion_principal"]
-                    # Limpiar campos obsoletos
-                    if "cambiable" in opcion:
-                        del opcion["cambiable"]
-                    vacaciones_por_usuario[usuario]["opciones"].append(opcion)
-                
-                # Si ya tiene opciones (formato nuevo), usarlas directamente
-                if "opciones" in vac and "opcion_principal" not in vac:
-                    vacaciones_por_usuario[usuario]["opciones"] = vac.get("opciones", [])
-                    vacaciones_por_usuario[usuario]["observaciones"] = vac.get("observaciones", "")
-                    vacaciones_por_usuario[usuario]["fecha_registro"] = vac.get("fecha_registro", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            
-            # Convertir diccionario a lista y limitar a 3 opciones por usuario
-            resultado = []
-            for usuario, vac_data in vacaciones_por_usuario.items():
-                vac_data["opciones"] = vac_data["opciones"][:3]  # Máximo 3 opciones
-                resultado.append(vac_data)
-            
-            return resultado
-    return []
 
-def guardar_vacaciones_registradas(vacaciones):
-    """Guardar vacaciones registradas en JSON"""
-    vacaciones_path = "data/vacaciones_registradas.json"
-    os.makedirs("data", exist_ok=True)
-    with open(vacaciones_path, 'w', encoding='utf-8') as f:
-        json.dump(vacaciones, f, ensure_ascii=False, indent=2)
+        for vac in data:
+            usuario = vac.get("usuario")
+            if not usuario:
+                continue
+
+            opciones = []
+            if "opciones" in vac:
+                opciones = vac.get("opciones", [])
+            elif "opcion_principal" in vac and vac["opcion_principal"]:
+                opcion = vac["opcion_principal"]
+                if "cambiable" in opcion:
+                    opcion = {k: v for k, v in opcion.items() if k != "cambiable"}
+                opciones = [opcion]
+
+            observaciones = vac.get("observaciones", "")
+            if opciones:
+                db.agregar_vacaciones(usuario, opciones, observaciones)
+            elif observaciones:
+                db.guardar_observaciones_vacaciones(usuario, observaciones)
+
+        # Renombrar archivo para no volver a migrar
+        backup_path = vacaciones_path + ".bak"
+        os.replace(vacaciones_path, backup_path)
+        st.success("✅ Vacaciones migradas a la base de datos y archivo legado renombrado a vacaciones_registradas.json.bak")
+    except Exception as e:
+        st.warning(f"⚠️ No se pudo migrar el archivo de vacaciones legado: {e}")
+
+
+def _migrar_usuarios_desde_json(db: DatabaseHelper):
+    """Migrar usuarios desde el archivo JSON legacy a la tabla correspondiente."""
+    usuarios_path = "data/usuarios_vacaciones.json"
+    if not os.path.exists(usuarios_path):
+        return
+
+    try:
+        if db.contar_usuarios_vacaciones() > 0:
+            return
+
+        with open(usuarios_path, 'r', encoding='utf-8') as f:
+            usuarios = json.load(f)
+
+        db.insertar_usuarios_vacaciones_bulk(usuarios)
+        backup_path = usuarios_path + ".bak"
+        os.replace(usuarios_path, backup_path)
+        st.success("✅ Usuarios de vacaciones migrados a la base de datos. Archivo legado renombrado a usuarios_vacaciones.json.bak")
+    except Exception as e:
+        st.warning(f"⚠️ No se pudo migrar el archivo de usuarios de vacaciones: {e}")
 
 def obtener_usuario_por_nombre(nombre, usuarios):
     """Obtener datos de usuario por nombre"""
@@ -213,7 +229,7 @@ def mostrar_vacaciones():
     vacaciones_registradas = cargar_vacaciones_registradas()
     
     if not usuarios:
-        st.warning("⚠️ No se encontraron datos de usuarios. Verifica que el archivo `data/usuarios_vacaciones.json` exista.")
+        st.warning("⚠️ No se encontraron datos de usuarios en la base de datos. Ejecuta la migración o carga la tabla `usuarios_vacaciones`.")
         return
     
     # ========== SECCIÓN 1: AGREGAR VACACIONES ==========
@@ -330,33 +346,22 @@ def mostrar_vacaciones():
                 
                 if puede_guardar:
                     if st.button("💾 Guardar Vacaciones", key="btn_guardar_vacaciones", type="primary"):
-                        # Si el usuario ya tiene un registro, agregar las nuevas opciones
-                        if vacaciones_usuario_existentes:
-                            vacaciones_usuario_existentes[0]["opciones"].extend(opciones_a_guardar)
-                            # Limitar a 3 opciones máximo
-                            vacaciones_usuario_existentes[0]["opciones"] = vacaciones_usuario_existentes[0]["opciones"][:3]
-                            # Actualizar observaciones si se proporcionaron
-                            if observaciones_nueva:
-                                vacaciones_usuario_existentes[0]["observaciones"] = observaciones_nueva
-                        else:
-                            # Crear nuevo registro
-                            vacaciones_registradas.append({
-                                "usuario": usuario_para_agregar,
-                                "opciones": opciones_a_guardar[:3],  # Máximo 3 opciones
-                                "observaciones": observaciones_nueva,
-                                "fecha_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            })
-                        
-                        guardar_vacaciones_registradas(vacaciones_registradas)
-                        
-                        # Resetear el formulario usando un flag en session_state
-                        if 'reset_form_agregar' not in st.session_state:
-                            st.session_state.reset_form_agregar = 0
-                        st.session_state.reset_form_agregar += 1
-                        
-                        total_dias = sum(calcular_dias_periodo(op["desde"], op["hasta"]) for op in opciones_a_guardar)
-                        st.success(f"✅ {len(opciones_a_guardar)} opción(es) guardada(s) para {usuario_para_agregar} (total: {total_dias} días)")
-                        st.rerun()
+                        try:
+                            observaciones_guardar = None
+                            if observaciones_nueva is not None and observaciones_nueva.strip():
+                                observaciones_guardar = observaciones_nueva
+                            with DatabaseHelper() as db:
+                                db.agregar_vacaciones(usuario_para_agregar, opciones_a_guardar, observaciones_guardar)
+                            if 'reset_form_agregar' not in st.session_state:
+                                st.session_state.reset_form_agregar = 0
+                            st.session_state.reset_form_agregar += 1
+                            total_dias = sum(calcular_dias_periodo(op["desde"], op["hasta"]) for op in opciones_a_guardar)
+                            st.success(f"✅ {len(opciones_a_guardar)} opción(es) guardada(s) para {usuario_para_agregar} (total: {total_dias} días)")
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(f"❌ {e}")
+                        except Exception as e:
+                            st.error(f"❌ Error guardando vacaciones: {e}")
                 elif len(opciones_a_guardar) == 0 and any(op["desde"] or op["hasta"] for op in opciones_fechas):
                     st.error("❌ Debes completar al menos una opción de vacaciones (fecha desde y fecha hasta) para poder guardar.")
                 elif len(opciones_a_guardar) == 0:
@@ -485,16 +490,10 @@ def mostrar_vacaciones():
                         )
                     
                     with col_edit2:
-                        # Ajustar el valor por defecto de "hasta" si la nueva "desde" es mayor
-                        # para evitar que el valor por defecto quede fuera del rango permitido
-                        valor_hasta_por_defecto = hasta
-                        if nueva_fecha_desde and nueva_fecha_desde > hasta:
-                            valor_hasta_por_defecto = nueva_fecha_desde
-                        
                         # Usar la fecha desde como mínimo para fecha hasta
                         nueva_fecha_hasta = st.date_input(
                             "Nueva fecha hasta:",
-                            value=valor_hasta_por_defecto,
+                            value=hasta,
                             min_value=nueva_fecha_desde,
                             key="nueva_fecha_hasta_opcion"
                         )
@@ -506,32 +505,36 @@ def mostrar_vacaciones():
                             if nueva_fecha_hasta < nueva_fecha_desde:
                                 st.error("❌ La fecha 'hasta' debe ser mayor o igual a la fecha 'desde'")
                             else:
-                                # Actualizar la opción específica
-                                indice_actual = st.session_state.opcion_editando
-                                vac_data["opciones"][indice_actual]["desde"] = nueva_fecha_desde.strftime("%Y-%m-%d")
-                                vac_data["opciones"][indice_actual]["hasta"] = nueva_fecha_hasta.strftime("%Y-%m-%d")
-                                
-                                guardar_vacaciones_registradas(vacaciones_registradas)
-                                st.session_state.usuario_editando = None
-                                st.session_state.opcion_editando = 0
-                                st.success("✅ Opción de vacaciones actualizada")
-                                st.rerun()
+                                try:
+                                    indice_actual = st.session_state.opcion_editando
+                                    with DatabaseHelper() as db:
+                                        db.actualizar_vacacion(
+                                            usuario_seleccionado,
+                                            indice_actual + 1,
+                                            nueva_fecha_desde.strftime("%Y-%m-%d"),
+                                            nueva_fecha_hasta.strftime("%Y-%m-%d")
+                                        )
+                                    st.session_state.usuario_editando = None
+                                    st.session_state.opcion_editando = 0
+                                except Exception as e:
+                                    st.error(f"❌ Error actualizando la opción: {e}")
+                                else:
+                                    st.success("✅ Opción de vacaciones actualizada")
+                                    st.rerun()
                     
                     with col_btn2:
                         if st.button("🗑️ Eliminar Opción", key="btn_eliminar_opcion", type="secondary", use_container_width=True):
-                            # Eliminar la opción específica
-                            indice_actual = st.session_state.opcion_editando
-                            vac_data["opciones"].pop(indice_actual)
-                            
-                            # Si no quedan opciones, eliminar el registro completo
-                            if not vac_data["opciones"]:
-                                vacaciones_registradas.remove(vac_data)
-                            
-                            guardar_vacaciones_registradas(vacaciones_registradas)
-                            st.session_state.usuario_editando = None
-                            st.session_state.opcion_editando = 0
-                            st.success("✅ Opción de vacaciones eliminada")
-                            st.rerun()
+                            try:
+                                indice_actual = st.session_state.opcion_editando
+                                with DatabaseHelper() as db:
+                                    db.eliminar_vacacion(usuario_seleccionado, indice_actual + 1)
+                                st.session_state.usuario_editando = None
+                                st.session_state.opcion_editando = 0
+                            except Exception as e:
+                                st.error(f"❌ Error eliminando la opción: {e}")
+                            else:
+                                st.success("✅ Opción de vacaciones eliminada")
+                                st.rerun()
                     
                     # Editar observaciones
                     st.markdown("#### 📝 Editar Observaciones")
@@ -543,12 +546,16 @@ def mostrar_vacaciones():
                     )
                     
                     if st.button("💾 Actualizar Observaciones", key="btn_actualizar_observaciones"):
-                        vac_data["observaciones"] = nuevas_observaciones
-                        guardar_vacaciones_registradas(vacaciones_registradas)
-                        st.session_state.usuario_editando = None
-                        st.session_state.opcion_editando = 0
-                        st.success("✅ Observaciones actualizadas")
-                        st.rerun()
+                        try:
+                            with DatabaseHelper() as db:
+                                db.guardar_observaciones_vacaciones(usuario_seleccionado, nuevas_observaciones or "")
+                            st.session_state.usuario_editando = None
+                            st.session_state.opcion_editando = 0
+                        except Exception as e:
+                            st.error(f"❌ Error guardando observaciones: {e}")
+                        else:
+                            st.success("✅ Observaciones actualizadas")
+                            st.rerun()
                 else:
                     st.warning("⚠️ Este usuario no tiene opciones de vacaciones registradas.")
             else:
@@ -584,13 +591,16 @@ def mostrar_vacaciones():
                             col_conf1, col_conf2 = st.columns(2)
                             with col_conf1:
                                 if st.button("✅ Confirmar", key="btn_confirmar_eliminar", type="primary", use_container_width=True):
-                                    # Eliminar todas las vacaciones del usuario
-                                    vacaciones_registradas = [v for v in vacaciones_registradas if v.get("usuario") != usuario_a_editar]
-                                    guardar_vacaciones_registradas(vacaciones_registradas)
-                                    st.session_state.usuario_pendiente_eliminar = None
-                                    st.session_state.usuario_editando = None
-                                    st.success(f"✅ Vacaciones de {usuario_a_editar} eliminadas correctamente")
-                                    st.rerun()
+                                    try:
+                                        with DatabaseHelper() as db:
+                                            db.eliminar_todas_vacaciones(usuario_a_editar)
+                                        st.session_state.usuario_pendiente_eliminar = None
+                                        st.session_state.usuario_editando = None
+                                    except Exception as e:
+                                        st.error(f"❌ Error eliminando vacaciones: {e}")
+                                    else:
+                                        st.success(f"✅ Vacaciones de {usuario_a_editar} eliminadas correctamente")
+                                        st.rerun()
                             with col_conf2:
                                 if st.button("❌ Cancelar", key="btn_cancelar_eliminar", use_container_width=True):
                                     st.session_state.usuario_pendiente_eliminar = None

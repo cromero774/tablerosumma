@@ -124,6 +124,46 @@ class TableroDatabase:
                     )
                 """)
             
+            # Verificar tabla vacaciones
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vacaciones'")
+            if not cursor.fetchone():
+                print("🔄 Creando tabla vacaciones...")
+                cursor.execute("""
+                    CREATE TABLE vacaciones (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        usuario TEXT NOT NULL,
+                        opcion INTEGER NOT NULL,
+                        fecha_desde TEXT NOT NULL,
+                        fecha_hasta TEXT NOT NULL,
+                        fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(usuario, opcion)
+                    )
+                """)
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vacaciones_observaciones'")
+            if not cursor.fetchone():
+                print("🔄 Creando tabla vacaciones_observaciones...")
+                cursor.execute("""
+                    CREATE TABLE vacaciones_observaciones (
+                        usuario TEXT PRIMARY KEY,
+                        observaciones TEXT,
+                        ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+            # Verificar tabla usuarios_vacaciones
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios_vacaciones'")
+            if not cursor.fetchone():
+                print("🔄 Creando tabla usuarios_vacaciones...")
+                cursor.execute("""
+                    CREATE TABLE usuarios_vacaciones (
+                        nombre TEXT PRIMARY KEY,
+                        lider TEXT,
+                        dias_vacaciones INTEGER
+                    )
+                """)
+
             self.conn.commit()
             print("✅ Esquema actualizado correctamente")
             
